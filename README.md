@@ -7,6 +7,8 @@ English | [中文](README.zh.md)
 
 Transparent Proxy with Mihomo on OpenWrt. Fork of [OpenWrt-nikki](https://github.com/nikkinikki-org/OpenWrt-nikki).
 
+Other routers have their own branches: [Keenetic / Netcraze](https://github.com/prettyleaf/openwrt-exodus/tree/keenetic) with Entware, in place of XKeen, and [Asus with Asuswrt-Merlin](https://github.com/prettyleaf/openwrt-exodus/tree/asuswrt) with Entware.
+
 ## Prerequisites
 
 - OpenWrt >= 24.10
@@ -40,6 +42,20 @@ wget -O - https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/main/insta
 ```
 
 Installed packages can also be updated from LuCI: `Services → Exodus → Update`. It runs the same installer with the core and the gh-proxy chosen last time. On routers with little free flash enable the low flash space mode there, it removes the current core before installing the new one.
+
+### Versions
+
+Exodus has one version for all routers, the version of the [release](https://github.com/prettyleaf/openwrt-exodus/releases): the tag `v1.27.0` builds `exodus` and `luci-app-exodus` 1.27.0, the Keenetic and Asuswrt-Merlin branches show the same numbers. `mihomo-meta` has the version of the Mihomo core it packages. Before 1.27.0 `exodus` had versions by date (`2026.04.08`), the installer replaces them with the release one.
+
+## Migrating from Nikki
+
+Exodus is a fork of Nikki and takes its settings as they are, the migration is the install:
+
+1. Run the installer from [Install & Update](#install--update). It removes `nikki`, `luci-app-nikki`, `luci-i18n-nikki-*` and the feed of Nikki, then installs Exodus in their place.
+2. The settings in `/etc/config/nikki`, the mixin file, profiles and subscriptions in `/etc/nikki` are kept, the service starts with them. It is still `/etc/init.d/nikki`.
+3. The pages move from `Services → Nikki` to `Services → Exodus`. Check the subscription and the devices on `App Config`: HWID headers are sent by default, they are turned off on `Profile` for a subscription that does not need them.
+
+Going back: remove the packages with the package manager (`opkg remove luci-app-exodus exodus` or `apk del luci-app-exodus exodus`) and install Nikki by its instructions, the settings stay. `uninstall.sh` removes the settings too.
 
 ## Uninstall & Reset
 

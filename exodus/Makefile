@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=exodus
-PKG_VERSION:=2026.04.08
+PKG_VERSION:=1.27.0
 PKG_RELEASE:=1
 
 PKG_LICENSE:=GPL3.0+

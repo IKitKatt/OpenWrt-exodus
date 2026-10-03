@@ -31,6 +31,18 @@ jobs:
       - name: checkout
         uses: actions/checkout@v6
 
+      # exodus and luci-app-exodus get the version of the release: the tag v1.27.0 builds 1.27.0-r1
+      - if: github.ref_type == 'tag'
+        name: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if ! echo "$version" | grep -q -E '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::the tag $GITHUB_REF_NAME is not vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$version/; s/^PKG_RELEASE:=.*/PKG_RELEASE:=1/" exodus/Makefile luci-app-exodus/Makefile
+          grep -H '^PKG_VERSION:=' exodus/Makefile luci-app-exodus/Makefile
+
       - name: build
         uses: openwrt/gh-action-sdk@main
         env:

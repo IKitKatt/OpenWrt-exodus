@@ -7,6 +7,8 @@
 
 在 OpenWrt 上使用 Mihomo 进行透明代理。[OpenWrt-nikki](https://github.com/nikkinikki-org/OpenWrt-nikki) 的分支。
 
+其他路由器有各自的分支：[Keenetic / Netcraze](https://github.com/prettyleaf/openwrt-exodus/tree/keenetic)（基于 Entware，替代 XKeen）和 [运行 Asuswrt-Merlin 的华硕路由器](https://github.com/prettyleaf/openwrt-exodus/tree/asuswrt)（基于 Entware）。
+
 ## 环境要求
 
 - OpenWrt >= 24.10
@@ -40,6 +42,20 @@ wget -O - https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/main/insta
 ```
 
 已安装的软件包也可以在 LuCI 中更新：`服务 → Exodus → 更新`。该页面使用上次选择的内核和 gh-proxy 运行同一个安装脚本。闪存空间较小的路由器请在该页面启用低空间模式，它会在安装新内核之前删除当前内核。
+
+### 版本
+
+Exodus 所有路由器使用同一个版本号，即[发行版](https://github.com/prettyleaf/openwrt-exodus/releases)的版本：标签 `v1.27.0` 构建出 `exodus` 和 `luci-app-exodus` 1.27.0，Keenetic 和 Asuswrt-Merlin 分支显示相同的版本号。`mihomo-meta` 的版本是其打包的 Mihomo 内核版本。1.27.0 之前 `exodus` 使用日期作为版本（`2026.04.08`），安装脚本会将其替换为发行版的版本。
+
+## 从 Nikki 迁移
+
+Exodus 是 Nikki 的分支，直接沿用其设置，迁移即安装：
+
+1. 运行[安装和更新](#安装和更新)中的安装脚本。它会删除 `nikki`、`luci-app-nikki`、`luci-i18n-nikki-*` 以及 Nikki 的软件源，然后安装 Exodus。
+2. `/etc/config/nikki` 中的设置、`/etc/nikki` 中的混入文件、配置文件和订阅都会保留，服务使用它们启动，服务仍为 `/etc/init.d/nikki`。
+3. 页面从 `服务 → Nikki` 移到 `服务 → Exodus`。请在 `应用配置` 中检查订阅和设备：默认发送 HWID 请求头，不需要的订阅可以在 `配置文件` 中关闭。
+
+回退：使用包管理器删除软件包（`opkg remove luci-app-exodus exodus` 或 `apk del luci-app-exodus exodus`），再按 Nikki 的说明安装 Nikki，设置会保留。`uninstall.sh` 会同时删除设置。
 
 ## 卸载并重置
 

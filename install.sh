@@ -387,10 +387,13 @@ if [ "$LOW_SPACE" = 1 ] && [ "$update_meta" = 1 ] && [ -f "/usr/libexec/mihomo" 
 fi
 
 # install packages
+# the packages of the release are installed whatever version is installed: VERSION may choose an older release,
+# and exodus had versions by date (2026.04.08) before it took the versions of the releases
+# apk installs the given files as they are, opkg needs --force-downgrade for it
 echo "install packages"
 if [ "$package_manager" = "opkg" ]; then
 	# shellcheck disable=SC2086
-	opkg install $packages || fail "install failed"
+	opkg install --force-downgrade $packages || fail "install failed"
 elif [ "$package_manager" = "apk" ]; then
 	# shellcheck disable=SC2086
 	apk add --allow-untrusted $packages || fail "install failed"
