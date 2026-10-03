@@ -189,85 +189,106 @@ action_subscription_update() {
 	echo '{"success": true}' | ok
 }
 
-# segments, wi-fi points and devices for the device selection
-# rci gives names, wi-fi points and parental control; without it only the neighbours of the router are shown
+# segments, wi-fi networks and devices for the device selection
+# names come from the client list of the router (custom_clientlist), dhcp and its network map, wi-fi clients from the drivers,
+# parental control from nvram; without nvram only the neighbours of the router are shown
 # no regex in jq: jq of entware is built without oniguruma, test() and sub() fail there
 action_hosts() {
-	local dir file iface
+	local dir iface id ifname file
 	dir="$RUN_TMP/hosts.$$"
 	mkdir -p "$dir"
-	rci_get "show/ip/hotspot" > "$dir/hotspot.json"
-	rci_get "show/interface" > "$dir/interface.json"
-	rci_get "show/associations" > "$dir/associations.json"
-	for file in "$dir"/*.json; do
-		jq -e . "$file" > /dev/null 2>&1 || echo 'null' > "$file"
-	done
+	if command -v nvram > /dev/null 2>&1; then
+		nvram show 2> /dev/null | grep -E '^(wl[0-9](\.[0-9])?_(ssid|nband|radio)|custom_clientlist|MULTIFILTER_(ALL|ENABLE|MAC)|lan_ifname)=' \
+			| jq -R -s 'split("\n") | map(select(length > 0) | index("=") as $i | {(.[:$i]): .[$i + 1:]}) | add // {}' > "$dir/nvram.json"
+	fi
+	wifi_networks > "$dir/wifi.txt"
+	while read -r id ifname; do
+		wifi_stations "$ifname" | sed "s/^/$id /"
+	done < "$dir/wifi.txt" > "$dir/stations.txt"
+	jq -R -s 'split("\n") | map(select(length > 0) | split(" ") | {id: .[0], ifname: .[1]})' "$dir/wifi.txt" > "$dir/wifi.json"
+	jq -R -s 'split("\n") | map(select(length > 0) | split(" ") | {ap: .[0], mac: .[1]})' "$dir/stations.txt" > "$dir/stations.json"
+	awk 'length($2) == 17 && NF >= 4 { print $2 "\t" $3 "\t" ($4 == "*" ? "" : $4) }' /var/lib/misc/dnsmasq.leases 2> /dev/null \
+		| jq -R -s 'split("\n") | map(select(length > 0) | split("\t") | {mac: (.[0] | ascii_upcase), ip: .[1], hostname: .[2]})' > "$dir/leases.json"
 	ip -4 neigh show 2> /dev/null | awk '{ for (i = 1; i <= NF; i++) { if ($i == "dev") dev = $(i + 1); if ($i == "lladdr") mac = $(i + 1) } if (mac != "") print $1 "\t" dev "\t" mac; mac = "" }' \
 		| jq -R -s 'split("\n") | map(select(length > 0) | split("\t") | {ip: .[0], dev: .[1], mac: (.[2] | ascii_upcase)})' > "$dir/neigh.json"
+	# the network map of the firmware keeps the devices it has seen, with names and addresses
+	jq -c '[if type == "object" then .[] else empty end | select(type == "object" and ((.mac // "") | length) == 17)
+		| {mac: (.mac | ascii_upcase), name: ((.nickName // .name // "") | tostring), ip: ((.ip // "") | tostring)}]' /jffs/nmp_cl_json.js > "$dir/nmp.json" 2> /dev/null
 	for iface in /sys/class/net/br*; do
 		[ -e "$iface" ] || continue
 		iface="${iface##*/}"
 		printf '%s\t%s\n' "$iface" "$(ip -o -4 addr show dev "$iface" 2> /dev/null | awk '{ print $4; exit }')"
 	done | jq -R -s 'split("\n") | map(select(length > 0) | split("\t") | {ifname: .[0], address: .[1]})' > "$dir/segments.json"
+	for file in "$dir"/*.json; do
+		jq -e . "$file" > /dev/null 2>&1 || echo 'null' > "$file"
+	done
+	[ -f "$dir/nvram.json" ] || echo 'null' > "$dir/nvram.json"
 	jq -n \
-		--slurpfile hotspot "$dir/hotspot.json" \
-		--slurpfile interface "$dir/interface.json" \
-		--slurpfile associations "$dir/associations.json" \
+		--slurpfile nvram "$dir/nvram.json" \
+		--slurpfile wifi "$dir/wifi.json" \
+		--slurpfile stations "$dir/stations.json" \
+		--slurpfile leases "$dir/leases.json" \
 		--slurpfile neigh "$dir/neigh.json" \
+		--slurpfile nmp "$dir/nmp.json" \
 		--slurpfile segments "$dir/segments.json" '
-		def list: if type == "array" then . elif type == "object" then [.] else [] end;
-		def pick(k): if type == "object" and has(k) then .[k] else . end;
-		def digits: length > 0 and (explode | all(. >= 48 and . <= 57));
-		def bridge: startswith("Bridge") and (ltrimstr("Bridge") | digits);
-		def access_point: startswith("WifiMaster") and (index("/AccessPoint") != null);
-		($interface[0] // {}) as $if
-		| (if ($if | type) == "object" then [$if | to_entries[] | select(.value | type == "object") | .value + {id: (.value.id // .key)}]
-		   elif ($if | type) == "array" then $if else [] end) as $ifaces
-		| ($hotspot[0] | pick("host") | list) as $hosts
-		| ($associations[0] | pick("station") | list) as $stations
-		| ([$ifaces[] | select((.id // "") | bridge)]) as $bridges
-		| ($segments[0] + [$bridges[] | ("br" + (.id | ltrimstr("Bridge"))) as $ifname
-			| select($segments[0] | map(.ifname) | index($ifname) | not) | {ifname: $ifname, address: (.address // "")}]
-		  | map(
-			. as $s
-			| ($s.ifname | ltrimstr("br")) as $n
-			| ([$ifaces[] | select(.id == ("Bridge" + $n))][0] // {}) as $b
-			| $s + {name: ($b.description // $b["interface-name"] // ""), id: ($b.id // "")}
-		  ) | sort_by(.ifname)) as $segs
-		| ([$ifaces[] | select((.id // "") | access_point)
-			| {id, ssid: (.ssid // ""), description: (.description // ""), state: (.state // .link // ""),
-			   segment: (.group // ((.usedby // []) | if type == "array" then .[0] else . end) // "")}]) as $points
-		| ([$hosts[] | select((.ap // "") != "") | {id: .ap, ssid: (.ssid // ""), description: "", state: "", segment: ""}]
-			| map(select(.id as $id | $points | map(.id) | index($id) | not)) | unique_by(.id)) as $extra
+		def list: if type == "array" then . else [] end;
+		def mac: type == "string" and length == 17;
+		($nvram[0] | if type == "object" then . else {} end) as $nv
+		| ($nv.lan_ifname // "br0") as $lan
+		| ($wifi[0] | list) as $nets
+		| ($stations[0] | list | map(select(.mac | mac))) as $stations
+		| ($leases[0] | list | map(select(.mac | mac))) as $leases
+		| ($neigh[0] | list | map(select(.mac | mac))) as $neigh
+		| ($nmp[0] | list) as $nmp
+		# the client list of the router: <name>MAC>...<name>MAC>...
+		| (($nv.custom_clientlist // "") | split("<") | map(split(">") | select(length >= 2 and (.[1] | mac) and .[0] != "")
+			| {key: (.[1] | ascii_upcase), value: .[0]}) | from_entries) as $names
+		# parental control: MULTIFILTER_ENABLE is 1 for time scheduling and 2 for blocked devices
+		| (if ($nv.MULTIFILTER_ALL // "0") == "1" then
+			[(($nv.MULTIFILTER_MAC // "") | split(">")), (($nv.MULTIFILTER_ENABLE // "") | split(">"))] | transpose
+			| map(select(.[0] | mac) | {key: (.[0] | ascii_upcase), value: (if .[1] == "2" then "deny" elif .[1] == "1" then "schedule" else "" end)})
+			| from_entries
+		   else {} end) as $parental
+		| ([$stations[] | {key: .mac, value: .ap}] | from_entries) as $assoc
 		| {
-			rci: (($hotspot[0] != null) or ($interface[0] != null)),
-			segments: $segs,
-			aps: (($points + $extra) | map(. + {
-				band: (if (.id | startswith("WifiMaster1/")) then "5 GHz" elif (.id | startswith("WifiMaster2/")) then "6 GHz" else "2.4 GHz" end),
-				clients: ((.id) as $id | [$stations[] | select(.ap == $id)] | length)
-			}) | sort_by(.id)),
+			router: ($nvram[0] != null),
+			segments: ($segments[0] | list | map(. + {name: (if .ifname == $lan then "LAN" else "" end), id: ""}) | sort_by(.ifname)),
+			aps: [$nets[] | .id as $id | ($id | split(".")[0]) as $radio | {
+				id: $id,
+				ssid: ($nv[$id + "_ssid"] // ""),
+				description: "",
+				state: (if ($id | index(".")) == null and ($nv[$id + "_radio"] // "1") == "0" then "down" else "up" end),
+				segment: $lan,
+				guest: (($id | index(".")) != null),
+				band: (($nv[$radio + "_nband"] // "") | if . == "1" then "5 GHz" elif . == "2" then "2.4 GHz" elif . == "4" then "6 GHz" else "" end),
+				clients: ([$stations[] | select(.ap == $id)] | length)
+			}] | sort_by(.id),
 			hosts: (
-				[$hosts[] | select((.mac // "") != "") | {
-					mac: (.mac | ascii_upcase),
-					ip: (.ip // ""),
-					name: (.name // .hostname // ""),
-					hostname: (.hostname // ""),
-					active: (if .active == null then (.link == "up") else .active end),
-					ap: (.ap // ""),
-					ssid: (.ssid // ""),
-					segment: (.interface | if type == "object" then (.id // .name // "") else (. // "") end),
-					access: (.access // "")
-				}] as $known
-				| $known + [$neigh[0][] | select(.mac as $m | $known | map(.mac) | index($m) | not)
-					| {mac, ip, name: "", hostname: "", active: true, ap: "", ssid: "", segment: .dev, access: ""}]
-				| unique_by(.mac)
+				([$leases[].mac] + [$neigh[].mac] + [$stations[].mac] + ($names | keys) + [$nmp[].mac] | unique)
+				| map(. as $mac
+					| ([$leases[] | select(.mac == $mac)][0] // {}) as $lease
+					| ([$neigh[] | select(.mac == $mac)][0] // {}) as $n
+					| ([$nmp[] | select(.mac == $mac)][0] // {}) as $m
+					| ($assoc[$mac] // "") as $ap
+					| {
+						mac: $mac,
+						ip: ($n.ip // $lease.ip // (if ($m.ip // "") != "" then $m.ip else null end) // ""),
+						name: ($names[$mac] // (if ($m.name // "") != "" then $m.name else null end) // ""),
+						hostname: ($lease.hostname // ""),
+						active: (($n.mac != null) or ($ap != "")),
+						ap: $ap,
+						ssid: (if $ap == "" then "" else ($nv[$ap + "_ssid"] // "") end),
+						segment: ($n.dev // $lan),
+						access: ($parental[$mac] // "")
+					})
 			)
 		}' | ok
 	rm -rf "$dir"
 }
 
 action_interfaces() {
-	ip -o link show 2> /dev/null | awk -F ': ' '{ split($2, a, "@"); print a[1] }' | grep -v -E '^(lo|ip6tnl0|sit0|gre0|gretap0|ifb[0-9]+|teql0|dummy[0-9]*)$' \
+	ip -o link show 2> /dev/null | awk -F ': ' '{ split($2, a, "@"); print a[1] }' \
+		| grep -v -E '^(lo|ip6tnl0|sit0|gre0|gretap0|erspan0|ip6gre0|ifb[0-9]+|imq[0-9]+|teql0|dummy[0-9]*|bcmsw.*|dpsta|spu_.*|blog)$' \
 		| jq -R -s '{interfaces: (split("\n") | map(select(length > 0)))}' | ok
 }
 
@@ -400,8 +421,8 @@ latest_code() {
 	if curl -s -f -L --connect-timeout 15 -m 60 -o "$dir/app.tar.gz" "$(gh_url "https://github.com/$REPOSITORY/archive/$1.tar.gz")" \
 		&& tar -xzf "$dir/app.tar.gz" -C "$dir/src" 2> /dev/null; then
 		src=$(find "$dir/src" -mindepth 1 -maxdepth 1 -type d | head -n 1)
-		if [ -n "$src" ] && [ -f "$src/keenetic/opt/share/exodus/VERSION" ]; then
-			printf '%s|%s|%s' "$(head -n 1 "$src/keenetic/opt/share/exodus/VERSION" | tr -d '\r|')" "$(archive_commit "$dir/app.tar.gz")" "$(code_hash "$src")"
+		if [ -n "$src" ] && [ -f "$src/asuswrt/opt/share/exodus/VERSION" ]; then
+			printf '%s|%s|%s' "$(head -n 1 "$src/asuswrt/opt/share/exodus/VERSION" | tr -d '\r|')" "$(archive_commit "$dir/app.tar.gz")" "$(code_hash "$src")"
 		fi
 	fi
 	rm -rf "$dir"
@@ -472,7 +493,7 @@ action_about() {
 	printf '%s' "$build" | jq -e 'type == "object"' > /dev/null 2>&1 || build='{}'
 	jq -n \
 		--argjson build "$build" \
-		--argjson router "$(keenetic_version)" \
+		--argjson router "$(router_info)" \
 		--arg app "$(app_version)" \
 		--arg branch "$BRANCH" \
 		--arg repository "$REPOSITORY" \
@@ -482,7 +503,7 @@ action_about() {
 		--arg arch "$(entware_arch)" \
 		'{app: $app, ref: ($build.ref // $branch), commit: ($build.commit // ""), installed: ($build.installed // $installed),
 		  repository: $repository, core: $core, core_type: (if $core_type == "" then "meta" else $core_type end),
-		  model: ($router.model // $router.device // ""), firmware: ($router.title // $router.release // ""), arch: $arch}' | ok
+		  model: ($router.model // ""), os: ($router.os // ""), firmware: ($router.firmware // ""), arch: $arch}' | ok
 }
 
 action_update() {

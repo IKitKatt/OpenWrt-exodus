@@ -1,6 +1,6 @@
 'use strict';
 
-// web ui of exodus for keenetic, built after shadcn/ui without any framework
+// web ui of exodus for asuswrt-merlin, built after shadcn/ui without any framework
 // the config is edited as a draft copy and saved as a whole
 
 (function () {
@@ -935,7 +935,7 @@ function describeItem(item) {
     }
     if (type === 'ap') {
         const ap = hosts.aps.find((a) => a.id === value);
-        return `Wi-Fi: ${ap ? `${ap.ssid || ap.description || value} (${ap.band})` : value}`;
+        return `Wi-Fi: ${ap ? `${ap.ssid || ap.description || value}${ap.band ? ` (${ap.band})` : ''}` : value}`;
     }
     if (type === 'mac') {
         const host = hosts.hosts.find((h) => h.mac === value.toUpperCase());
@@ -967,7 +967,7 @@ async function loadHosts() {
     try {
         state.hosts = await api('hosts');
     } catch (e) {
-        state.hosts = { rci: false, segments: [], aps: [], hosts: [], error: e.message };
+        state.hosts = { router: false, segments: [], aps: [], hosts: [], error: e.message };
     }
 }
 
@@ -1033,9 +1033,9 @@ function devicePicker() {
             container.appendChild(loader());
             return;
         }
-        if (!hosts.rci) {
+        if (!hosts.router) {
             container.appendChild(alertBox('warning', _('The router did not give the list of devices'),
-                hosts.error ? `${_('Error')}: ${hosts.error}` : _('Names of devices, Wi-Fi points and parental control are not available: only devices from the ARP table of the router are listed.')));
+                hosts.error ? `${_('Error')}: ${hosts.error}` : _('Names of devices, Wi-Fi networks and parental control are not available: only devices from the ARP table of the router are listed.')));
         }
 
         // segments, wi-fi points and the manual address on the left, devices on the right
@@ -1049,10 +1049,10 @@ function devicePicker() {
         }
 
         if (hosts.aps.length > 0) {
-            left.appendChild(group(_('Wi-Fi points'), hosts.aps.length, E('div', { class: 'picker-list scroll short' }, hosts.aps.map((ap) =>
+            left.appendChild(group(_('Wi-Fi networks'), hosts.aps.length, E('div', { class: 'picker-list scroll short' }, hosts.aps.map((ap) =>
                 option(`ap:${ap.id}`, 'wifi', ap.ssid || ap.description || ap.id,
-                    [ap.band, ap.id, _('clients: %s', ap.clients)].join(' · '),
-                    { inactive: ap.state === 'down', tags: ap.state === 'down' ? badge(_('off'), 'outline') : null })))));
+                    [ap.band, ap.id, _('clients: %s', ap.clients)].filter(Boolean).join(' · '),
+                    { inactive: ap.state === 'down', tags: [ap.guest ? badge(_('guest'), 'secondary') : null, ap.state === 'down' ? badge(_('off'), 'outline') : null] })))));
         }
 
         const search = E('input', { class: 'input', type: 'search', placeholder: _('Search by name, MAC or IP'), value: filter });
@@ -1080,6 +1080,9 @@ function devicePicker() {
                 }
                 if (h.access === 'deny') {
                     tagList.push(badge(_('blocked'), 'destructive'));
+                }
+                if (h.access === 'schedule') {
+                    tagList.push(badge(_('on schedule'), 'outline'));
                 }
                 list.appendChild(option(`mac:${h.mac}`, h.ssid ? 'wifi' : 'device', h.name || h.hostname || h.mac,
                     [h.mac, h.ip, h.ssid ? `Wi-Fi ${h.ssid}` : (segmentNames[h.segment] || h.segment || null)].filter(Boolean).join(' · '),
@@ -1212,7 +1215,7 @@ function pageStatus() {
             field(_('Mode'), segmented(ref('proxy.access_mode'), [['exclude', _('All except selected')], ['include', _('Only selected')]]), null, null, [
                 modeInfo(_('All except selected'), _('All devices go through the proxy, the selected ones go directly.')),
                 modeInfo(_('Only selected'), _('Only the selected devices go through the proxy, the others go directly.')),
-                _('A segment matches all its devices, a Wi-Fi point matches the devices connected to it (synced every 30 seconds), a device is matched by its MAC with IPv4 and IPv6. DNS follows the choice: proxied devices ask the core, the others ask the router.')
+                _('A segment matches all its devices, a Wi-Fi network matches the devices connected to it on this router, not on AiMesh nodes (synced every 30 seconds), a device is matched by its MAC with IPv4 and IPv6. DNS follows the choice: proxied devices ask the core, the others ask the router.')
             ]),
             devicePicker()
         ]
@@ -1586,14 +1589,14 @@ function pageSettings() {
                 switchField(_('Enable'), _('Intercept the traffic of the devices chosen on the Status page. When off, only the core runs: its proxy port and the dashboard.'), ref('proxy.enabled')),
                 dependOn(E('div', { class: 'grid-2' }, [
                     field('TCP', select(ref('proxy.tcp_mode'), [['redirect', 'Redirect'], ['tproxy', 'TPROXY']], { optional: true, placeholder: _('Off'), empty: '' }),
-                        _('Redirect works everywhere. TPROXY for TCP needs port 443 of the router free: move the web interface of the router to another port.')),
+                        _('Redirect works everywhere and is recommended. TPROXY for TCP needs the TPROXY module of the firmware, without it TCP is redirected.')),
                     field('UDP', select(ref('proxy.udp_mode'), [['tproxy', 'TPROXY']], { optional: true, placeholder: _('Off'), empty: '' }),
-                        _('For QUIC, games and calls. Needs the Netfilter kernel modules component of the router.'))
+                        _('For QUIC, games and calls. Needs the TPROXY module of the firmware, without it UDP goes directly.'))
                 ]), proxyOn),
                 dependOn(E('div', { class: 'grid-3' }, [
                     switchField(_('DNS through the core'), _('DNS queries of the proxied devices go to the core, whatever DNS the router uses. Required for Fake-IP and domain rules.'), ref('proxy.dns_hijack')),
                     switchField(_('Traffic of the router'), _('Proxy the connections of the router itself, for example of Entware applications. DNS of the router is not intercepted.'), ref('proxy.router_proxy')),
-                    switchField(_('Respect parental control'), _('Devices blocked in the router (no internet access, schedules) are not proxied, otherwise they would get internet through the core.'), ref('proxy.respect_parental_control'))
+                    switchField(_('Respect parental control'), _('The parental control of the router (Block Internet Access, Time Scheduling) applies to the proxied traffic too, otherwise blocked devices would get internet through the core. Content filters of AiProtection do not see inside the proxied traffic.'), ref('proxy.respect_parental_control'))
                 ]), proxyOn)
             ]
         }),
@@ -2052,7 +2055,7 @@ async function openAbout() {
     }
     const repo = `https://github.com/${info.repository}`;
     const core = CORE_TITLES[info.core_type] || info.core_type;
-    const firmware = info.firmware ? `KeeneticOS ${info.firmware}` : '';
+    const firmware = info.firmware ? `${info.os || 'Asuswrt'} ${info.firmware}` : '';
     const text = [
         `Exodus ${info.app} (${[info.ref, info.commit.substring(0, 12)].filter(Boolean).join(', ')})`,
         `${_('Installed')}: ${info.installed || '—'}`,
@@ -2106,7 +2109,7 @@ async function openAbout() {
             ])) : null,
             E('div', { class: 'build-links' }, [
                 E('a', { class: 'btn btn-outline', href: `${repo}/issues`, target: '_blank', rel: 'noopener' }, [icon('bug'), _('Issues')]),
-                E('a', { class: 'btn btn-outline', href: `${repo}/tree/${info.ref || 'keenetic'}`, target: '_blank', rel: 'noopener' }, [icon('github'), 'GitHub'])
+                E('a', { class: 'btn btn-outline', href: `${repo}/tree/${info.ref || 'asuswrt'}`, target: '_blank', rel: 'noopener' }, [icon('github'), 'GitHub'])
             ])
         ]
     });

@@ -1,7 +1,7 @@
 #!/bin/sh
 
-# Exodus for Keenetic: transparent proxy with mihomo on entware
-# there is no procd on keenetic: the core is kept running by the supervise loop,
+# Exodus for Asuswrt-Merlin: transparent proxy with mihomo on entware
+# there is no procd on asuswrt: the core is kept running by the supervise loop,
 # the watch loop restores the rules, syncs wi-fi clients and runs the scheduled tasks
 
 . "${EXODUS_OPT:-/opt}/share/exodus/lib/common.sh"
@@ -16,7 +16,7 @@ usage() {
 		  update_subscription <id>          download a subscription, the running core gets it when it is in use
 		  hard_update                       remove downloaded providers, update the subscription and restart
 		  apply                             apply the rules again
-		  sync                              sync wi-fi clients and parental control with the router
+		  sync                              sync the clients of the chosen wi-fi networks
 		  clear_logs                        clear logs exceeding the size limit
 		  debug                             print the debug report
 		  web start|stop|restart            control the web ui
@@ -248,31 +248,31 @@ status() {
 	return 1
 }
 
-# ndm calls netfilter.d with $type (iptables/ip6tables) and $table after every rebuild of a table
+# user scripts of asuswrt-merlin in /jffs/scripts, the installer adds a line to each of them:
+# firewall-start and nat-start run after the firmware restored its tables without the rules of exodus,
+# unmount runs before a disk is unmounted, $2 is its mount point
 hook() {
-	[ -f "$STARTED_FLAG_PATH" ] || return 0
-	fw_env || return 0
 	case "$1" in
-		netfilter)
-			local family; family=4
-			[ "$2" = "ip6tables" ] && family=6
-			case "$3" in
-				nat|mangle|filter) ;;
-				*) return 0 ;;
-			esac
+		firewall|nat)
+			[ -f "$STARTED_FLAG_PATH" ] || return 0
+			fw_env || return 0
 			# until the core listens the rules would cut the traffic, the watch loop applies them later
 			core_listening || return 0
 			lock_acquire firewall 100 || return 0
 			fw_sets_local
-			fw_apply "$family" "$3"
+			fw_apply
 			fw_route_apply
 			lock_release firewall
 			;;
-		schedule)
-			# parental control schedules change the list of blocked devices
-			lock_acquire firewall 100 || return 0
-			fw_sets_rci
-			lock_release firewall
+		unmount)
+			# entware lives on the disk: the core goes away with it, the rules must not stay without the core
+			[ -n "$2" ] || return 0
+			case "$(readlink -f "$EXODUS_OPT")/" in
+				"${2%/}"/*)
+					stop
+					web stop
+					;;
+			esac
 			;;
 	esac
 }
@@ -292,16 +292,18 @@ watch() {
 		[ -f "$STOP_FLAG_PATH" ] && break
 		tick=$((tick + 1))
 		if fw_env && lock_acquire firewall 50; then
-			# ndm may rebuild a table without calling the hook, and the rules wait for the core after start
+			# the firmware may rebuild a table without calling a script, and the rules wait for the core after start
 			if ! fw_intact && core_listening; then
 				log "Proxy" "Rules are missing, apply them."
 				fw_start
 			elif [ $((tick % 2)) = 0 ]; then
 				fw_sets_local
-				fw_sets_rci
+				fw_sets_mac
 			fi
 			lock_release firewall
 		fi
+		# the firmware kills the web servers it does not know when it restarts its own one
+		pid_alive "$WEB_PID_PATH" || web start > /dev/null 2>&1
 		minute=$(date +%Y%m%d%H%M)
 		[ "$minute" = "$last" ] && continue
 		last="$minute"
@@ -324,7 +326,7 @@ sync_sets() {
 	fw_env || return 0
 	lock_acquire firewall 100 || return 1
 	fw_sets_local
-	fw_sets_rci
+	fw_sets_mac
 	lock_release firewall
 }
 
@@ -381,14 +383,16 @@ auto_update() {
 }
 
 web() {
-	local port pid ret
+	local port pid ret lighttpd
 	case "$1" in
 		start)
 			pid_alive "$WEB_PID_PATH" && return 0
 			prepare_files
 			port=$(cfg_get .web.port)
-			if ! command -v lighttpd > /dev/null 2>&1; then
-				echo "lighttpd is not installed"
+			# the firmware has its own lighttpd for aicloud, without cgi
+			lighttpd="$EXODUS_OPT/sbin/lighttpd"
+			if [ ! -x "$lighttpd" ]; then
+				echo "lighttpd of entware is not installed"
 				return 1
 			fi
 			sed -e "s|@PORT@|${port:-9099}|g" \
@@ -397,9 +401,11 @@ web() {
 				-e "s|@LOG@|$LOG_DIR|g" \
 				-e "s|@OPT@|$EXODUS_OPT|g" \
 				"$LIGHTTPD_CONF" > "$RUN_TMP/lighttpd.conf"
-			# lighttpd of entware and its libpcre2 differ in symbol versions, the loader warns about it on every start
+			# the firmware kills every process named lighttpd when it stops aicloud, so the web ui runs under another name
+			ln -sf "$lighttpd" "$RUN_TMP/exodus-web"
+			# lighttpd of entware and its libpcre2 may differ in symbol versions, the loader warns about it on every start
 			# a file and not a pipe: the daemon keeps stderr open
-			lighttpd -f "$RUN_TMP/lighttpd.conf" 2> "$RUN_TMP/lighttpd.err"
+			"$RUN_TMP/exodus-web" -f "$RUN_TMP/lighttpd.conf" 2> "$RUN_TMP/lighttpd.err"
 			ret=$?
 			grep -v 'no version information available' "$RUN_TMP/lighttpd.err" >&2
 			rm -f "$RUN_TMP/lighttpd.err"
@@ -461,10 +467,14 @@ debug() {
 	echo "# Exodus Debug Info"
 	echo "## system"
 	echo '```'
-	keenetic_version | jq -r '"\(.model // "") \(.hw_id // "") \(.title // .release // "")"' 2> /dev/null
+	router_info | jq -r '"\(.model // "") \(.os // "") \(.firmware // "")"' 2> /dev/null
 	uname -a
 	echo "exodus $(app_version), core $(core_version), yq $("$YQ" --version 2> /dev/null | awk '{ print $NF }')"
-	opkg list-installed 2> /dev/null | grep -E '^(curl|jq|ipset|iptables|ip-full|lighttpd|lighttpd-mod-cgi|ca-bundle) '
+	echo "$("$FW_IPTABLES" -V 2> /dev/null | head -n 1) ($FW_IPTABLES), $("$FW_IPSET" -v 2> /dev/null | head -n 1)"
+	echo "entware $(opkg print-architecture 2> /dev/null | awk '$2 != "all" && $2 != "noarch" { arch = $2 } END { print arch }'), /opt -> $(readlink -f "$EXODUS_OPT")"
+	opkg list-installed 2> /dev/null | grep -E '^(curl|jq|lighttpd|lighttpd-mod-cgi|ca-bundle) '
+	echo "jffs scripts: $(nvram_get jffs2_scripts)"
+	grep -H 'exodus' /jffs/scripts/* 2> /dev/null
 	echo '```'
 	echo "## config"
 	echo '```json'
@@ -510,23 +520,26 @@ debug() {
 	echo '```'
 	echo "## iptables"
 	echo '```'
-	local ipt table
-	for ipt in iptables ip6tables; do
+	local family ipt ipt_save ipt_restore table
+	for family in 4 6; do
+		fw_tools "$family"
 		for table in nat mangle filter; do
-			echo "# $ipt $table"
-			"$ipt-save" -t "$table" 2> /dev/null | grep -E '^:EXODUS|EXODUS|^-A (PREROUTING|INPUT|OUTPUT) ' | sed -E 's/(([0-9a-fA-F]{2}:){5})[0-9a-fA-F]{2}/\1**/g'
+			echo "# ${ipt##*/} $table"
+			"$ipt_save" -t "$table" 2> /dev/null | grep -E '^:EXODUS|EXODUS|^:PControls|^-A (PREROUTING|INPUT|OUTPUT) ' | sed -E 's/(([0-9a-fA-F]{2}:){5})[0-9a-fA-F]{2}/\1**/g'
 		done
 	done
 	echo '```'
 	echo "## ipset"
 	echo '```'
-	ipset list -t 2> /dev/null | awk '/^Name:/ { name = $2 } /^Type:/ { type = $2 } /^Number of entries:/ { print name, type, $4 }' | grep exodus
+	"$FW_IPSET" list -t 2> /dev/null | awk '/^Name:/ { name = $2 } /^Type:/ { type = $2 } /^Number of entries:/ { print name, type, $4 }' | grep exodus
 	echo '```'
 	echo "## kernel modules"
 	echo '```'
 	grep -E '^(xt_|nf_tproxy|ip_set)' /proc/modules 2> /dev/null | cut -d ' ' -f 1 | tr '\n' ' '
 	echo
 	{ tr '\n' ' ' < /proc/net/ip_tables_targets; } 2> /dev/null
+	echo
+	{ tr '\n' ' ' < /proc/net/ip_tables_matches; } 2> /dev/null
 	echo
 	echo '```'
 }

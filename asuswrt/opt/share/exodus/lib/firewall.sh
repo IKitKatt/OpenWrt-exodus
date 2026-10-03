@@ -1,17 +1,18 @@
 #!/bin/sh
 # shellcheck shell=sh
 
-# transparent proxy rules for keenetic: iptables and ipset instead of nftables
+# transparent proxy rules for asuswrt-merlin: iptables and ipset of the firmware
 #
-# ndm rebuilds its iptables tables on many events and drops everything it does not know,
+# the firmware restores its whole tables on every restart of the firewall and drops the rules of addons,
 # so the rules are built from $FIREWALL_ENV_PATH, saved on start, and applied again
-# from the netfilter.d hook with iptables-restore --noflush, atomically per table
+# from the firewall-start and nat-start user scripts with iptables-restore --noflush, atomically per table;
+# a table rebuilt without a script (qos uses mangle) is restored by the watch loop, it checks the rules every 15 seconds
 #
 # nat PREROUTING  -> EXODUS_PRE: dns of lan clients to the core, tcp to the redirect port
-#                    it is inserted first, before the dns redirects of ndm (internet filter, dns profiles),
+#                    it is inserted first, before the dns director of merlin (DNSFILTER),
 #                    so the core resolves regardless of the dns settings of the router
 # mangle PREROUTING -> EXODUS_MANGLE: udp (and tcp in tproxy mode) to the tproxy port
-# filter INPUT    -> EXODUS_INPUT: accept redirected traffic, guest segments drop it otherwise
+# filter INPUT    -> EXODUS_INPUT: accept redirected traffic, the parental control of the firmware checks it first
 # nat/mangle OUTPUT -> router proxy, off by default
 #
 # dscp like xkeen: 61 forces a separate listener with a chosen proxy, 62 bypasses, 63 proxies the device anyway
@@ -24,11 +25,43 @@ SET_RSV4="exodus_rsv4"
 SET_RSV6="exodus_rsv6"
 SET_LOCAL4="exodus_local4"
 SET_LOCAL6="exodus_local6"
-SET_DENY="exodus_deny"
 
 FW_CHAINS_NAT="EXODUS_PRE EXODUS_LAN EXODUS_DNS EXODUS_DNS_DO EXODUS_REDIR EXODUS_REDIR_PORTS EXODUS_REDIR_AC EXODUS_REDIR_DO EXODUS_OUT EXODUS_OUT_PORTS"
 FW_CHAINS_MANGLE="EXODUS_MANGLE EXODUS_TP EXODUS_TP_PORTS EXODUS_TP_AC EXODUS_TP_DO EXODUS_MOUT EXODUS_MOUT_PORTS EXODUS_MOUT_DO"
-FW_CHAINS_FILTER="EXODUS_INPUT"
+FW_CHAINS_FILTER="EXODUS_INPUT EXODUS_PROXIED"
+
+# iptables and ipset of the firmware match its kernel, entware may have its own ones from other addons
+fw_bin() {
+	local dir
+	for dir in /usr/sbin /sbin /usr/bin /bin; do
+		if [ -x "$dir/$1" ]; then
+			echo "$dir/$1"
+			return
+		fi
+	done
+	echo "$1"
+}
+
+FW_IPTABLES=$(fw_bin iptables)
+FW_IPTABLES_SAVE=$(fw_bin iptables-save)
+FW_IPTABLES_RESTORE=$(fw_bin iptables-restore)
+FW_IP6TABLES=$(fw_bin ip6tables)
+FW_IP6TABLES_SAVE=$(fw_bin ip6tables-save)
+FW_IP6TABLES_RESTORE=$(fw_bin ip6tables-restore)
+FW_IPSET=$(fw_bin ipset)
+
+# iptables of a family as ipt, ipt_save and ipt_restore of the caller, $1 is 4 or 6
+fw_tools() {
+	if [ "$1" = 4 ]; then
+		ipt="$FW_IPTABLES"
+		ipt_save="$FW_IPTABLES_SAVE"
+		ipt_restore="$FW_IPTABLES_RESTORE"
+	else
+		ipt="$FW_IP6TABLES"
+		ipt_save="$FW_IP6TABLES_SAVE"
+		ipt_restore="$FW_IP6TABLES_RESTORE"
+	fi
+}
 
 # split "80 443 1000-2000" into iptables multiport chunks of at most 15 ports, a range counts twice
 # prints nothing when all ports are proxied
@@ -48,22 +81,38 @@ fw_port_chunks() {
 		END { if (chunk != "") print chunk }' | tr '\n' ' '
 }
 
+# modules of the firmware, most of them are built into its kernel; tried once per boot
 fw_load_modules() {
-	local dir module path
+	local flag dir module path
+	flag="$RUN_TMP/modules.loaded"
+	[ -f "$flag" ] && return 0
 	dir="/lib/modules/$(uname -r)"
-	for module in nf_defrag_ipv6 nf_tproxy_ipv4 nf_tproxy_ipv6 xt_TPROXY xt_socket xt_dscp xt_multiport xt_mark xt_conntrack xt_mac xt_set ip_set ip_set_hash_mac ip_set_hash_net; do
+	for module in nf_defrag_ipv4 nf_defrag_ipv6 nf_tproxy_core nf_tproxy_ipv4 nf_tproxy_ipv6 xt_TPROXY xt_socket xt_dscp xt_multiport xt_mark xt_conntrack xt_mac ip_set ip_set_hash_mac ip_set_hash_net xt_set; do
 		grep -q "^$module " /proc/modules 2> /dev/null && continue
-		for path in "$dir/$module.ko" "$EXODUS_OPT/lib/modules/$(uname -r)/$module.ko"; do
-			if [ -f "$path" ]; then
-				insmod "$path" > /dev/null 2>&1
-				break
-			fi
-		done
+		modprobe "$module" > /dev/null 2>&1 && continue
+		path=$(find "$dir" -name "$module.ko" 2> /dev/null | head -n 1)
+		[ -n "$path" ] && insmod "$path" > /dev/null 2>&1
 	done
+	touch "$flag"
 }
 
-fw_has_target() {
-	grep -q "^$1$" /proc/net/ip_tables_targets 2> /dev/null
+# iptables takes the rule: the kernel has the module and iptables has the extension
+# $1 iptables, $2 table, the rest is the rule, it is tried in a chain that nothing jumps to
+fw_probe() {
+	local ipt table ret
+	ipt="$1"
+	table="$2"
+	shift 2
+	# shellcheck disable=SC2086
+	"$ipt" $fw_wait -t "$table" -N EXODUS_PROBE > /dev/null 2>&1
+	# shellcheck disable=SC2086
+	"$ipt" $fw_wait -t "$table" -A EXODUS_PROBE "$@" > /dev/null 2>&1
+	ret=$?
+	# shellcheck disable=SC2086
+	"$ipt" $fw_wait -t "$table" -F EXODUS_PROBE > /dev/null 2>&1
+	# shellcheck disable=SC2086
+	"$ipt" $fw_wait -t "$table" -X EXODUS_PROBE > /dev/null 2>&1
+	return "$ret"
 }
 
 # global ipv6 addresses exist, otherwise the clients have no ipv6 internet and ipv6 rules are skipped
@@ -88,15 +137,23 @@ fw_var() {
 # compute everything the rules need and save it, the hooks apply exactly what the start computed
 # expects cfg_load and profile_params (p_* variables) to be done
 fw_prepare() {
-	local item items_mac items_ip4 items_ip6 items_iface items_ap tp_protos v4 v6 v6_nat mac_set
+	local item items_mac items_ip4 items_ip6 items_iface items_ap tp_protos v4 v6 v6_nat tp6 mac_set tcp_mode udp_mode dscp
+	fw_load_modules
 	v4=0
 	v6=0
 	v6_nat=0
-	command -v iptables > /dev/null 2>&1 && v4=1
+	tp6=0
+	# iptables of old firmwares has no -w, then the lock of exodus serializes only its own runs
+	fw_wait=
+	"$FW_IPTABLES" -w -t filter -n -L INPUT > /dev/null 2>&1 && fw_wait="-w"
+	# shellcheck disable=SC2086
+	"$FW_IPTABLES" $fw_wait -t filter -n -L INPUT > /dev/null 2>&1 && v4=1
 	# ipv6 follows the profile, mihomo has it on unless the profile turns it off
-	if [ "$p_ipv6" = 1 ] && command -v ip6tables > /dev/null 2>&1 && fw_ipv6_active; then
+	# shellcheck disable=SC2086
+	if [ "$p_ipv6" = 1 ] && "$FW_IP6TABLES" $fw_wait -t filter -n -L INPUT > /dev/null 2>&1 && fw_ipv6_active; then
 		v6=1
-		ip6tables -w -t nat -S > /dev/null 2>&1 && v6_nat=1
+		# shellcheck disable=SC2086
+		"$FW_IP6TABLES" $fw_wait -t nat -n -L PREROUTING > /dev/null 2>&1 && v6_nat=1
 	fi
 
 	for item in $c_proxy_access_items; do
@@ -112,15 +169,48 @@ fw_prepare() {
 	items_ip4=$(fw_list "$items_ip4" | fw_filter_ip4 | tr '\n' ' ')
 	items_ip6=$(fw_list "$items_ip6" | fw_filter_ip6 | tr '\n' ' ')
 	items_iface=$(fw_words "$FW_IFACE" "$items_iface")
-	items_ap=$(fw_words '[A-Za-z0-9]+/[A-Za-z0-9]+' "$items_ap")
+	items_ap=$(fw_words 'wl[0-9](\.[0-9])?' "$items_ap")
 
+	tcp_mode=
+	udp_mode=
+	case "$c_proxy_tcp_mode" in redirect|tproxy) tcp_mode="$c_proxy_tcp_mode" ;; esac
+	[ "$c_proxy_udp_mode" = "tproxy" ] && udp_mode="tproxy"
+	# tproxy is a module of the kernel that not every firmware has: then udp goes directly and tcp is redirected
+	if [ "$tcp_mode" = "tproxy" ] || [ -n "$udp_mode" ]; then
+		if ! fw_probe "$FW_IPTABLES" mangle -p udp -j TPROXY --on-port 1 --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1; then
+			log "Proxy" "TPROXY is not available in the firmware, UDP goes directly."
+			udp_mode=
+			if [ "$tcp_mode" = "tproxy" ]; then
+				log "Proxy" "TCP is redirected instead of TPROXY."
+				tcp_mode="redirect"
+			fi
+		elif [ "$v6" = 1 ]; then
+			if fw_probe "$FW_IP6TABLES" mangle -p udp -j TPROXY --on-port 1 --on-ip ::1 --tproxy-mark 0x1/0x1; then
+				tp6=1
+			else
+				log "Proxy" "TPROXY for IPv6 is not available in the firmware, IPv6 UDP goes directly."
+			fi
+		fi
+	fi
 	tp_protos=
-	[ "$c_proxy_udp_mode" = "tproxy" ] && tp_protos="udp"
-	[ "$c_proxy_tcp_mode" = "tproxy" ] && tp_protos="${tp_protos:+$tp_protos }tcp"
+	[ "$udp_mode" = "tproxy" ] && tp_protos="udp"
+	[ "$tcp_mode" = "tproxy" ] && tp_protos="${tp_protos:+$tp_protos }tcp"
 
-	# hash:mac needs a recent kernel, without it macs of devices are matched one by one and wi-fi points are not supported
+	# the marks need the dscp match of iptables
+	local dscp_force dscp_bypass dscp_proxy
+	dscp_force=$(fw_words '[0-9]|[1-5][0-9]|6[0-3]' "$c_proxy_dscp_force")
+	dscp_bypass=$(fw_words '[0-9]|[1-5][0-9]|6[0-3]' "$c_proxy_dscp_bypass")
+	dscp_proxy=$(fw_words '[0-9]|[1-5][0-9]|6[0-3]' "$c_proxy_dscp_proxy")
+	if [ -n "$dscp_force$dscp_bypass$dscp_proxy" ] && ! fw_probe "$FW_IPTABLES" mangle -m dscp --dscp 1 -j RETURN; then
+		log "Proxy" "DSCP match is not available in the firmware, DSCP marks are off."
+		dscp_force=
+		dscp_bypass=
+		dscp_proxy=
+	fi
+
+	# hash:mac needs a recent kernel, without it macs of devices are matched one by one and wi-fi networks are not supported
 	mac_set=0
-	if ipset create "$SET_MAC" hash:mac -exist > /dev/null 2>&1; then
+	if "$FW_IPSET" create "$SET_MAC" hash:mac -exist > /dev/null 2>&1; then
 		mac_set=1
 	fi
 
@@ -128,8 +218,8 @@ fw_prepare() {
 	local force_redir force_tproxy
 	force_redir=
 	force_tproxy=
-	if [ -n "$c_proxy_dscp_force" ] && [ -n "$c_proxy_force_proxy" ]; then
-		[ "$c_proxy_tcp_mode" = "redirect" ] && force_redir="$p_force_redir_port"
+	if [ -n "$dscp_force" ] && [ -n "$c_proxy_force_proxy" ]; then
+		[ "$tcp_mode" = "redirect" ] && force_redir="$p_force_redir_port"
 		[ -n "$tp_protos" ] && force_tproxy="$p_force_tproxy_port"
 	fi
 
@@ -143,16 +233,13 @@ fw_prepare() {
 	fi
 	local mode; mode="exclude"
 	[ "$c_proxy_access_mode" = "include" ] && mode="include"
-	local tcp_mode udp_mode
-	tcp_mode=
-	udp_mode=
-	case "$c_proxy_tcp_mode" in redirect|tproxy) tcp_mode="$c_proxy_tcp_mode" ;; esac
-	[ "$c_proxy_udp_mode" = "tproxy" ] && udp_mode="tproxy"
 
 	{
+		fw_var fw_wait "$fw_wait"
 		fw_var fw_v4 "$v4"
 		fw_var fw_v6 "$v6"
 		fw_var fw_v6_nat "$v6_nat"
+		fw_var fw_tp6 "$tp6"
 		fw_var fw_proxy4 1
 		fw_var fw_proxy6 "$p_ipv6"
 		fw_var fw_dns4 "$c_proxy_dns_hijack"
@@ -174,9 +261,9 @@ fw_prepare() {
 		fw_var fw_tp_protos "$tp_protos"
 		fw_var fw_tcp_ports "$(fw_port_chunks "$c_proxy_proxy_tcp_dport")"
 		fw_var fw_udp_ports "$(fw_port_chunks "$c_proxy_proxy_udp_dport")"
-		fw_var fw_dscp_force "$(fw_words '[0-9]|[1-5][0-9]|6[0-3]' "$c_proxy_dscp_force")"
-		fw_var fw_dscp_bypass "$(fw_words '[0-9]|[1-5][0-9]|6[0-3]' "$c_proxy_dscp_bypass")"
-		fw_var fw_dscp_proxy "$(fw_words '[0-9]|[1-5][0-9]|6[0-3]' "$c_proxy_dscp_proxy")"
+		fw_var fw_dscp_force "$dscp_force"
+		fw_var fw_dscp_bypass "$dscp_bypass"
+		fw_var fw_dscp_proxy "$dscp_proxy"
 		fw_var fw_reserved4 "$c_proxy_reserved_ip"
 		fw_var fw_reserved6 "$c_proxy_reserved_ip6"
 		fw_var fw_mark "$TPROXY_MARK"
@@ -205,12 +292,12 @@ fw_env() {
 fw_set_load() {
 	local name; name="$1"
 	shift
-	ipset create "$name" "$@" -exist 2> /dev/null || return 1
-	ipset create "${name}_new" "$@" -exist 2> /dev/null || return 1
-	ipset flush "${name}_new"
-	awk -v set="${name}_new" 'NF { print "add " set " " $1 " -exist" }' | ipset restore -exist 2> /dev/null
-	ipset swap "${name}_new" "$name"
-	ipset destroy "${name}_new"
+	"$FW_IPSET" create "$name" "$@" -exist 2> /dev/null || return 1
+	"$FW_IPSET" create "${name}_new" "$@" -exist 2> /dev/null || return 1
+	"$FW_IPSET" flush "${name}_new"
+	awk -v set="${name}_new" 'NF { print "add " set " " $1 " -exist" }' | "$FW_IPSET" restore -exist 2> /dev/null
+	"$FW_IPSET" swap "${name}_new" "$name"
+	"$FW_IPSET" destroy "${name}_new"
 }
 
 fw_list() {
@@ -248,48 +335,18 @@ fw_sets_local() {
 	fi
 }
 
-# sets from the router: devices on the chosen wi-fi points, devices blocked by parental control
-# $1 is "init" on start, then a failed rci request fills the sets without the rci part instead of keeping them
-fw_sets_rci() {
-	local hotspot associations aps
-	hotspot=
-	associations=
-	if [ -n "$fw_items_ap" ] || [ "$fw_parental" = 1 ]; then
-		hotspot=$(rci_get "show/ip/hotspot")
-	fi
-	if [ -n "$fw_items_ap" ]; then
-		associations=$(rci_get "show/associations")
-	fi
-
-	if [ "$fw_mac_set" = 1 ]; then
-		if [ -z "$fw_items_ap" ] || [ -n "$hotspot$associations" ] || [ "$1" = "init" ]; then
-			aps=$(fw_list "$fw_items_ap" | jq -R . | jq -s -c .)
-			{
-				fw_list "$fw_items_mac"
-				if [ -n "$fw_items_ap" ]; then
-					echo "$hotspot" | jq -r --argjson aps "$aps" '
-						((.host // .) | if type == "array" then .[] else empty end)
-						| select((.ap // "") as $ap | $aps | index($ap))
-						| select(.active != false and .link != "down")
-						| .mac // empty' 2> /dev/null
-					echo "$associations" | jq -r --argjson aps "$aps" '
-						((.station // .) | if type == "array" then .[] else empty end)
-						| select((.ap // "") as $ap | $aps | index($ap))
-						| .mac // empty' 2> /dev/null
-				fi
-			} | fw_filter_mac | sort -u | fw_set_load "$SET_MAC" hash:mac
-		fi
-	fi
-
-	if [ "$fw_parental" = 1 ] && [ "$fw_mac_set" = 1 ]; then
-		# keep the set when rci does not answer, otherwise blocked devices get internet through the core
-		if [ -n "$hotspot" ] || [ "$1" = "init" ]; then
-			echo "$hotspot" | jq -r '
-				((.host // .) | if type == "array" then .[] else empty end)
-				| select(.access == "deny")
-				| .mac // empty' 2> /dev/null | fw_filter_mac | sort -u | fw_set_load "$SET_DENY" hash:mac
-		fi
-	fi
+# the chosen devices and the devices connected to the chosen wi-fi networks, in one set
+# the drivers are asked every 30 seconds; $1 is "init" on start, it fills the set when no wi-fi network is chosen
+fw_sets_mac() {
+	local ap
+	[ "$fw_mac_set" = 1 ] || return 0
+	[ -n "$fw_items_ap" ] || [ "$1" = "init" ] || return 0
+	{
+		fw_list "$fw_items_mac"
+		for ap in $fw_items_ap; do
+			wifi_stations "$(wifi_ifname "$ap")"
+		done
+	} | fw_filter_mac | sort -u | fw_set_load "$SET_MAC" hash:mac
 }
 
 # rules matching the selected devices, $1 chain, $2 family (4/6), $3 target
@@ -352,29 +409,31 @@ fw_ports() {
 
 # print the iptables-restore input for one table, $1 family (4/6), $2 table
 fw_build() {
-	local family table ipt fake not_fake lo proxy dns icmp chain iface dscp proto deletes
+	local family table ipt ipt_save ipt_restore current tp_protos parental fake not_fake lo proxy dns icmp chain iface dscp proto deletes
 	family="$1"
 	table="$2"
+	fw_tools "$family"
+	tp_protos="$fw_tp_protos"
 	if [ "$family" = 4 ]; then
-		ipt="iptables"
 		fake="$fw_fake4"
 		lo="127.0.0.1"
 		proxy="$fw_proxy4"
 		dns="$fw_dns4"
 		icmp="-p icmp --icmp-type echo-request"
 	else
-		ipt="ip6tables"
 		fake="$fw_fake6"
 		lo="::1"
 		proxy="$fw_proxy6"
 		dns="$fw_dns6"
 		icmp="-p ipv6-icmp --icmpv6-type echo-request"
+		[ "$fw_tp6" = 1 ] || tp_protos=
 	fi
 	not_fake=
 	[ -n "$fake" ] && not_fake="! -d $fake"
 	[ -n "$fw_dns_port" ] || dns=0
 	[ -n "$fw_redir_port" ] || [ "$fw_tcp_mode" != "redirect" ] || proxy=0
-	[ -n "$fw_tproxy_port" ] || [ -z "$fw_tp_protos" ] || proxy=0
+	[ -n "$fw_tproxy_port" ] || [ -z "$tp_protos" ] || proxy=0
+	current=$("$ipt_save" -t "$table" 2> /dev/null)
 
 	echo "*$table"
 	case "$table" in
@@ -383,14 +442,13 @@ fw_build() {
 		filter) for chain in $FW_CHAINS_FILTER; do echo ":$chain - [0:0]"; done ;;
 	esac
 	# jumps are inserted first, remove the ones left from the previous run
-	deletes=$("$ipt-save" -t "$table" 2> /dev/null | grep -E '^-A (PREROUTING|INPUT|OUTPUT) .*-j EXODUS_[A-Z_]+ *$' | sed 's/^-A /-D /')
+	deletes=$(echo "$current" | grep -E '^-A (PREROUTING|INPUT|OUTPUT) .*-j EXODUS_[A-Z_]+ *$' | sed 's/^-A /-D /')
 	[ -n "$deletes" ] && echo "$deletes"
 
 	case "$table" in
 	nat)
 		if [ "$fw_lan" = 1 ]; then
 			echo "-I PREROUTING 1 -j EXODUS_PRE"
-			[ "$fw_parental" = 1 ] && [ "$fw_mac_set" = 1 ] && echo "-A EXODUS_PRE -m set --match-set $SET_DENY src -j RETURN"
 			for iface in $fw_inbound; do
 				echo "-A EXODUS_PRE -i $iface -j EXODUS_LAN"
 			done
@@ -435,9 +493,9 @@ fw_build() {
 		fi
 		;;
 	mangle)
-		if [ -n "$fw_tp_protos" ] && [ "$proxy" = 1 ]; then
+		if [ -n "$tp_protos" ] && [ "$proxy" = 1 ]; then
 			echo "-I PREROUTING 1 -j EXODUS_MANGLE"
-			for proto in $fw_tp_protos; do
+			for proto in $tp_protos; do
 				echo "-A EXODUS_TP_DO -p $proto -j TPROXY --on-port $fw_tproxy_port --on-ip $lo --tproxy-mark $fw_mark/$fw_mask"
 			done
 			if [ "$fw_router" = 1 ]; then
@@ -449,7 +507,7 @@ fw_build() {
 				echo "-A EXODUS_MOUT -p tcp --dport 53 -j RETURN"
 				fw_reserved EXODUS_MOUT "$family" "$not_fake"
 				fw_bypass EXODUS_MOUT "$not_fake"
-				for proto in $fw_tp_protos; do
+				for proto in $tp_protos; do
 					if [ "$proto" = "tcp" ]; then
 						fw_ports EXODUS_MOUT tcp "$fw_tcp_ports" EXODUS_MOUT_DO "$fake"
 					else
@@ -459,7 +517,6 @@ fw_build() {
 				done
 			fi
 			if [ "$fw_lan" = 1 ]; then
-				[ "$fw_parental" = 1 ] && [ "$fw_mac_set" = 1 ] && echo "-A EXODUS_MANGLE -m set --match-set $SET_DENY src -j RETURN"
 				for iface in $fw_inbound; do
 					echo "-A EXODUS_MANGLE -i $iface -j EXODUS_TP"
 				done
@@ -471,7 +528,7 @@ fw_build() {
 				fi
 				fw_reserved EXODUS_TP "$family" "$not_fake"
 				if [ -n "$fw_force_tproxy_port" ]; then
-					for proto in $fw_tp_protos; do
+					for proto in $tp_protos; do
 						echo "-A EXODUS_TP -p $proto -m dscp --dscp $fw_dscp_force -j TPROXY --on-port $fw_force_tproxy_port --on-ip $lo --tproxy-mark $fw_mark/$fw_mask"
 					done
 				fi
@@ -481,7 +538,7 @@ fw_build() {
 				done
 				if [ -n "$fw_tcp_ports$fw_udp_ports" ]; then
 					echo "-A EXODUS_TP -j EXODUS_TP_PORTS"
-					for proto in $fw_tp_protos; do
+					for proto in $tp_protos; do
 						if [ "$proto" = "tcp" ]; then
 							fw_ports EXODUS_TP_PORTS tcp "$fw_tcp_ports" EXODUS_TP_AC "$fake"
 						else
@@ -504,11 +561,17 @@ fw_build() {
 			fi
 			if [ "$proxy" = 1 ]; then
 				if [ "$fw_tcp_mode" = "redirect" ]; then
-					echo "-A EXODUS_INPUT -p tcp --dport $fw_redir_port -m conntrack --ctstate DNAT -j ACCEPT"
-					[ -n "$fw_force_redir_port" ] && echo "-A EXODUS_INPUT -p tcp --dport $fw_force_redir_port -m conntrack --ctstate DNAT -j ACCEPT"
+					echo "-A EXODUS_INPUT -p tcp --dport $fw_redir_port -m conntrack --ctstate DNAT -j EXODUS_PROXIED"
+					[ -n "$fw_force_redir_port" ] && echo "-A EXODUS_INPUT -p tcp --dport $fw_force_redir_port -m conntrack --ctstate DNAT -j EXODUS_PROXIED"
 				fi
-				[ -n "$fw_tp_protos" ] && echo "-A EXODUS_INPUT -m mark --mark $fw_mark/$fw_mask -j ACCEPT"
+				[ -n "$tp_protos" ] && echo "-A EXODUS_INPUT -m mark --mark $fw_mark/$fw_mask -j EXODUS_PROXIED"
 				[ "$fw_ping" = 1 ] && [ -n "$fake" ] && echo "-A EXODUS_INPUT ${icmp%% --*} -m conntrack --ctstate DNAT -j ACCEPT"
+				# parental control of the firmware drops forwarded traffic of blocked devices (PControls, schedules by -m time),
+				# the proxied traffic goes to the router itself and is checked by the same chain here; dns of blocked devices works as with the router
+				parental=0
+				[ "$fw_parental" = 1 ] && echo "$current" | grep -q '^:PControls ' && parental=1
+				[ "$parental" = 1 ] && echo "-A EXODUS_PROXIED -j PControls"
+				echo "-A EXODUS_PROXIED -j ACCEPT"
 			fi
 		fi
 		;;
@@ -518,24 +581,29 @@ fw_build() {
 
 # apply one table, or all of them, $1 family (4/6/empty), $2 table (empty for all)
 fw_apply() {
-	local family table ipt blob error failed
+	local family table ipt ipt_save ipt_restore blob error ret failed
 	failed=0
 	for family in 4 6; do
 		[ -z "$1" ] || [ "$1" = "$family" ] || continue
-		if [ "$family" = 4 ]; then
-			[ "$fw_v4" = 1 ] || continue
-			ipt="iptables"
-		else
-			[ "$fw_v6" = 1 ] || continue
-			ipt="ip6tables"
-		fi
+		[ "$family" = 4 ] && [ "$fw_v4" != 1 ] && continue
+		[ "$family" = 6 ] && [ "$fw_v6" != 1 ] && continue
+		fw_tools "$family"
 		for table in nat mangle filter; do
 			[ -z "$2" ] || [ "$2" = "$table" ] || continue
 			[ "$family" = 6 ] && [ "$table" = "nat" ] && [ "$fw_v6_nat" != 1 ] && continue
 			blob=$(fw_build "$family" "$table")
-			# iptables-restore of entware (1.4.21) has no -w, the hook lock serializes the runs of exodus
-			if ! error=$(echo "$blob" | "$ipt-restore" --noflush 2>&1); then
-				log "Proxy" "Failed to apply $ipt $table rules: $(echo "$error" | head -n 1)"
+			# iptables-restore of the firmware has no -w, the hook lock serializes the runs of exodus
+			error=$(echo "$blob" | "$ipt_restore" --noflush 2>&1)
+			ret=$?
+			if [ "$ret" != 0 ] && [ "$table" = "filter" ] && echo "$blob" | grep -q -e '-j PControls$'; then
+				# a rule of the parental control may be not allowed for the traffic to the router itself
+				log "Proxy" "Parental control can not check the proxied traffic: $(echo "$error" | head -n 1)"
+				blob=$(fw_parental=0; fw_build "$family" "$table")
+				error=$(echo "$blob" | "$ipt_restore" --noflush 2>&1)
+				ret=$?
+			fi
+			if [ "$ret" != 0 ]; then
+				log "Proxy" "Failed to apply ${ipt##*/} $table rules: $(echo "$error" | head -n 1)"
 				failed=1
 			fi
 		done
@@ -548,7 +616,7 @@ fw_route_apply() {
 	[ -n "$fw_tp_protos" ] || return 0
 	for family in 4 6; do
 		[ "$family" = 4 ] && [ "$fw_v4" != 1 ] && continue
-		[ "$family" = 6 ] && [ "$fw_v6" != 1 ] && continue
+		[ "$family" = 6 ] && { [ "$fw_v6" != 1 ] || [ "$fw_tp6" != 1 ]; } && continue
 		ip -"$family" route replace local default dev lo table "$fw_table" 2> /dev/null
 		if ! ip -"$family" rule show 2> /dev/null | grep -q "lookup $fw_table *$"; then
 			ip -"$family" rule add pref "$fw_pref" fwmark "$fw_mark/$fw_mask" table "$fw_table" 2> /dev/null
@@ -556,29 +624,26 @@ fw_route_apply() {
 	done
 }
 
-# the jump is the first rule of the chain, ndm may insert its own rules above it
+# the jump is the first rule of the chain, the firmware and other addons may insert their rules above it
 fw_first() {
-	[ "$("$1" -w -t "$2" -S "$3" 2> /dev/null | sed -n '2p')" = "-A $3 -j $4" ]
+	# shellcheck disable=SC2086
+	[ "$("$1" $fw_wait -t "$2" -S "$3" 2> /dev/null | sed -n '2p')" = "-A $3 -j $4" ]
 }
 
-# is the jump of every table still in place and first, ndm removes the rules on rebuild
+# is the jump of every table still in place and first, the firmware removes the rules on a restart of the firewall
 fw_intact() {
-	local family ipt
+	local family ipt ipt_save ipt_restore
 	for family in 4 6; do
-		if [ "$family" = 4 ]; then
-			[ "$fw_v4" = 1 ] || continue
-			ipt="iptables"
-		else
-			[ "$fw_v6" = 1 ] || continue
-			ipt="ip6tables"
-		fi
+		[ "$family" = 4 ] && [ "$fw_v4" != 1 ] && continue
+		[ "$family" = 6 ] && [ "$fw_v6" != 1 ] && continue
+		fw_tools "$family"
 		if [ "$fw_lan" = 1 ]; then
 			fw_first "$ipt" filter INPUT EXODUS_INPUT || return 1
 			if [ "$family" = 4 ] || [ "$fw_v6_nat" = 1 ]; then
 				fw_first "$ipt" nat PREROUTING EXODUS_PRE || return 1
 			fi
 		fi
-		if [ -n "$fw_tp_protos" ]; then
+		if [ -n "$fw_tp_protos" ] && { [ "$family" = 4 ] || [ "$fw_tp6" = 1 ]; }; then
 			fw_first "$ipt" mangle PREROUTING EXODUS_MANGLE || return 1
 		fi
 	done
@@ -589,31 +654,34 @@ fw_intact() {
 fw_start() {
 	fw_env || return 1
 	fw_load_modules
-	if [ -n "$fw_tp_protos" ] && ! fw_has_target TPROXY; then
-		log "Proxy" "TPROXY target is not available, install the Netfilter kernel modules component of the router."
-	fi
 	fw_sets_static
 	fw_sets_local
-	fw_sets_rci init
+	fw_sets_mac init
 	fw_route_apply
 	fw_apply
 }
 
 fw_clean() {
-	local ipt table chain rules set family table_id
-	for ipt in iptables ip6tables; do
+	local family ipt ipt_save ipt_restore table chain rules set table_id
+	# the env may be gone, -w is checked again
+	fw_wait=
+	"$FW_IPTABLES" -w -t filter -n -L INPUT > /dev/null 2>&1 && fw_wait="-w"
+	for family in 4 6; do
+		fw_tools "$family"
 		command -v "$ipt" > /dev/null 2>&1 || continue
 		for table in nat mangle filter; do
-			rules=$("$ipt-save" -t "$table" 2> /dev/null) || continue
+			rules=$("$ipt_save" -t "$table" 2> /dev/null) || continue
 			echo "$rules" | grep -E '^-A (PREROUTING|INPUT|OUTPUT) .*-j EXODUS_[A-Z_]+ *$' | sed 's/^-A //' | while read -r rule; do
 				# shellcheck disable=SC2086
-				"$ipt" -w -t "$table" -D $rule > /dev/null 2>&1
+				"$ipt" $fw_wait -t "$table" -D $rule > /dev/null 2>&1
 			done
 			for chain in $(echo "$rules" | grep -o -E '^:EXODUS_[A-Z_]+'); do
-				"$ipt" -w -t "$table" -F "${chain#:}" > /dev/null 2>&1
+				# shellcheck disable=SC2086
+				"$ipt" $fw_wait -t "$table" -F "${chain#:}" > /dev/null 2>&1
 			done
 			for chain in $(echo "$rules" | grep -o -E '^:EXODUS_[A-Z_]+'); do
-				"$ipt" -w -t "$table" -X "${chain#:}" > /dev/null 2>&1
+				# shellcheck disable=SC2086
+				"$ipt" $fw_wait -t "$table" -X "${chain#:}" > /dev/null 2>&1
 			done
 		done
 	done
@@ -622,10 +690,10 @@ fw_clean() {
 		while ip -"$family" rule del table "$table_id" > /dev/null 2>&1; do :; done
 		ip -"$family" route flush table "$table_id" > /dev/null 2>&1
 	done
-	if command -v ipset > /dev/null 2>&1; then
-		for set in $SET_MAC $SET_SRC4 $SET_SRC6 $SET_RSV4 $SET_RSV6 $SET_LOCAL4 $SET_LOCAL6 $SET_DENY; do
-			ipset destroy "$set" > /dev/null 2>&1
-			ipset destroy "${set}_new" > /dev/null 2>&1
+	if command -v "$FW_IPSET" > /dev/null 2>&1; then
+		for set in $SET_MAC $SET_SRC4 $SET_SRC6 $SET_RSV4 $SET_RSV6 $SET_LOCAL4 $SET_LOCAL6; do
+			"$FW_IPSET" destroy "$set" > /dev/null 2>&1
+			"$FW_IPSET" destroy "${set}_new" > /dev/null 2>&1
 		done
 	fi
 }

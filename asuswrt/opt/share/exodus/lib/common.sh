@@ -1,7 +1,7 @@
 #!/bin/sh
 # shellcheck shell=sh disable=SC2034
 
-# Exodus for Keenetic: paths and helpers shared by the service, the hooks and the web ui
+# Exodus for Asuswrt-Merlin: paths and helpers shared by the service, the hooks and the web ui
 # EXODUS_OPT and EXODUS_TMP move the whole tree, only used for tests
 
 EXODUS_OPT="${EXODUS_OPT:-/opt}"
@@ -11,7 +11,7 @@ EXODUS_TMP="${EXODUS_TMP:-/tmp/exodus}"
 export PATH="$EXODUS_OPT/bin:$EXODUS_OPT/sbin:/sbin:/bin:/usr/sbin:/usr/bin"
 
 REPOSITORY="prettyleaf/openwrt-exodus"
-BRANCH="keenetic"
+BRANCH="asuswrt"
 
 # code, replaced on update
 SHARE_DIR="$EXODUS_OPT/share/exodus"
@@ -59,19 +59,17 @@ FIREWALL_ENV_PATH="$RUN_TMP/firewall.env"
 PROFILE_JSON_PATH="$RUN_TMP/profile.json"
 API_JSON_PATH="$RUN_TMP/api.json"
 SESSIONS_DIR="$RUN_TMP/sessions"
-KEENETIC_VERSION_PATH="$RUN_TMP/keenetic_version.json"
+ROUTER_INFO_PATH="$RUN_TMP/router.json"
 
-# keenetic rci on localhost, it answers without authorization on keeneticos 4 and 5
-RCI_URL="${EXODUS_RCI_URL:-http://127.0.0.1:79/rci}"
-
-# listeners of dscp 61, the mark and the route table of tproxy like in xkeen
+# listeners of dscp 61, the mark and the route table of tproxy
+# tables 111-115 belong to the vpn clients of asuswrt-merlin, the table of tproxy has the number of its port
 # the core marks its own connections with 255 (routing-mark in mixin.jq), the router proxy lets them out
 FORCE_REDIR_PORT=7893
 FORCE_TPROXY_PORT=7894
 TPROXY_MARK=0x111
 TPROXY_MASK=0xffffffff
 TPROXY_RULE_PREF=100
-TPROXY_TABLE=111
+TPROXY_TABLE=7892
 CORE_MARK=255
 
 prepare_files() {
@@ -187,45 +185,75 @@ core_version() {
 	echo "$version"
 }
 
-# keenetic rci, the path follows the cli: show/ip/hotspot is "show ip hotspot"
-rci_get() {
-	curl -s -f -m 5 --connect-timeout 2 "$RCI_URL/$1" 2> /dev/null
+# a variable of nvram, empty outside of asuswrt
+nvram_get() {
+	command -v nvram > /dev/null 2>&1 && nvram get "$1" 2> /dev/null
 }
 
-# "show version" through ndmc, it talks to ndm over a unix socket and works when the rci does not
-# the text answer has "key: value" lines, the fields of the header are taken
-ndmc_version() {
-	command -v ndmc > /dev/null 2>&1 || return 1
-	ndmc -c "show version" 2> /dev/null | awk '
-		{
-			line = $0
-			sub(/^[ \t]+/, "", line)
-			i = index(line, ": ")
-			if (i < 2) next
-			key = substr(line, 1, i - 1)
-			value = substr(line, i + 2)
-			sub(/[ \t\r]+$/, "", value)
-			if (key ~ /^(title|release|model|device|hw_id)$/ && !(key in seen) && value != "") {
-				seen[key] = 1
-				print key "\t" value
-			}
-		}' | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {(.[0]): .[1]}) | add // empty'
+# asuswrt-merlin has the helper of addons and marks itself in nvram, the stock firmware runs no user scripts
+is_merlin() {
+	[ -f /usr/sbin/helper.sh ] || [ "$(nvram_get 3rd-party)" = "merlin" ]
 }
 
-# firmware version and model, cached for the uptime
-keenetic_version() {
-	local version
-	if [ ! -s "$KEENETIC_VERSION_PATH" ]; then
-		version=$(rci_get "show/version" | jq -c 'select(type == "object" and (.title // .release // .model) != null)' 2> /dev/null)
-		[ -n "$version" ] || version=$(ndmc_version)
-		if [ -z "$version" ]; then
+# model and firmware of the router, cached for the uptime
+# merlin shows 3.0.0.4 and 388.8 as 3004.388.8, the stock firmware as 3.0.0.4.388
+router_info() {
+	local model firmware extendno os
+	if [ ! -s "$ROUTER_INFO_PATH" ]; then
+		model=$(nvram_get odmpid)
+		[ -n "$model" ] || model=$(nvram_get productid)
+		if [ -z "$model" ]; then
 			echo '{}'
 			return
 		fi
+		extendno=$(nvram_get extendno)
+		if is_merlin; then
+			os="Asuswrt-Merlin"
+			firmware="$(nvram_get firmver | tr -d '.').$(nvram_get buildno)"
+			[ "$extendno" = 0 ] && extendno=
+		else
+			os="Asuswrt"
+			firmware="$(nvram_get firmver).$(nvram_get buildno)"
+		fi
 		mkdir -p "$RUN_TMP"
-		printf '%s\n' "$version" > "$KEENETIC_VERSION_PATH"
+		jq -n -c --arg model "$model" --arg firmware "$firmware${extendno:+_$extendno}" --arg os "$os" \
+			'{model: $model, firmware: $firmware, os: $os}' > "$ROUTER_INFO_PATH"
 	fi
-	cat "$KEENETIC_VERSION_PATH"
+	cat "$ROUTER_INFO_PATH"
+}
+
+# wi-fi networks of the router, "<id> <interface>" per line; the id is the prefix in nvram:
+# wl0, wl1, wl2 are the radios, they are listed always, wl0.1 and others are guest networks, listed when they are on
+wifi_networks() {
+	command -v nvram > /dev/null 2>&1 || return 0
+	nvram show 2> /dev/null | awk '
+		{ i = index($0, "="); if (i < 2) next; key = substr($0, 1, i - 1); value = substr($0, i + 1) }
+		key ~ /^wl[0-9]_ifname$/ && value != "" { radio[substr(key, 1, 3)] = value }
+		key ~ /^wl[0-9]\.[0-9]_bss_enabled$/ && value == "1" { guest[substr(key, 1, 5)] = 1 }
+		key ~ /^wl[0-9]\.[0-9]_ifname$/ && value != "" { guest_ifname[substr(key, 1, 5)] = value }
+		END {
+			for (id in radio) print id, radio[id]
+			for (id in guest) {
+				ifname = id
+				if (id in guest_ifname) ifname = guest_ifname[id]
+				print id, ifname
+			}
+		}' | while read -r id ifname; do
+		[ -e "/sys/class/net/$ifname" ] && echo "$id $ifname"
+	done | LC_ALL=C sort
+}
+
+# interface of a wi-fi network by its id, a guest network has an interface of the same name
+wifi_ifname() {
+	local ifname
+	ifname=$(nvram_get "$1_ifname")
+	echo "${ifname:-$1}"
+}
+
+# macs of the devices connected to a wi-fi interface, in upper case; the driver of broadcom answers through wl
+wifi_stations() {
+	command -v wl > /dev/null 2>&1 || return 0
+	wl -i "$1" assoclist 2> /dev/null | awk '$1 == "assoclist" { print toupper($2) }'
 }
 
 format_filesize() {
@@ -242,7 +270,7 @@ format_filesize() {
 # hash of the code in a source tree (an unpacked archive of the branch), the update check compares it with the installed one:
 # a commit that changes only the readme is not an update; install.sh has the same function
 code_hash() {
-	(cd "$1" && find keenetic install.sh -type f 2> /dev/null | LC_ALL=C sort | xargs sha256sum 2> /dev/null) | sha256sum | cut -d ' ' -f 1
+	(cd "$1" && find asuswrt install.sh -type f 2> /dev/null | LC_ALL=C sort | xargs sha256sum 2> /dev/null) | sha256sum | cut -d ' ' -f 1
 }
 
 # github writes the commit into the pax header of an archive of a branch; install.sh has the same function
@@ -263,20 +291,24 @@ random_hex() {
 }
 
 generate_hwid() {
-	# derive from the model and the mac of the first ethernet interface, so reinstall or config reset keeps the same hwid
+	# derive from the model and the mac of the router, so reinstall or config reset keeps the same hwid
 	local board mac dev
-	board=$(keenetic_version | jq -r '.hw_id // .model // empty' 2> /dev/null)
-	for dev in /sys/class/net/eth* /sys/class/net/*; do
-		[ -e "$dev/address" ] || continue
-		case "${dev##*/}" in
-			lo|br*|ezcfg*|nwg*|t2s*|tun*|ppp*|sit*|ip6tnl*|dummy*|opkgtun*) continue ;;
-		esac
-		mac=$(cat "$dev/address" 2> /dev/null)
-		[ -n "$mac" ] && [ "$mac" != "00:00:00:00:00:00" ] && break
-		mac=
-	done
+	board=$(router_info | jq -r '.model // empty' 2> /dev/null)
+	mac=$(nvram_get lan_hwaddr)
+	[ -n "$mac" ] || mac=$(nvram_get et0macaddr)
+	if [ -z "$mac" ]; then
+		for dev in /sys/class/net/eth* /sys/class/net/*; do
+			[ -e "$dev/address" ] || continue
+			case "${dev##*/}" in
+				lo|br*|wl*|tun*|tap*|ppp*|sit*|ip6tnl*|dummy*|ifb*|wg*|spu*) continue ;;
+			esac
+			mac=$(cat "$dev/address" 2> /dev/null)
+			[ -n "$mac" ] && [ "$mac" != "00:00:00:00:00:00" ] && break
+			mac=
+		done
+	fi
 	if [ -n "$mac" ]; then
-		printf '%s' "$board$mac" | md5sum | cut -d ' ' -f 1
+		printf '%s' "$board$(echo "$mac" | tr 'A-F' 'a-f')" | md5sum | cut -d ' ' -f 1
 	else
 		tr -d '-' < /proc/sys/kernel/random/uuid
 	fi
@@ -288,8 +320,8 @@ hwid_headers() {
 	local hwid
 	hwid=$(cfg_get .config.hwid)
 	[ -n "$hwid" ] || hwid=$(generate_hwid)
-	keenetic_version | jq -r --arg hwid "$hwid" '
-		["x-hwid", $hwid], ["x-device-os", "KeeneticOS"], ["x-ver-os", (.title // .release // "")], ["x-device-model", (.model // .device // "")]
+	router_info | jq -r --arg hwid "$hwid" '
+		["x-hwid", $hwid], ["x-device-os", (.os // "")], ["x-ver-os", (.firmware // "")], ["x-device-model", (.model // "")]
 		| select(.[1] != "") | "\(.[0]): \(.[1])"' 2> /dev/null
 }
 

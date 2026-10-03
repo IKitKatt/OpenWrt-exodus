@@ -303,7 +303,7 @@ prepare_profile() {
 
 # merge the settings into the profile for startup
 mixin_profile() {
-	local mixin_gen expr
+	local mixin_gen expr lan_ip lan_domain
 	log "Mixin" "Mixin config."
 	mixin_gen="$RUN_TMP/mixin.gen.yaml"
 	jq -f "$MIXIN_JQ" "$CONFIG_PATH" | "$YQ" -M -p json -o yaml > "$mixin_gen" || return 1
@@ -316,7 +316,7 @@ mixin_profile() {
 	rm -f "$mixin_gen"
 
 	[ "$c_proxy_enabled" = 1 ] || return 0
-	# keenetic has no tun in the transparent proxy, a tun of the profile would change the routes of the router
+	# there is no tun in the transparent proxy, a tun of the profile would change the routes of the router
 	expr='.tun.enable = false | .listeners = ((.listeners // []) | map(select(.type != "tun")))'
 	# dscp 61 of xkeen: separate listeners that send everything to one proxy, without rules
 	expr="$expr | .listeners = (.listeners | map(select(.name != \"exodus-force-redir\" and .name != \"exodus-force-tproxy\")))"
@@ -328,9 +328,14 @@ mixin_profile() {
 			expr="$expr | .listeners += [{\"name\": \"exodus-force-tproxy\", \"type\": \"tproxy\", \"listen\": \"::\", \"port\": $FORCE_TPROXY_PORT, \"udp\": true, \"proxy\": strenv(EXODUS_FORCE_PROXY)}]"
 		fi
 	fi
-	# my.keenetic.net and keendns names must resolve to real addresses, the router answers them itself
-	expr="$expr | with(select((.dns.fake-ip-filter-mode // \"blacklist\") == \"blacklist\"); .dns.fake-ip-filter = ((.dns.fake-ip-filter // []) + [\"my.keenetic.net\", \"+.keenetic.pro\", \"+.keenetic.link\", \"+.keenetic.name\", \"+.keenetic.io\", \"my.netcraze.net\", \"+.netcraze.pro\", \"+.netcraze.link\", \"+.netcraze.io\"] | unique))"
-	EXODUS_FORCE_PROXY="$c_proxy_force_proxy" "$YQ" -M -i "$expr" "$RUN_PROFILE_PATH"
+	# router.asus.com and the other names of the web interface are answered by the router itself, they resolve to its lan address;
+	# the ddns name (asuscomm.com) and the local domain get real addresses, names of the local domain are asked from the router
+	lan_ip=$(nvram_get lan_ipaddr | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}$')
+	lan_domain=$(nvram_get lan_domain | grep -E '^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*$')
+	expr="$expr | with(select(strenv(EXODUS_LAN_IP) != \"\"); .hosts = ({\"router.asus.com\": strenv(EXODUS_LAN_IP), \"www.asusrouter.com\": strenv(EXODUS_LAN_IP), \"www.asusnetwork.net\": strenv(EXODUS_LAN_IP)} * (.hosts // {})))"
+	expr="$expr | with(select((.dns.fake-ip-filter-mode // \"blacklist\") == \"blacklist\"); .dns.fake-ip-filter = ((.dns.fake-ip-filter // []) + [\"router.asus.com\", \"www.asusrouter.com\", \"www.asusnetwork.net\", \"+.asuscomm.com\"] + ([strenv(EXODUS_LAN_DOMAIN)] | map(select(. != \"\") | \"+.\" + .)) | unique))"
+	expr="$expr | with(select(strenv(EXODUS_LAN_DOMAIN) != \"\" and strenv(EXODUS_LAN_IP) != \"\"); .dns.nameserver-policy[\"+.\" + strenv(EXODUS_LAN_DOMAIN)] |= (. // strenv(EXODUS_LAN_IP)))"
+	EXODUS_FORCE_PROXY="$c_proxy_force_proxy" EXODUS_LAN_IP="$lan_ip" EXODUS_LAN_DOMAIN="$lan_domain" "$YQ" -M -i "$expr" "$RUN_PROFILE_PATH"
 }
 
 # the profile for startup as json, read by the rules and the web ui

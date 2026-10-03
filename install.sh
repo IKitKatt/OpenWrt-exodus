@@ -1,8 +1,9 @@
 #!/bin/sh
 
-# Exodus for Keenetic installer and updater
+# Exodus for Asuswrt-Merlin installer and updater
 # installs into entware: the service, the web ui, the mihomo core and yq, settings and profiles are kept
-# REF=<branch|tag>  install another version, the keenetic branch by default
+# adds a line to the user scripts firewall-start, nat-start and unmount in /jffs/scripts, other lines there are kept
+# REF=<branch|tag>  install another version, the asuswrt branch by default
 # LOW_SPACE=1       remove the current core before installing the new one, for routers with little free space
 # CORE=<core>       install this core without asking: meta (stable), alpha (Mihomo Alpha) or prizrak (Prizrak-Core)
 # GH_PROXY=<url>    download from GitHub through gh-proxy (https://github.com/prettyleaf/gh-proxy), e.g. https://example.com/ghproxy/TOKEN, empty to download directly
@@ -10,7 +11,7 @@
 # the core and GH_PROXY are saved in /opt/etc/exodus/config.json, the next runs and the update page use them
 
 repository="prettyleaf/openwrt-exodus"
-ref="${REF:-keenetic}"
+ref="${REF:-asuswrt}"
 
 export PATH="/opt/bin:/opt/sbin:/sbin:/bin:/usr/sbin:/usr/bin"
 
@@ -64,7 +65,7 @@ check_github() {
 # hash of the code in a source tree, the update page compares it with the latest one: a change of the readme is not an update
 # the same as code_hash in lib/common.sh
 code_hash() {
-	(cd "$1" && find keenetic install.sh -type f 2> /dev/null | LC_ALL=C sort | xargs sha256sum 2> /dev/null) | sha256sum | cut -d ' ' -f 1
+	(cd "$1" && find asuswrt install.sh -type f 2> /dev/null | LC_ALL=C sort | xargs sha256sum 2> /dev/null) | sha256sum | cut -d ' ' -f 1
 }
 
 # github writes the commit into the pax header of an archive of a branch, the same as archive_commit in lib/common.sh
@@ -132,36 +133,89 @@ install_yq() {
 	rm -f "$file"
 	[ -f "$temp_dir/yq/yq_linux_$yq_arch" ] || fail "yq archive has no yq_linux_$yq_arch"
 	chmod 755 "$temp_dir/yq/yq_linux_$yq_arch"
-	"$temp_dir/yq/yq_linux_$yq_arch" --version > /dev/null 2>&1 || fail "yq does not run on this router"
+	if ! "$temp_dir/yq/yq_linux_$yq_arch" --version > /dev/null 2>&1; then
+		rm -rf "$temp_dir/yq"
+		# the release of yq for arm needs an fpu, a yq of entware would be built for the cpu
+		if [ "$core_arch" = "armv5" ] && opkg install yq > /dev/null 2>&1 && /opt/bin/yq --version 2> /dev/null | grep -q mikefarah; then
+			ln -sf /opt/bin/yq "$yq_path"
+			return
+		fi
+		fail "yq does not run on this router"
+	fi
 	mv -f "$temp_dir/yq/yq_linux_$yq_arch" "$yq_path" || fail "yq install failed, not enough free space?"
 	rm -rf "$temp_dir/yq"
 }
 
+# a line of exodus in a user script of asuswrt-merlin, right after the shebang: a script may end with exit
+# the lines of other addons are kept, the old line of exodus is replaced
+hook_add() {
+	local file line
+	file="/jffs/scripts/$1"
+	line="$2 # exodus"
+	if [ -f "$file" ] && head -n 1 "$file" | grep -q '^#!'; then
+		{
+			head -n 1 "$file"
+			echo "$line"
+			tail -n +2 "$file" | grep -v '# exodus$'
+		} > "$file.new"
+	else
+		{
+			echo '#!/bin/sh'
+			echo "$line"
+			[ -f "$file" ] && grep -v '# exodus$' "$file"
+		} > "$file.new"
+	fi
+	mv -f "$file.new" "$file" && chmod 755 "$file"
+}
+
 # check env
 if [ ! -x "/opt/bin/opkg" ]; then
-	fail "Entware is not installed: install the OPKG component of the router and Entware first"
+	fail "Entware is not installed: install it with amtm on a USB drive first"
 fi
-if [ ! -x "/bin/ndmc" ] && [ ! -d "/proc/ndm" ]; then
-	echo "warning: this does not look like a Keenetic router, continue anyway"
+if [ -z "$(nvram get productid 2> /dev/null)" ]; then
+	echo "warning: this does not look like an Asus router, continue anyway"
+elif [ ! -f /usr/sbin/helper.sh ] && [ "$(nvram get 3rd-party 2> /dev/null)" != "merlin" ]; then
+	echo "warning: this is not Asuswrt-Merlin: the stock firmware runs no user scripts, the rules are restored only by the watcher"
 fi
-if [ -x "/opt/sbin/xkeen" ] || [ -f "/opt/etc/init.d/S05xkeen" ]; then
-	if pidof xray > /dev/null 2>&1 || pidof mihomo > /dev/null 2>&1; then
-		fail "XKeen is running, both can not intercept the traffic: stop it (xkeen -stop) and disable its autostart (xkeen -auto) or remove it (xkeen -remove)"
+for tool in iptables iptables-save iptables-restore ipset; do
+	[ -x "/usr/sbin/$tool" ] || command -v "$tool" > /dev/null 2>&1 || fail "$tool of the firmware is not found"
+done
+# other transparent proxies intercept the same traffic
+for name in xray sing-box v2ray clash; do
+	if pidof "$name" > /dev/null 2>&1; then
+		echo "warning: $name is running: if it intercepts the traffic (XRAYUI and similar addons), stop it and disable its autostart"
 	fi
-	echo "warning: XKeen is installed, keep it stopped and its autostart disabled"
-fi
+done
+for pid in $(pidof mihomo 2> /dev/null); do
+	[ "$(readlink "/proc/$pid/exe" 2> /dev/null)" = "$core_path" ] && continue
+	echo "warning: another mihomo is running: if it intercepts the traffic, stop it and disable its autostart"
+	break
+done
 
-# architecture of entware and names of builds for it, keenetic has no fpu on mips
+# the core and yq are static builds, they follow the cpu and the kernel: an arm64 kernel runs arm64 builds whatever entware is
 arch=$(opkg print-architecture | awk '$2 != "all" && $2 != "noarch" { arch = $2 } END { print arch }')
-case "$arch" in
+machine=$(uname -m)
+case "$machine" in
 	aarch64*) core_arch="arm64"; yq_arch="arm64" ;;
-	mipsel*) core_arch="mipsle-softfloat"; yq_arch="mipsle" ;;
-	mips*) core_arch="mips-softfloat"; yq_arch="mips" ;;
-	armv7*) core_arch="armv7"; yq_arch="arm" ;;
+	armv7*)
+		# broadcom northstar (rt-ac68u, rt-ac88u, rt-ac3100 and others) has no fpu, go needs armv5 builds there
+		if grep -q -w -E 'vfp|vfpv3|vfpv4' /proc/cpuinfo 2> /dev/null; then
+			core_arch="armv7"
+		else
+			core_arch="armv5"
+		fi
+		yq_arch="arm"
+		;;
+	mips*)
+		case "$arch" in
+			mipsel*) core_arch="mipsle-softfloat"; yq_arch="mipsle" ;;
+			*) core_arch="mips-softfloat"; yq_arch="mips" ;;
+		esac
+		;;
 	x86_64*) core_arch="amd64-compatible"; yq_arch="amd64" ;;
-	*) fail "unsupported architecture: $arch" ;;
+	*) fail "unsupported architecture: $machine" ;;
 esac
-echo "architecture: $arch"
+echo "architecture: $machine, core builds: $core_arch, entware: $arch"
 
 # temp dir
 temp_dir="/opt/tmp/exodus-install"
@@ -170,12 +224,13 @@ mkdir -p "$temp_dir" || fail "can not create $temp_dir"
 trap 'rm -rf "$temp_dir"' EXIT
 
 # dependencies from entware, curl and jq are needed by the installer itself
+# iptables and ipset are of the firmware, they match its kernel
 echo "install packages"
 opkg update > /dev/null 2>&1 || echo "warning: opkg update failed"
-opkg install curl jq ca-bundle ipset iptables ip-full lighttpd lighttpd-mod-cgi || fail "package install failed"
+opkg install curl jq ca-bundle lighttpd lighttpd-mod-cgi || fail "package install failed"
 
 # access to github: through the given or the saved gh-proxy, then directly
-version_url="https://github.com/$repository/raw/$ref/keenetic/opt/share/exodus/VERSION"
+version_url="https://github.com/$repository/raw/$ref/asuswrt/opt/share/exodus/VERSION"
 saved_gh_proxy=$(config_get .update.gh_proxy)
 if [ "${GH_PROXY+set}" = "set" ]; then
 	case "$GH_PROXY" in
@@ -303,10 +358,10 @@ download "https://github.com/$repository/archive/$ref.tar.gz" "$temp_dir/app.tar
 commit=$(archive_commit "$temp_dir/app.tar.gz")
 rm -f "$temp_dir/app.tar.gz"
 src=$(find "$temp_dir/app" -mindepth 1 -maxdepth 1 -type d | head -n 1)
-if [ -z "$src" ] || [ ! -f "$src/keenetic/opt/share/exodus/exodus" ]; then
+if [ -z "$src" ] || [ ! -f "$src/asuswrt/opt/share/exodus/exodus" ]; then
 	fail "download failed, if the provider slows down GitHub, install through gh-proxy, see README"
 fi
-echo "exodus $(cat "$src/keenetic/opt/share/exodus/VERSION")${commit:+ ($(echo "$commit" | cut -c 1-7))}"
+echo "exodus $(cat "$src/asuswrt/opt/share/exodus/VERSION")${commit:+ ($(echo "$commit" | cut -c 1-7))}"
 code=$(code_hash "$src")
 
 was_running=0
@@ -322,7 +377,7 @@ fi
 echo "install exodus"
 rm -rf "$share_dir.new"
 mkdir -p "$share_dir.new" || fail "can not create $share_dir"
-cp -R "$src/keenetic/opt/share/exodus/." "$share_dir.new/" || fail "install failed, not enough free space?"
+cp -R "$src/asuswrt/opt/share/exodus/." "$share_dir.new/" || fail "install failed, not enough free space?"
 # the installer from the repository root, used by the update page
 cp -f "$src/install.sh" "$share_dir.new/install.sh"
 jq -n --arg ref "$ref" --arg commit "$commit" --arg code "$code" --arg installed "$(date '+%Y-%m-%d %H:%M:%S')" \
@@ -333,13 +388,27 @@ mv "$share_dir.new" "$share_dir" || fail "install failed"
 rm -rf "$share_dir.old"
 chmod 755 "$share_dir/exodus" "$share_dir/www/api.cgi" "$share_dir/install.sh"
 
-mkdir -p /opt/etc/init.d /opt/etc/ndm/netfilter.d /opt/etc/ndm/schedule.d /opt/bin "$home_dir/profiles" "$home_dir/subscriptions" "$home_dir/run/providers/rule" "$home_dir/run/providers/proxy"
-cp -f "$src/keenetic/opt/etc/init.d/S99exodus" /opt/etc/init.d/S99exodus
-cp -f "$src/keenetic/opt/etc/ndm/netfilter.d/50-exodus.sh" /opt/etc/ndm/netfilter.d/50-exodus.sh
-cp -f "$src/keenetic/opt/etc/ndm/schedule.d/50-exodus.sh" /opt/etc/ndm/schedule.d/50-exodus.sh
-chmod 755 /opt/etc/init.d/S99exodus /opt/etc/ndm/netfilter.d/50-exodus.sh /opt/etc/ndm/schedule.d/50-exodus.sh
+mkdir -p /opt/etc/init.d /opt/bin "$home_dir/profiles" "$home_dir/subscriptions" "$home_dir/run/providers/rule" "$home_dir/run/providers/proxy"
+cp -f "$src/asuswrt/opt/etc/init.d/S99exodus" /opt/etc/init.d/S99exodus
+chmod 755 /opt/etc/init.d/S99exodus
 ln -sf "$share_dir/exodus" /opt/bin/exodus
-[ -f "$home_dir/mixin.yaml" ] || cp -f "$src/keenetic/opt/etc/exodus/mixin.yaml" "$home_dir/mixin.yaml"
+
+# the firmware restores its tables without the rules of addons on every restart of the firewall, the user scripts apply them again
+# they run only with "Enable JFFS custom scripts and configs" (Administration - System)
+if [ -d /jffs ] && [ -n "$(nvram get productid 2> /dev/null)" ]; then
+	if [ "$(nvram get jffs2_scripts)" != "1" ]; then
+		echo "enable JFFS custom scripts and configs"
+		nvram set jffs2_scripts=1
+		nvram commit
+	fi
+	mkdir -p /jffs/scripts
+	hook_add firewall-start '[ -x /opt/share/exodus/exodus ] && /opt/share/exodus/exodus hook firewall'
+	hook_add nat-start '[ -x /opt/share/exodus/exodus ] && /opt/share/exodus/exodus hook nat'
+	hook_add unmount '[ -x /opt/share/exodus/exodus ] && /opt/share/exodus/exodus hook unmount "$1"'
+else
+	echo "warning: /jffs is not available, the rules are restored only by the watcher"
+fi
+[ -f "$home_dir/mixin.yaml" ] || cp -f "$src/asuswrt/opt/etc/exodus/mixin.yaml" "$home_dir/mixin.yaml"
 # new options get their defaults, the values of the user win, options removed from exodus are dropped
 # renamed options keep their values; no regex in jq, the jq of entware has none
 config_merge='
@@ -366,14 +435,14 @@ config_merge='
 	| . as $user
 	| $defaults | known($user)'
 if [ -f "$config" ]; then
-	if jq -s --argjson legacy "$legacy" "$config_merge" "$src/keenetic/opt/etc/exodus/config.json" "$config" > "$config.new" 2> /dev/null && [ -s "$config.new" ]; then
+	if jq -s --argjson legacy "$legacy" "$config_merge" "$src/asuswrt/opt/etc/exodus/config.json" "$config" > "$config.new" 2> /dev/null && [ -s "$config.new" ]; then
 		mv -f "$config.new" "$config"
 	else
 		rm -f "$config.new"
 		echo "warning: the config is not valid json, it is kept as is"
 	fi
 else
-	cp -f "$src/keenetic/opt/etc/exodus/config.json" "$config"
+	cp -f "$src/asuswrt/opt/etc/exodus/config.json" "$config"
 fi
 chmod 600 "$config"
 rm -rf "$temp_dir/app"
@@ -429,6 +498,7 @@ if [ "$was_running" = 1 ] || [ "$(config_get .config.enabled)" = "true" ]; then
 fi
 
 port=$(config_get .web.port)
-address=$(ip -o -4 addr show dev br0 2> /dev/null | awk '{ split($4, a, "/"); print a[1]; exit }')
+address=$(nvram get lan_ipaddr 2> /dev/null)
+[ -n "$address" ] || address=$(ip -o -4 addr show dev br0 2> /dev/null | awk '{ split($4, a, "/"); print a[1]; exit }')
 echo "web ui: http://${address:-<router address>}:${port:-9099}/"
 echo "success"

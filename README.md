@@ -2,72 +2,75 @@
 
 [Русский](README.RU.md) | English
 
-# Exodus for Keenetic
+# Exodus for Asuswrt-Merlin
 
-Proxy with [Mihomo](https://github.com/MetaCubeX/mihomo) for Keenetic / Netcraze routers with Entware. This is the `keenetic` branch of [Exodus](https://github.com/prettyleaf/openwrt-exodus), the OpenWrt version lives in `main`.
+Proxy with [Mihomo](https://github.com/MetaCubeX/mihomo) for Asus routers with [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) and Entware. This is the `asuswrt` branch of [Exodus](https://github.com/prettyleaf/openwrt-exodus): the OpenWrt version lives in `main`, the Keenetic one in `keenetic`.
 
 It borrows ideas from [XKeen](https://github.com/jameszeroX/XKeen).
 
 ## Requirements
 
-- KeeneticOS 4.x or newer.
-- Architectures: `aarch64` (arm64), `mipsel` and `mips` (softfloat).
-- About 70 MB free on the Entware storage: the Mihomo core is about 40 MB, yq about 15 MB.
-- XKeen must be stopped and removed from autostart, both intercept the traffic.
+- Asuswrt-Merlin on a Broadcom model. The stock firmware runs no user scripts: the rules are then restored only by the watcher, within 15 seconds after every restart of the firewall.
+- Architectures: `arm64` (RT-AX86U, RT-AX88U, GT-AX6000 and other HND models) and `armv7` (RT-AX58U, RT-AC68U and others). Models without an FPU, like RT-AC68U, get the `armv5` build of the core.
+- Entware on a USB drive, installed with [amtm](https://github.com/decoderman/amtm) (`amtm` → `ep`), and about 70 MB free on it: the Mihomo core is about 40 MB, yq about 15 MB.
+- Other transparent proxies (XRAYUI and similar addons) must be stopped and removed from autostart, they intercept the same traffic.
+- UDP through the proxy needs the TPROXY module of the firmware. Without it UDP goes directly, the app log tells about it.
 
 ### Before the installation
 
-**1. Components of KeeneticOS.** Install them in the web interface of the router (General settings → Component options), the router reboots.
-
-| Component | Why |
-| --- | --- |
-| **Open Package support** (OPKG) | required, Entware runs on it |
-| **Kernel modules for Netfilter** | required: TPROXY (UDP, and TCP in the TPROXY mode) and the DSCP marks |
-| **IPv6 protocol** | for IPv6 through the proxy, always on in KeeneticOS 5 |
-| USB drives and the **Ext** file system | when Entware is on a USB drive |
-
-**2. Entware.** Install it by the [Keenetic guide](https://help.keenetic.com/hc/en-us/articles/360021214160) on a USB drive or on the internal storage of models that have one, and log in to its SSH console.
+1. **SSH.** Administration → System → Enable SSH: LAN only.
+2. **Entware.** Run `amtm` in the SSH console and install Entware (`ep`) on a USB drive formatted as ext4.
+3. **JFFS custom scripts and configs** (Administration → System) must be on. The installer turns it on when it is off.
 
 ## Install & Update
 
-In the SSH console of Entware:
+In the SSH console of the router:
 
 ```shell
-opkg update && opkg install curl
-curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/keenetic/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/install.sh | sh
 ```
 
-At the end it prints the address of the web UI, `http://192.168.1.1:9099/` by default.
+At the end it prints the address of the web UI, `http://192.168.50.1:9099/` with the default address of the router.
 
 Options can be passed as environment variables before `sh`:
 
 ```shell
-curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/keenetic/install.sh | CORE=alpha PASSWORD=secret sh
+curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/install.sh | CORE=alpha PASSWORD=secret sh
 ```
+
+| Variable | Meaning |
+| --- | --- |
+| `CORE` | `meta` (stable Mihomo), `alpha` (Mihomo Alpha) or `prizrak` ([Prizrak-Core](https://github.com/legiz-ru/Prizrak-Core)), asked otherwise |
+| `PASSWORD` | password of the web UI on the first install, asked or generated otherwise |
+| `GH_PROXY` | download from GitHub through [gh-proxy](https://github.com/prettyleaf/gh-proxy): `https://example.com/ghproxy/TOKEN` |
+| `LOW_SPACE=1` | remove the current core before writing the new one |
+| `REF` | another branch or tag |
 
 ## How To Use
 
 1. Open `http://<router address>:9099/` and log in. The web UI is in English and Russian, with light and dark themes.
 2. **Profiles**: add a subscription or upload a profile.
-3. **Status**: enable the service, choose the profile, choose the mode and the devices / Wi-Fi points / segments in the Devices section, then **Save & Apply**.
-4. **Settings** holds only what makes sense to change on Keenetic: proxy modes, ports and exclusions, DSCP, a few Mihomo options, your own rules, the service. Everything else (DNS servers, hosts, sniffer, rule providers) goes to the profile or to the mixin file on the **Editor** page, it is merged into the profile on every start.
+3. **Status**: enable the service, choose the profile, choose the mode and the devices / Wi-Fi networks / segments in the Devices section, then **Save & Apply**. Device names come from the client list of the router, DHCP and its network map.
+4. **Settings** holds only what makes sense to change on the router: proxy modes, ports and exclusions, DSCP, a few Mihomo options, your own rules, the service. Everything else (DNS servers, hosts, sniffer, rule providers) goes to the profile or to the mixin file on the **Editor** page, it is merged into the profile on every start.
 
 The **Dashboard** button opens Zashboard, the core downloads it on the first start.
 
 ## How It Works
 
-1. The settings are merged into the profile; a subscription is downloaded when its interval passed.
-2. Mihomo starts and is restarted if it crashes. The memory limit is set on Settings → Mihomo: `GOMEMLIMIT` is half of the RAM by default, the file limit is 40000 on arm64 and 10000 on mips.
-3. When the core listens on its ports, the iptables and ipset rules and the TPROXY route are turned on.
-4. NDM rebuilds iptables on many events. The rules are restored by the hook `/opt/etc/ndm/netfilter.d/50-exodus.sh`, and every 15 seconds they are checked by the watcher (`watch`), which also updates the subscription, runs the scheduled restart and clears the logs over the size limit.
+1. The settings are merged into the profile; a subscription is downloaded when its interval passed. `router.asus.com` resolves to the router, names of the local domain are asked from the router.
+2. Mihomo starts and is restarted if it crashes. The memory limit is set on Settings → Mihomo: `GOMEMLIMIT` is half of the RAM by default, the file limit is 40000 on arm64 and 10000 on other models.
+3. When the core listens on its ports, the iptables and ipset rules and the TPROXY route are turned on. They use iptables and ipset of the firmware, they match its kernel.
+4. The firmware restores its iptables tables without the rules of addons on every restart of the firewall: a reconnect of the WAN, a change in the web interface. The rules are restored by a line in `/jffs/scripts/firewall-start` and `/jffs/scripts/nat-start`, and every 15 seconds they are checked by the watcher (`watch`), which also syncs the clients of the chosen Wi-Fi networks, updates the subscription, runs the scheduled restart and clears the logs over the size limit.
+5. The proxied traffic goes to the router itself, past the filtering of forwarded traffic. With **Respect parental control** on, it is checked by the parental control chain of the firmware (`PControls`), so blocked devices and time scheduling apply to it too.
+6. `/jffs/scripts/unmount` stops the proxy before its USB drive is unmounted: the rules must not stay without the core.
 
 ## Uninstall
 
 ```shell
-curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/keenetic/uninstall.sh | sh
+curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/uninstall.sh | sh
 ```
 
-With `KEEP_CONFIG=1` the settings, profiles and subscriptions in `/opt/etc/exodus` are kept. Entware packages are not removed, other applications may use them.
+The lines of Exodus are removed from `/jffs/scripts`, the lines of other addons are kept. With `KEEP_CONFIG=1` the settings, profiles and subscriptions in `/opt/etc/exodus` are kept. Entware packages are not removed, other applications may use them.
 
 ## Command Line
 
@@ -91,10 +94,13 @@ exodus passwd          # change the password of the web UI
 | `/opt/etc/exodus/run/` | working directory of the core: profile for startup, providers, dashboard |
 | `/opt/share/exodus/` | scripts and the web UI |
 | `/opt/libexec/exodus/` | `mihomo` and `yq` |
+| `/opt/etc/init.d/S99exodus` | start with Entware |
+| `/jffs/scripts/firewall-start`, `nat-start`, `unmount` | one line marked `# exodus` in each |
 | `/tmp/exodus/log/` | logs of the app, the core and the update |
 
 ## Special Thanks
 
 - [OpenWrt-nikki](https://github.com/nikkinikki-org/OpenWrt-nikki) and its [contributors](https://github.com/nikkinikki-org/OpenWrt-nikki/graphs/contributors)
-- [XKeen](https://github.com/jameszeroX/XKeen) for the research of Keenetic
+- [XKeen](https://github.com/jameszeroX/XKeen) for the transparent proxy on iptables and the DSCP marks
+- [Asuswrt-Merlin](https://github.com/RMerl/asuswrt-merlin.ng) for the user scripts and [amtm](https://github.com/decoderman/amtm) for Entware
 - [Prizrak-Core](https://github.com/legiz-ru/Prizrak-Core) and its [contributors](https://github.com/legiz-ru/Prizrak-Core/graphs/contributors)
