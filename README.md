@@ -23,6 +23,8 @@ Other routers have their own branches: [Keenetic / Netcraze](https://github.com/
 - Installation through your own [gh-proxy](https://github.com/prettyleaf/gh-proxy) when GitHub is blocked by the provider
 - Per-device proxy selection: proxy everyone except the selected devices, or only the selected devices
 - HWID headers for subscriptions, enabled by default
+- Provider headers of subscriptions: `profile-title` names the subscription, `announce` and `support-url` are shown on the status page, `profile-logo` next to the subscription
+- Subscription auto update by `profile-update-interval` of the provider or your own interval, the subscription in use is applied with a service reload
 - Profile Mixin
 - Profile Editor
 - Scheduled Restart
