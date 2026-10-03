@@ -46,6 +46,19 @@ curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/i
 | `LOW_SPACE=1` | remove the current core before writing the new one |
 | `REF` | another branch or tag |
 
+### Versions
+
+Exodus has one version for all routers, the version of the [releases](https://github.com/prettyleaf/openwrt-exodus/releases) of the project: it is in `/opt/share/exodus/VERSION`, on the **Updates** page and in the build info. The **Updates** page offers an update when the code of the `asuswrt` branch changes, a change of the readme does not count.
+
+## Migrating from Another Proxy
+
+Two transparent proxies can not intercept the same traffic.
+
+1. Stop the other addon (XRAYUI, a Clash or sing-box addon) and turn off its autostart, or remove it by its instructions.
+2. Install Exodus, see [Install & Update](#install--update).
+3. **Profiles**: add the subscription of your provider. A Mihomo (Clash Meta) config of the other addon can be uploaded as a profile as it is: Exodus sets its ports, the DNS listener, the API and the dashboard over it, TUN of the profile is turned off. An Xray config does not fit, Exodus needs a subscription or a config for Mihomo.
+4. **Status → Devices**: choose the devices that go through the proxy, then **Save & Apply**.
+
 ## How To Use
 
 1. Open `http://<router address>:9099/` and log in. The web UI is in English and Russian, with light and dark themes.

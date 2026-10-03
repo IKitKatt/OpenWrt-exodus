@@ -41,4 +41,5 @@ jobs:
           jq -e -f asuswrt/opt/share/exodus/lib/mixin.jq asuswrt/opt/etc/exodus/config.json > /dev/null
 
       - name: Version
-        run: grep -q -E '^[0-9][0-9.]+$' asuswrt/opt/share/exodus/VERSION
+        # the version of the releases: MAJOR.MINOR.PATCH
+        run: grep -q -E '^[0-9]+\.[0-9]+\.[0-9]+$' asuswrt/opt/share/exodus/VERSION
