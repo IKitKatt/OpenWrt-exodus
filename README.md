@@ -45,6 +45,36 @@ Options can be passed as environment variables before `sh`:
 curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/keenetic/install.sh | CORE=alpha PASSWORD=secret sh
 ```
 
+### Versions
+
+Exodus has one version for all routers, the version of the [releases](https://github.com/prettyleaf/openwrt-exodus/releases) of the project: it is in `/opt/share/exodus/VERSION`, on the **Updates** page and in the build info. The **Updates** page offers an update when the code of the `keenetic` branch changes, a change of the readme does not count.
+
+## Migrating from XKeen
+
+Exodus replaces XKeen with the Mihomo core, both intercept the same traffic and can not run together.
+
+1. Stop XKeen and turn off its autostart, or remove it completely:
+
+   ```shell
+   xkeen -stop
+   xkeen -auto off
+   # or: xkeen -remove
+   ```
+
+   The installer of Exodus stops with an error while XKeen is running.
+2. Install Exodus, see [Install & Update](#install--update).
+3. **Profiles**: add the subscription of your provider, the same link as in `proxy-providers` of XKeen. Or take the whole config of XKeen as a profile and choose `File: xkeen.yaml` on **Status**:
+
+   ```shell
+   cp /opt/etc/mihomo/config.yaml /opt/etc/exodus/profiles/xkeen.yaml
+   ```
+
+   Exodus sets its ports, the DNS listener, the API and the dashboard over the profile, TUN of the profile is turned off.
+4. **Status → Devices**: XKeen proxies the devices of the `XKeen` access policy, Exodus chooses them here. To proxy only them, choose the mode **Only selected** and these devices or their segment. The policy can be removed in the router afterwards.
+5. **Settings**: the DSCP marks 61, 62 and 63 are the same as in XKeen. The ports of `port_proxying.lst` and `port_exclude.lst` and the networks of `ip_exclude.lst` from `/opt/etc/xkeen` go to **Ports and exclusions**.
+
+Going back to XKeen: turn off **Enable** on **Status** or [uninstall](#uninstall) Exodus, then `xkeen -auto on` and `xkeen -start`.
+
 ## How To Use
 
 1. Open `http://<router address>:9099/` and log in. The web UI is in English and Russian, with light and dark themes.

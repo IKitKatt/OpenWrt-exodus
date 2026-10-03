@@ -1944,7 +1944,7 @@ function pageUpdates() {
             title: _('Versions'),
             info: [
                 _('Exodus and the core are downloaded from GitHub into Entware. Settings, profiles and subscriptions are kept.'),
-                _('Exodus has no numbered releases: an update is offered when the code of its branch changes, a change of the readme does not count. The core is compared by its version.'),
+                _('Exodus has the version of the releases of the project, the same on every router. An update is offered when the code of its branch changes, a change of the readme does not count. The core is compared by its version.'),
                 _('The core and the gh-proxy chosen in the installer are kept, run the installer again to change them.'),
                 _('GitHub is asked at most every 6 hours, Check again asks now.')
             ],

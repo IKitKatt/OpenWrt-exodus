@@ -146,7 +146,7 @@ if [ ! -x "/bin/ndmc" ] && [ ! -d "/proc/ndm" ]; then
 fi
 if [ -x "/opt/sbin/xkeen" ] || [ -f "/opt/etc/init.d/S05xkeen" ]; then
 	if pidof xray > /dev/null 2>&1 || pidof mihomo > /dev/null 2>&1; then
-		fail "XKeen is running, both can not intercept the traffic: stop it (xkeen -stop) and disable its autostart (xkeen -auto) or remove it (xkeen -remove)"
+		fail "XKeen is running, both can not intercept the traffic: stop it (xkeen -stop) and disable its autostart (xkeen -auto off) or remove it (xkeen -remove)"
 	fi
 	echo "warning: XKeen is installed, keep it stopped and its autostart disabled"
 fi

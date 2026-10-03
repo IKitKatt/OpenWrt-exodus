@@ -90,7 +90,7 @@ window.I18N_RU = {
     "Everything else": "Всё остальное",
     "Exodus": "Exodus",
     "Exodus and the core are downloaded from GitHub into Entware. Settings, profiles and subscriptions are kept.": "Exodus и ядро скачиваются с GitHub в Entware. Настройки, профили и подписки сохраняются.",
-    "Exodus has no numbered releases: an update is offered when the code of its branch changes, a change of the readme does not count. The core is compared by its version.": "У Exodus нет нумерованных релизов: обновление предлагается, когда меняется код его ветки, изменения README не считаются. Ядро сравнивается по версии.",
+    "Exodus has the version of the releases of the project, the same on every router. An update is offered when the code of its branch changes, a change of the readme does not count. The core is compared by its version.": "Версия Exodus — версия релизов проекта, одна на всех роутерах. Обновление предлагается, когда меняется код его ветки, изменения README не считаются. Ядро сравнивается по версии.",
     "Expires": "Истекает",
     "Failed": "Ошибка",
     "Failed to check for updates": "Не удалось проверить обновления",
