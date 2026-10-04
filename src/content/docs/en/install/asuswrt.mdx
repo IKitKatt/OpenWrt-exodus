@@ -35,7 +35,7 @@ In the SSH console of the router:
 curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/install.sh | sh
 ```
 
-The installer installs `curl jq ca-bundle lighttpd lighttpd-mod-cgi` from Entware, plus `coreutils-sha256sum` and `coreutils-md5sum` when the firmware has no `sha256sum` or `md5sum`; iptables and ipset are of the firmware, they match its kernel. At the end it prints the address of the [web UI](/en/usage/web-ui/), `http://192.168.50.1:9099/` with the default address of the router.
+The installer installs `curl jq ca-bundle lighttpd lighttpd-mod-cgi` from Entware; iptables, ipset and openssl are of the firmware, iptables and ipset match its kernel. At the end it prints the address of the [web UI](/en/usage/web-ui/), `http://192.168.50.1:9099/` with the default address of the router.
 
 To update, run the same command or use the **Updates** page of the web UI. Installer options are on the [Installer options](/en/install/options/) page.
 
