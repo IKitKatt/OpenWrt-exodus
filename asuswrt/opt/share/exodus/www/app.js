@@ -1165,7 +1165,6 @@ function pageStatus() {
         title: _('Service'),
         action: live(statusBadge, () => [status().running, !!state.status]),
         content: [
-            state.config.config.enabled !== true ? alertBox('warning', _('The service is disabled'), _('It does not start until Enable is on. Turn it on below and choose Save & Apply.')) : null,
             E('div', { class: 'grid-2 service-grid' }, [
                 E('div', { class: 'stack' }, [
                     live(() => {
@@ -1192,11 +1191,11 @@ function pageStatus() {
                             btn(_('Stop'), { variant: 'outline', icon: 'square', onClick: () => serviceOp('stop') }),
                             btn(_('Dashboard'), { variant: 'outline', icon: 'external-link', onClick: openDashboard })
                         ]
-                        : [btn(_('Start'), { icon: 'play', disabled: state.config.config.enabled !== true, onClick: () => serviceOp('start') })]
+                        : [btn(_('Start'), { icon: 'play', onClick: () => serviceOp('start') })]
                     ), () => [status().running]))
                 ]),
                 E('div', { class: 'stack' }, [
-                    switchField(_('Enable'), _('Run the service and start it when the router boots.'), ref('config.enabled')),
+                    switchField(_('Autostart'), _('Start the service when the router boots.'), ref('config.enabled')),
                     field(_('Profile'), select(ref('config.profile'), profileChoices(), { optional: true, placeholder: _('Not selected') }), null, null, [
                         _('A subscription or an uploaded file, they are managed on the Profiles page.'),
                         _('On every start the profile is merged with the settings of Exodus and the mixin file, a subscription is downloaded again unless its update is manual.'),

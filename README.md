@@ -64,7 +64,7 @@ Two transparent proxies can not intercept the same traffic.
 
 1. Open `http://<router address>:9099/` and log in. The web UI is in English and Russian, with light and dark themes.
 2. **Profiles**: add a subscription or upload a profile.
-3. **Status**: enable the service, choose the profile, choose the mode and the devices / Wi-Fi networks / segments in the Devices section, then **Save & Apply**. Device names come from the client list of the router, DHCP and its network map.
+3. **Status**: turn on **Autostart**, choose the profile, choose the mode and the devices / Wi-Fi networks / segments in the Devices section, then **Save & Apply**. Device names come from the client list of the router, DHCP and its network map.
 4. **Settings** holds only what makes sense to change on the router: proxy modes, ports and exclusions, DSCP, a few Mihomo options, your own rules, the service. Everything else (DNS servers, hosts, sniffer, rule providers) goes to the profile or to the mixin file on the **Editor** page, it is merged into the profile on every start.
 
 The **Dashboard** button opens Zashboard, the core downloads it on the first start.

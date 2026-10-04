@@ -123,12 +123,6 @@ start_locked() {
 		log "App" "Already running."
 		return 0
 	fi
-	if [ "$c_config_enabled" != 1 ]; then
-		log "App" "Disabled."
-		log "App" "Exit."
-		return 0
-	fi
-	log "App" "Enabled."
 	log "App" "Start."
 	if [ ! -x "$PROG" ] || [ ! -x "$YQ" ]; then
 		log "App" "Core or yq is not executable, run the installer again."
@@ -557,14 +551,18 @@ case "$cmd" in
 	restart|reload) stop; start ;;
 	status) status ;;
 	boot)
-		# boot from the init script: start delay without blocking the other services
+		# boot from the init script: only with the autostart, the start delay does not block the other services
 		prepare_files
-		delay=$(cfg_get .config.start_delay)
-		if [ "$(cfg_get .config.enabled)" = "true" ] && [ "${delay:-0}" -gt 0 ] 2> /dev/null; then
-			log "App" "Start after $delay seconds."
-			sleep "$delay"
+		if [ "$(cfg_get .config.enabled)" = "true" ]; then
+			delay=$(cfg_get .config.start_delay)
+			if [ "${delay:-0}" -gt 0 ] 2> /dev/null; then
+				log "App" "Start after $delay seconds."
+				sleep "$delay"
+			fi
+			start
+		else
+			log "App" "Autostart is off."
 		fi
-		start
 		;;
 	supervise) supervise ;;
 	watch) watch ;;
