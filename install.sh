@@ -230,7 +230,9 @@ opkg update > /dev/null 2>&1 || echo "warning: opkg update failed"
 opkg install curl jq ca-bundle lighttpd lighttpd-mod-cgi || fail "package install failed"
 # the busybox of the firmware may have no sha256sum or md5sum: secrets, the password and the update check need them
 for tool in sha256sum md5sum; do
-	command -v "$tool" > /dev/null 2>&1 || opkg install "coreutils-$tool" || fail "package install failed"
+	command -v "$tool" > /dev/null 2>&1 && continue
+	# opkg counts a package as installed even when its file is gone, a plain install keeps it broken
+	opkg install --force-reinstall "coreutils-$tool" || fail "package install failed"
 	# the package puts the tool into /opt/libexec, the link in /opt/bin is an opkg alternative and may be missing
 	if ! command -v "$tool" > /dev/null 2>&1 && [ -x "/opt/libexec/$tool-coreutils" ]; then
 		ln -sf "/opt/libexec/$tool-coreutils" "/opt/bin/$tool"
