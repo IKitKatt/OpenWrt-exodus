@@ -19,7 +19,7 @@ body:
       label: Confirm / 确认
       description: Please confirm / 请你确认
       options:
-        - label: I have checked the Wiki and found no solution / 我已经查看过Wiki，没有找到解决办法
+        - label: I have checked the documentation and found no solution / 我已经查看过文档，没有找到解决办法
           required: true
         - label: I have searched the Issue and found no related issues / 我已经搜索过Issue，没有找到相关问题
           required: true

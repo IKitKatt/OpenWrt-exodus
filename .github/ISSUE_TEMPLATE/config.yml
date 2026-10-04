@@ -1,14 +1,14 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Wiki / 文档
-    about: Check it before start a new issue
-    url: https://github.com/nikkinikki-org/OpenWrt-nikki/wiki
-  - name: FAQ / 常见问题
-    about: Check it before start a new issue
-    url: https://github.com/nikkinikki-org/OpenWrt-nikki/wiki/FAQ
-  - name: Changelog / 更新日志
-    about: Check it before start a new issue
-    url: https://github.com/nikkinikki-org/OpenWrt-nikki/wiki/Changelog
-  - name: How To Ask Questions The Smart Way / 提问的智慧
-    about: Read it before start a new issue
+  - name: Documentation / Документация
+    about: Check it before you open an issue / Посмотрите перед тем, как открыть issue
+    url: https://prettyleaf.github.io/OpenWrt-exodus/en/
+  - name: Troubleshooting / Решение проблем
+    about: Common problems and how to build the debug report / Частые проблемы и как собрать отчёт для отладки
+    url: https://prettyleaf.github.io/OpenWrt-exodus/en/troubleshooting/
+  - name: Releases / Релизы
+    about: What changed in each version / Что изменилось в каждой версии
+    url: https://github.com/prettyleaf/openwrt-exodus/releases
+  - name: How To Ask Questions The Smart Way
+    about: Read it before you open an issue
     url: http://www.catb.org/~esr/faqs/smart-questions.html
