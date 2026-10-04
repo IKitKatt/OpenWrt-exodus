@@ -5,10 +5,11 @@ import starlightScrollToTop from 'starlight-scroll-to-top';
 import rehypeBaseLinks from './src/plugins/rehype-base-links.mjs';
 
 const repository = 'https://github.com/prettyleaf/openwrt-exodus';
-const base = '/openwrt-exodus';
+// the path of GitHub Pages is case-sensitive and follows the name of the repository
+const base = '/OpenWrt-exodus';
 
 export default defineConfig({
-	// GitHub Pages of the repository: https://prettyleaf.github.io/openwrt-exodus/
+	// GitHub Pages of the repository: https://prettyleaf.github.io/OpenWrt-exodus/
 	site: 'https://prettyleaf.github.io',
 	base,
 	markdown: { processor: unified({ rehypePlugins: [[rehypeBaseLinks, { base }]] }) },

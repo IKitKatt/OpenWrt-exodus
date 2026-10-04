@@ -53,7 +53,7 @@ The site is built from the `docs` branch and published to GitHub Pages by the `d
 ```shell
 git switch docs
 npm install
-npm run dev      # http://localhost:4321/openwrt-exodus/
+npm run dev      # http://localhost:4321/OpenWrt-exodus/
 npm run build    # build into ./dist
 ```
 

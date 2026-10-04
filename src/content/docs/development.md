@@ -53,7 +53,7 @@ make package/luci-app-exodus/compile
 ```shell
 git switch docs
 npm install
-npm run dev      # http://localhost:4321/openwrt-exodus/
+npm run dev      # http://localhost:4321/OpenWrt-exodus/
 npm run build    # сборка в ./dist
 ```
 
