@@ -4,7 +4,7 @@
 [文档 (English / Русский)](https://prettyleaf.github.io/OpenWrt-exodus/en/)
 
 > [!CAUTION]
-> Exodus is a project, which was made _for fun_ without the intention of “overshadowing other projects” or casting other projects in a negative light. The project is provided “as is”; we will listen to feedback and reports of bugs and/or errors, provided they are presented appropriately and with an understanding of this message. This project has never been and will never be a “pay to use” service. Please use the project for educational purposes and with full awareness of all possible risks.
+> Exodus 是一个纯粹出于娱乐目的而开发的项目，无意“盖过其他项目”或贬低其他项目。本项目按“原样”提供；只要反馈和关于漏洞及/或错误的报告以适当方式提出，并且理解本声明的内容，我们将予以倾听。本项目从未且永远不会成为“付费使用”的服务。请将本项目用于教育目的，并充分意识到所有可能的风险。
 
 # Exodus
 
