@@ -148,18 +148,19 @@ update_subscription() {
 		# the info address may carry the headers instead of the subscription
 		meta=$(provider_meta "$header_tmp" "$info_header_tmp")
 		[ -n "$meta" ] || meta='{}'
+		# the expire date stays a timestamp, the web ui formats it: busybox date of a 32-bit firmware overflows after 2038
 		jq -n \
 			--argjson meta "$meta" \
 			--argjson now "$now" \
-			--arg expire "$([ -n "$expire" ] && date "+%Y-%m-%d %H:%M:%S" -d "@$expire" 2> /dev/null)" \
+			--arg expire "$expire" \
 			--arg upload "$(format_filesize "$upload")" \
 			--arg download "$(format_filesize "$download")" \
 			--arg total "$(format_filesize "$total")" \
 			--arg used "$(format_filesize "$used")" \
 			--arg available "$(format_filesize "$available")" \
 			--arg update "$(date "+%Y-%m-%d %H:%M:%S")" \
-			'{expire: $expire, upload: $upload, download: $download, total: $total, used: $used, available: $available, update: $update}
-			| with_entries(select(.value != ""))
+			'{expire_ts: (if $expire == "" then null else ($expire | tonumber) end), upload: $upload, download: $download, total: $total, used: $used, available: $available, update: $update}
+			| with_entries(select(.value != "" and .value != null))
 			| . + $meta + {update_ts: $now, checked: $now, success: true}' > "$state"
 		rm -f "$info_header_tmp" "$header_tmp"
 		mv -f "$file_tmp" "$file"
@@ -337,7 +338,7 @@ mixin_profile() {
 # the api of the core is saved apart, the status of the web ui reads it every few seconds
 profile_json() {
 	"$YQ" -M -p yaml -o json "$RUN_PROFILE_PATH" > "$PROFILE_JSON_PATH.tmp" 2> /dev/null && mv -f "$PROFILE_JSON_PATH.tmp" "$PROFILE_JSON_PATH"
-	jq -c '{listen: (.["external-controller"] // ""), tls_listen: (.["external-controller-tls"] // ""), secret: (.secret // ""), ui_name: (.["external-ui-name"] // "")}' \
+	jq -c '{listen: (.["external-controller"] // ""), tls_listen: (.["external-controller-tls"] // ""), secret: (.secret // ""), ui_name: (.["external-ui-name"] // ""), ui_url: (.["external-ui-url"] // "")}' \
 		"$PROFILE_JSON_PATH" > "$API_JSON_PATH" 2> /dev/null
 }
 
