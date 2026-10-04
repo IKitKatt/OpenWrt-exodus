@@ -6,8 +6,6 @@ English | [中文](README.zh.md)
 > [!CAUTION]
 > Exodus is a project, which was made _for fun_ without the intention of “overshadowing other projects” or casting other projects in a negative light. The project is provided “as is”; we will listen to feedback and reports of bugs and/or errors, provided they are presented appropriately and with an understanding of this message. This project has never been and will never be a “pay to use” service. Please use the project for educational purposes and with full awareness of all possible risks.
 
-Translated with DeepL.com (free version)
-
 # Exodus
 
 Transparent Proxy with Mihomo on OpenWrt. Fork of [OpenWrt-nikki](https://github.com/nikkinikki-org/OpenWrt-nikki).
