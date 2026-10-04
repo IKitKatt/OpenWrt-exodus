@@ -1,7 +1,12 @@
 ![GitHub License](https://img.shields.io/github/license/prettyleaf/openwrt-exodus?style=for-the-badge&logo=github) ![GitHub Tag](https://img.shields.io/github/v/release/prettyleaf/openwrt-exodus?style=for-the-badge&logo=github) ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/prettyleaf/openwrt-exodus/total?style=for-the-badge&logo=github)
 
-English | [中文](README.zh.md)
+English | [中文](README.zh.md)  
 [Documentation](https://prettyleaf.github.io/OpenWrt-exodus/en/)
+
+> [!CAUTION]
+> Exodus is a project, which was made _for fun_ without the intention of “overshadowing other projects” or casting other projects in a negative light. The project is provided “as is”; we will listen to feedback and reports of bugs and/or errors, provided they are presented appropriately and with an understanding of this message. This project has never been and will never be a “pay to use” service. Please use the project for educational purposes and with full awareness of all possible risks.
+
+Translated with DeepL.com (free version)
 
 # Exodus
 
