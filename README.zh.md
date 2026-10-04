@@ -3,6 +3,9 @@
 中文 | [English](README.md)
 [文档 (English / Русский)](https://prettyleaf.github.io/OpenWrt-exodus/en/)
 
+> [!CAUTION]
+> Exodus is a project, which was made _for fun_ without the intention of “overshadowing other projects” or casting other projects in a negative light. The project is provided “as is”; we will listen to feedback and reports of bugs and/or errors, provided they are presented appropriately and with an understanding of this message. This project has never been and will never be a “pay to use” service. Please use the project for educational purposes and with full awareness of all possible risks.
+
 # Exodus
 
 在 OpenWrt 上使用 Mihomo 进行透明代理。[OpenWrt-nikki](https://github.com/nikkinikki-org/OpenWrt-nikki) 的分支。
