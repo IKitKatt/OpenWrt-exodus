@@ -184,10 +184,13 @@ start_service() {
 		if [ "$overwrite_sniffer_sniff" = 1 ]; then
 			yq -M -i 'del(.sniffer.sniff)' "$RUN_PROFILE_PATH"
 		fi
+		# merge keys (<<) as the yaml spec and the core read them: the keys of the mapping win over the anchor; old yq has no such flag
+		local yq_anchors
+		yq --help 2>&1 | grep -q -e '--yaml-fix-merge-anchor-to-spec' && yq_anchors="--yaml-fix-merge-anchor-to-spec"
 		if [ "$mixin_file_content" = 0 ]; then
-			ucode -S "$MIXIN_UC" | yq -M -p json -o yaml | yq -M -i eval-all '... comments="" | . as $item ireduce ({}; . * $item ) | .proxies = .nikki-proxies + .proxies | del(.nikki-proxies) | .proxy-groups = .nikki-proxy-groups + .proxy-groups | del(.nikki-proxy-groups) | .rules = .nikki-rules + .rules | del(.nikki-rules) | explode(.)' "$RUN_PROFILE_PATH" -
+			ucode -S "$MIXIN_UC" | yq -M -p json -o yaml | yq ${yq_anchors:+"$yq_anchors"} -M -i eval-all '... comments="" | . as $item ireduce ({}; . * $item ) | .proxies = .nikki-proxies + .proxies | del(.nikki-proxies) | .proxy-groups = .nikki-proxy-groups + .proxy-groups | del(.nikki-proxy-groups) | .rules = .nikki-rules + .rules | del(.nikki-rules) | explode(.)' "$RUN_PROFILE_PATH" -
 		elif [ "$mixin_file_content" = 1 ]; then
-			ucode -S "$MIXIN_UC" | yq -M -p json -o yaml | yq -M -i eval-all '... comments="" | . as $item ireduce ({}; . * $item ) | .proxies = .nikki-proxies + .proxies | del(.nikki-proxies) | .proxy-groups = .nikki-proxy-groups + .proxy-groups | del(.nikki-proxy-groups) | .rules = .nikki-rules + .rules | del(.nikki-rules) | explode(.)' "$RUN_PROFILE_PATH" "$MIXIN_FILE_PATH" -
+			ucode -S "$MIXIN_UC" | yq -M -p json -o yaml | yq ${yq_anchors:+"$yq_anchors"} -M -i eval-all '... comments="" | . as $item ireduce ({}; . * $item ) | .proxies = .nikki-proxies + .proxies | del(.nikki-proxies) | .proxy-groups = .nikki-proxy-groups + .proxy-groups | del(.nikki-proxy-groups) | .rules = .nikki-rules + .rules | del(.nikki-rules) | explode(.)' "$RUN_PROFILE_PATH" "$MIXIN_FILE_PATH" -
 		fi
 		if [ "$proxy_enabled" = 1 ]; then
 			if yq -M -e 'has("tun")' "$RUN_PROFILE_PATH" > /dev/null 2>&1; then
