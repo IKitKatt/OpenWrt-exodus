@@ -7,13 +7,16 @@
 # LOW_SPACE=1       remove the current core before installing the new one, for routers with little free space
 # CORE=<core>       install this core without asking: meta (stable), alpha (Mihomo Alpha) or prizrak (Prizrak-Core)
 # GH_PROXY=<url>    download from GitHub through gh-proxy (https://github.com/prettyleaf/gh-proxy), e.g. https://example.com/ghproxy/TOKEN, empty to download directly
-# PASSWORD=<text>   password of the web ui on the first install, asked or generated otherwise
-# the core and GH_PROXY are saved in /opt/etc/exodus/config.json, the next runs and the update page use them
+# the core and GH_PROXY are saved in $EXODUS_OPT/etc/exodus/config.json, the next runs and the update page use them
 
 repository="prettyleaf/openwrt-exodus"
 ref="${REF:-asuswrt}"
 
-export PATH="/opt/bin:/opt/sbin:/sbin:/bin:/usr/sbin:/usr/bin"
+EXODUS_OPT="${EXODUS_OPT:-/opt}"
+EXODUS_JFFS="${EXODUS_JFFS:-/jffs}"
+EXODUS_HELPER="${EXODUS_HELPER:-/usr/sbin/helper.sh}"
+export EXODUS_OPT EXODUS_JFFS EXODUS_HELPER
+export PATH="$EXODUS_OPT/bin:$EXODUS_OPT/sbin:/sbin:/bin:/usr/sbin:/usr/bin"
 
 # the busybox of asuswrt-merlin has no command builtin: a program is looked up in PATH by hand
 have() {
@@ -40,9 +43,9 @@ if ! printf '' | md5sum > /dev/null 2>&1; then
 	}
 fi
 
-share_dir="/opt/share/exodus"
-libexec_dir="/opt/libexec/exodus"
-home_dir="/opt/etc/exodus"
+share_dir="$EXODUS_OPT/share/exodus"
+libexec_dir="$EXODUS_OPT/libexec/exodus"
+home_dir="$EXODUS_OPT/etc/exodus"
 config="$home_dir/config.json"
 core_path="$libexec_dir/mihomo"
 yq_path="$libexec_dir/yq"
@@ -50,7 +53,34 @@ yq_path="$libexec_dir/yq"
 # the last line is "success" or starts with "error:", the update page relies on it
 fail() {
 	echo "error: $1"
+	rollback
 	exit 1
+}
+
+# Keep the old code and byte-for-byte settings until native registration succeeds.
+rollback() {
+ [ "$migration_pending" = 1 ] || return 0
+ migration_pending=0
+ [ ! -x "$share_dir/exodus" ] || "$share_dir/exodus" web stop > /dev/null 2>&1
+ rm -rf "$share_dir"
+ [ ! -d "$share_dir.old" ] || mv "$share_dir.old" "$share_dir"
+ for name in config.json mixin.yaml; do
+  if [ -f "$temp_dir/backup/$name" ]; then cp -p "$temp_dir/backup/$name" "$home_dir/$name";
+  elif [ -f "$temp_dir/backup/$name.absent" ]; then rm -f "$home_dir/$name"; fi
+ done
+ for name in firewall-start nat-start unmount services-start service-event; do
+  if [ -f "$temp_dir/backup/$name" ]; then cp -p "$temp_dir/backup/$name" "$EXODUS_JFFS/scripts/$name";
+  else rm -f "$EXODUS_JFFS/scripts/$name"; fi
+ done
+ if [ -f "$temp_dir/backup/S99exodus" ]; then cp -p "$temp_dir/backup/S99exodus" "$EXODUS_OPT/etc/init.d/S99exodus";
+ else rm -f "$EXODUS_OPT/etc/init.d/S99exodus"; fi
+ if [ -x "$share_dir/exodus" ]; then
+  ln -sf "$share_dir/exodus" "$EXODUS_OPT/bin/exodus"
+  [ "$was_web_running" != 1 ] || "$share_dir/exodus" web start > /dev/null 2>&1
+ else
+  rm -f "$EXODUS_OPT/bin/exodus"
+ fi
+ echo 'previous Exodus code and settings restored'
 }
 
 # the installer is usually piped into the shell, so questions are asked on the terminal
@@ -161,8 +191,8 @@ install_yq() {
 	if ! "$temp_dir/yq/yq_linux_$yq_arch" --version > /dev/null 2>&1; then
 		rm -rf "$temp_dir/yq"
 		# the release of yq for arm needs an fpu, a yq of entware would be built for the cpu
-		if [ "$core_arch" = "armv5" ] && opkg install yq > /dev/null 2>&1 && /opt/bin/yq --version 2> /dev/null | grep -q mikefarah; then
-			ln -sf /opt/bin/yq "$yq_path"
+		if [ "$core_arch" = "armv5" ] && opkg install yq > /dev/null 2>&1 && "$EXODUS_OPT/bin/yq" --version 2> /dev/null | grep -q mikefarah; then
+			ln -sf "$EXODUS_OPT/bin/yq" "$yq_path"
 			return
 		fi
 		fail "yq does not run on this router"
@@ -175,7 +205,7 @@ install_yq() {
 # the lines of other addons are kept, the old line of exodus is replaced
 hook_add() {
 	local file line
-	file="/jffs/scripts/$1"
+	file="$EXODUS_JFFS/scripts/$1"
 	line="$2 # exodus"
 	if [ -f "$file" ] && head -n 1 "$file" | grep -q '^#!'; then
 		{
@@ -193,14 +223,24 @@ hook_add() {
 	mv -f "$file.new" "$file" && chmod 755 "$file"
 }
 
+# Bootstrap check uses firmware tools only; staged helper checks again before replacement.
+merlin_preflight() {
+	local firm build ext
+	[ -r "$EXODUS_HELPER" ] && have nvram || return 1
+	[ "$(nvram get '3rd-party')" = merlin ] || return 1
+	nvram get rc_support | grep -qw am_addons || return 1
+	[ -d "$EXODUS_JFFS/addons" ] && [ -w "$EXODUS_JFFS/addons" ] || return 1
+	firm=$(nvram get firmver | tr -d '.')
+	build=$(nvram get buildno)
+	ext=$(nvram get extendno | sed 's/[^0-9].*//')
+	case "$firm:$build:$ext" in *[!0-9:]*|:*|*::*|*:) return 1 ;; esac
+	[ "$firm" -gt 3006 ] || { [ "$firm" -eq 3006 ] && { [ "$build" -gt 102 ] || { [ "$build" -eq 102 ] && [ "$ext" -ge 1 ]; }; }; }
+}
+
 # check env
-if [ ! -x "/opt/bin/opkg" ]; then
+merlin_preflight || fail "Merlin 3006.102.1+ with Addons API and writable JFFS is required"
+if [ ! -x "$EXODUS_OPT/bin/opkg" ]; then
 	fail "Entware is not installed: install it with amtm on a USB drive first"
-fi
-if [ -z "$(nvram get productid 2> /dev/null)" ]; then
-	echo "warning: this does not look like an Asus router, continue anyway"
-elif [ ! -f /usr/sbin/helper.sh ] && [ "$(nvram get 3rd-party 2> /dev/null)" != "merlin" ]; then
-	echo "warning: this is not Asuswrt-Merlin: the stock firmware runs no user scripts, the rules are restored only by the watcher"
 fi
 for tool in iptables iptables-save iptables-restore ipset; do
 	[ -x "/usr/sbin/$tool" ] || have "$tool" || fail "$tool of the firmware is not found"
@@ -243,16 +283,17 @@ esac
 echo "architecture: $machine, core builds: $core_arch, entware: $arch"
 
 # temp dir
-temp_dir="/opt/tmp/exodus-install"
+temp_dir="$EXODUS_OPT/tmp/exodus-install"
 rm -rf "$temp_dir"
 mkdir -p "$temp_dir" || fail "can not create $temp_dir"
-trap 'rm -rf "$temp_dir"' EXIT
+trap 'rollback; rm -rf "$temp_dir"' EXIT
+trap 'exit 1' HUP INT TERM
 
 # dependencies from entware, curl and jq are needed by the installer itself
 # iptables and ipset are of the firmware, they match its kernel
 echo "install packages"
 opkg update > /dev/null 2>&1 || echo "warning: opkg update failed"
-opkg install curl jq ca-bundle lighttpd lighttpd-mod-cgi || fail "package install failed"
+opkg install curl jq ca-bundle || fail "package install failed"
 # secrets, the password and the update check need sha-256: sha256sum or openssl of the firmware
 printf '' | sha256sum 2> /dev/null | grep -q '^[0-9a-f]\{64\}' || fail "sha256sum is not found and openssl can not compute sha-256"
 
@@ -400,6 +441,34 @@ if [ -f "$config" ] && ! jq -e '.code // empty' "$share_dir/BUILD" > /dev/null 2
 	legacy=1
 fi
 
+# Validate the downloaded registration helper, independently of the installed version.
+(
+ . "$src/asuswrt/opt/share/exodus/lib/common.sh"
+ . "$src/asuswrt/opt/share/exodus/lib/webui.sh"
+ webui_preflight
+) || fail "downloaded WebUI helper rejected this firmware"
+mkdir -p "$temp_dir/backup" || fail "can not stage migration backup"
+for name in config.json mixin.yaml; do
+ if [ -f "$home_dir/$name" ]; then cp -p "$home_dir/$name" "$temp_dir/backup/$name" || fail "backup failed";
+ else touch "$temp_dir/backup/$name.absent"; fi
+done
+for name in firewall-start nat-start unmount services-start service-event; do
+ [ ! -f "$EXODUS_JFFS/scripts/$name" ] || cp -p "$EXODUS_JFFS/scripts/$name" "$temp_dir/backup/$name" || fail "hook backup failed"
+done
+[ ! -f "$EXODUS_OPT/etc/init.d/S99exodus" ] || cp -p "$EXODUS_OPT/etc/init.d/S99exodus" "$temp_dir/backup/S99exodus" || fail "init backup failed"
+was_web_running=0
+# Never trust a stale PID file to stop another addon's server.
+(
+ . "$src/asuswrt/opt/share/exodus/lib/common.sh"
+ . "$src/asuswrt/opt/share/exodus/lib/webui.sh"
+ if webui_status; then touch "$temp_dir/backup/web-active"; webui_cache_stop; fi
+ if [ -f "$WEB_PID_PATH" ]; then
+  webui_stop_legacy
+  [ -f "$WEB_PID_PATH" ] || touch "$temp_dir/backup/web-active"
+ fi
+)
+[ ! -f "$temp_dir/backup/web-active" ] || was_web_running=1
+
 # code is replaced, settings and profiles are kept
 echo "install exodus"
 rm -rf "$share_dir.new"
@@ -411,27 +480,29 @@ jq -n --arg ref "$ref" --arg commit "$commit" --arg code "$code" --arg installed
 	'{ref: $ref, commit: $commit, code: $code, installed: $installed}' > "$share_dir.new/BUILD"
 rm -rf "$share_dir.old"
 [ -d "$share_dir" ] && mv "$share_dir" "$share_dir.old"
+migration_pending=1
 mv "$share_dir.new" "$share_dir" || fail "install failed"
-rm -rf "$share_dir.old"
-chmod 755 "$share_dir/exodus" "$share_dir/www/api.cgi" "$share_dir/install.sh"
+chmod 755 "$share_dir/exodus" "$share_dir/install.sh"
 
-mkdir -p /opt/etc/init.d /opt/bin "$home_dir/profiles" "$home_dir/subscriptions" "$home_dir/run/providers/rule" "$home_dir/run/providers/proxy"
-cp -f "$src/asuswrt/opt/etc/init.d/S99exodus" /opt/etc/init.d/S99exodus
-chmod 755 /opt/etc/init.d/S99exodus
-ln -sf "$share_dir/exodus" /opt/bin/exodus
+mkdir -p "$EXODUS_OPT/etc/init.d" "$EXODUS_OPT/bin" "$home_dir/profiles" "$home_dir/subscriptions" "$home_dir/run/providers/rule" "$home_dir/run/providers/proxy"
+cp -f "$src/asuswrt/opt/etc/init.d/S99exodus" "$EXODUS_OPT/etc/init.d/S99exodus"
+chmod 755 "$EXODUS_OPT/etc/init.d/S99exodus"
+ln -sf "$share_dir/exodus" "$EXODUS_OPT/bin/exodus"
 
 # the firmware restores its tables without the rules of addons on every restart of the firewall, the user scripts apply them again
 # they run only with "Enable JFFS custom scripts and configs" (Administration - System)
-if [ -d /jffs ] && [ -n "$(nvram get productid 2> /dev/null)" ]; then
+if [ -d "$EXODUS_JFFS" ] && [ -n "$(nvram get productid 2> /dev/null)" ]; then
 	if [ "$(nvram get jffs2_scripts)" != "1" ]; then
 		echo "enable JFFS custom scripts and configs"
 		nvram set jffs2_scripts=1
 		nvram commit
 	fi
-	mkdir -p /jffs/scripts
-	hook_add firewall-start '[ -x /opt/share/exodus/exodus ] && /opt/share/exodus/exodus hook firewall'
-	hook_add nat-start '[ -x /opt/share/exodus/exodus ] && /opt/share/exodus/exodus hook nat'
-	hook_add unmount '[ -x /opt/share/exodus/exodus ] && /opt/share/exodus/exodus hook unmount "$1"'
+	mkdir -p "$EXODUS_JFFS/scripts"
+	hook_add firewall-start "[ -x \"$share_dir/exodus\" ] && \"$share_dir/exodus\" hook firewall"
+	hook_add nat-start "[ -x \"$share_dir/exodus\" ] && \"$share_dir/exodus\" hook nat"
+	hook_add unmount "[ -x \"$share_dir/exodus\" ] && \"$share_dir/exodus\" hook unmount \"\$1\""
+	hook_add services-start "[ ! -x \"$EXODUS_JFFS/addons/exodus/boot.sh\" ] || \"$EXODUS_JFFS/addons/exodus/boot.sh\" > /dev/null 2>&1 &"
+	hook_add service-event "[ ! -x \"$EXODUS_JFFS/addons/exodus/boot.sh\" ] || \"$EXODUS_JFFS/addons/exodus/boot.sh\" event \"\$1\" \"\$2\""
 else
 	echo "warning: /jffs is not available, the rules are restored only by the watcher"
 fi
@@ -460,7 +531,7 @@ config_merge='
 		| .mixin.mixed_port |= (if . == 7890 then null else . end)
 	  else . end
 	| . as $user
-	| $defaults | known($user)'
+	| $defaults | known($user) | if ($user | has("web")) then .web = $user.web else . end'
 if [ -f "$config" ]; then
 	if jq -s --argjson legacy "$legacy" "$config_merge" "$src/asuswrt/opt/etc/exodus/config.json" "$config" > "$config.new" 2> /dev/null && [ -s "$config.new" ]; then
 		mv -f "$config.new" "$config"
@@ -496,36 +567,15 @@ fi
 # secrets of the core api and the proxy ports, the hwid
 "$share_dir/exodus" init
 
-# password of the web ui
-if [ ! -f "$home_dir/web.auth" ]; then
-	password="$PASSWORD"
-	if [ -z "$password" ] && interactive; then
-		while [ -z "$password" ]; do
-			stty -echo < /dev/tty 2> /dev/null
-			ask "password of the web ui (at least 4 characters, empty to generate): "
-			stty echo < /dev/tty 2> /dev/null
-			echo > /dev/tty
-			[ -z "$answer" ] && break
-			[ "${#answer}" -ge 4 ] && password="$answer"
-		done
-	fi
-	if [ -z "$password" ]; then
-		password=$(head -c 32 /dev/urandom | sha256sum | cut -c 1-12)
-		echo "generated password of the web ui: $password"
-	fi
-	printf '%s\n' "$password" | "$share_dir/exodus" passwd > /dev/null || fail "failed to set the password"
-fi
-
 # the web ui and the service run the new code
 echo "restart web ui"
-"$share_dir/exodus" web restart
+"$share_dir/exodus" web restart || fail "native WebUI registration failed"
+migration_pending=0
+rm -rf "$share_dir.old"
 if [ "$was_running" = 1 ] || [ "$(config_get .config.enabled)" = "true" ]; then
 	echo "restart service"
 	"$share_dir/exodus" restart
 fi
 
-port=$(config_get .web.port)
-address=$(nvram get lan_ipaddr 2> /dev/null)
-[ -n "$address" ] || address=$(ip -o -4 addr show dev br0 2> /dev/null | awk '{ split($4, a, "/"); print a[1]; exit }')
-echo "web ui: http://${address:-<router address>}:${port:-9099}/"
+echo "web ui: $("$share_dir/exodus" web url)"
 echo "success"

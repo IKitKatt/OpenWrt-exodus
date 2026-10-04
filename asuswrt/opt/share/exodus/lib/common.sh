@@ -10,6 +10,7 @@ EXODUS_JFFS="${EXODUS_JFFS:-/jffs}"
 EXODUS_WWW="${EXODUS_WWW:-/www}"
 EXODUS_HELPER="${EXODUS_HELPER:-/usr/sbin/helper.sh}"
 EXODUS_MENU="${EXODUS_MENU:-/tmp/menuTree.js}"
+EXODUS_PROC="${EXODUS_PROC:-/proc}"
 
 # entware binaries first, the firmware ones are older or limited
 export PATH="$EXODUS_OPT/bin:$EXODUS_OPT/sbin:/sbin:/bin:/usr/sbin:/usr/bin"
@@ -50,7 +51,6 @@ VERSION_PATH="$SHARE_DIR/VERSION"
 # branch, commit and time of the install, written by the installer
 BUILD_PATH="$SHARE_DIR/BUILD"
 MIXIN_JQ="$LIB_DIR/mixin.jq"
-LIGHTTPD_CONF="$SHARE_DIR/lighttpd.conf"
 
 # binaries downloaded by the installer
 LIBEXEC_DIR="$EXODUS_OPT/libexec/exodus"

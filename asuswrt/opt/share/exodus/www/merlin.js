@@ -77,8 +77,10 @@
             await submit(settings);
         }
         async function perform(raw) {
-            const id = makeId(), payload = encode(raw), count = Math.ceil(payload.length/1800), deadline = now() + 300000;
+            const id = makeId(), payload = encode(raw), count = Math.ceil(payload.length/1800);
             for (let seq=0; seq<count; seq++) {
+                // Each accepted part advances the transfer; final execution has its own deadline.
+                const deadline = now() + 300000;
                 const packet = {v:1,id,seq,count,data:payload.slice(seq*1800,(seq+1)*1800)};
                 let retries = 0, sent = 0, acknowledged = false;
                 await sendPacket(packet); sent = now();

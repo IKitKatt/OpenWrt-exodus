@@ -1,5 +1,6 @@
 #!/bin/sh
-# shellcheck shell=sh disable=SC2034
+# shellcheck shell=sh disable=SC2034,SC2030,SC2031
+# req is set in api_run's subshell; every action is called within that scope.
 # Operations independent of HTTP. Caller sources common.sh first.
 arg() { jq -j --arg key "$1" '.[$key] // "" | tostring' "$req"; }
 
@@ -279,7 +280,9 @@ action_profile_upload() {
 	valid_name "$name" || fail "400 Bad Request" "invalid file name"
 	mkdir -p "$PROFILES_DIR"
 	allowed_path "$PROFILES_DIR/$name" || fail "403 Forbidden" "path is not allowed"
-	jq -j '.content // ""' "$req" > "$PROFILES_DIR/$name.tmp" && mv -f "$PROFILES_DIR/$name.tmp" "$PROFILES_DIR/$name" || fail "500 Internal Server Error" "failed to save file"
+	if ! jq -j '.content // ""' "$req" > "$PROFILES_DIR/$name.tmp" || ! mv -f "$PROFILES_DIR/$name.tmp" "$PROFILES_DIR/$name"; then
+		fail "500 Internal Server Error" "failed to save file"
+	fi
 	echo '{"success": true}' | ok
 }
 
@@ -324,7 +327,9 @@ action_file_write() {
 	local path
 	path=$(arg path)
 	allowed_path "$path" || fail "403 Forbidden" "path is not allowed"
-	jq -j '.content // ""' "$req" > "$path.tmp" && mv -f "$path.tmp" "$path" || fail "500 Internal Server Error" "failed to save file"
+	if ! jq -j '.content // ""' "$req" > "$path.tmp" || ! mv -f "$path.tmp" "$path"; then
+		fail "500 Internal Server Error" "failed to save file"
+	fi
 	echo '{"success": true}' | ok
 }
 

@@ -52,6 +52,7 @@ webui_mount() (
 	trap 'lock_release webui' EXIT
 	page=$(webui_owned_page)
 	if [ -z "$page" ]; then
+		# shellcheck disable=SC1090
 		. "$EXODUS_HELPER"
 		am_get_webui_page "$SHARE_DIR/www/Exodus.asp"
 		page="$am_webui_page"
@@ -77,14 +78,17 @@ webui_mount() (
 	cat > "$WEBUI_ADDON/boot.sh" <<'BOOT'
 #!/bin/sh
 # Exodus boot recovery: Entware can mount after services-start.
+EXODUS="${EXODUS_OPT:-/opt}/share/exodus/exodus"
+boot_root="${EXODUS_TMP:-/tmp/exodus}"
 case "$1" in
- event) [ -x /opt/share/exodus/exodus ] && /opt/share/exodus/exodus web event "$2" "$3"; exit ;;
+ event) [ -x "$EXODUS" ] && "$EXODUS" web event "$2" "$3"; exit ;;
 esac
-mkdir /tmp/exodus-webui-boot.lock 2>/dev/null || exit 0
-trap 'rmdir /tmp/exodus-webui-boot.lock' EXIT
+mkdir -p "$boot_root"
+mkdir "$boot_root/webui-boot.lock" 2>/dev/null || exit 0
+trap 'rmdir "$boot_root/webui-boot.lock"' EXIT
 i=0
 while [ "$i" -lt 120 ]; do
- if [ -x /opt/share/exodus/exodus ]; then /opt/share/exodus/exodus web start && exit 0; fi
+ if [ -x "$EXODUS" ]; then "$EXODUS" web start && exit 0; fi
  i=$((i + 1)); sleep 5
 done
 BOOT
@@ -119,4 +123,51 @@ webui_url() {
 	esac
 	[ -z "$port" ] || port=":$port"
 	printf '%s://%s%s/%s\n' "$scheme" "$host" "$port" "$page"
+}
+
+webui_stop_legacy() {
+	local pid command owner executable
+	pid=$(cat "$WEB_PID_PATH" 2> /dev/null)
+	case "$pid" in ''|*[!0-9]*) return 0 ;; esac
+	[ -r "$EXODUS_PROC/$pid/cmdline" ] || { rm -f "$WEB_PID_PATH"; return 0; }
+	command=$(tr '\000' '\n' < "$EXODUS_PROC/$pid/cmdline")
+	owner=$(awk '/^Uid:/ { print $2 }' "$EXODUS_PROC/$pid/status" 2> /dev/null)
+	executable=$(readlink -f "$EXODUS_PROC/$pid/exe" 2> /dev/null)
+	[ "$owner" = 0 ] && [ "$executable" = "$(readlink -f "$EXODUS_OPT/sbin/lighttpd")" ] || return 0
+	printf '%s\n' "$command" | grep -Fxq "$RUN_TMP/lighttpd.conf" || return 0
+	printf '%s\n' "$command" | grep -Fxq -- '-f' || return 0
+	kill "$pid" 2> /dev/null || :
+	rm -f "$WEB_PID_PATH"
+}
+
+webui_cache_start() (
+	lock_acquire webui-cache 10 || exit 1
+	trap 'lock_release webui-cache' EXIT
+	pid_alive "$WEBUI_DIR/cache.pid" && exit 0
+	. "$LIB_DIR/api.sh"
+	. "$LIB_DIR/webui-api.sh"
+	webui_cache_refresh || exit 1
+	# A separate CLI process owns this loop, independently of proxy stop.
+	daemonize "$EXODUS" web cache
+	# Keep the start lock until the child advertises its PID.
+	local i=0
+	while [ "$i" -lt 5 ]; do
+		pid_alive "$WEBUI_DIR/cache.pid" && exit 0
+		i=$((i + 1)); sleep 1
+	done
+	exit 1
+)
+
+webui_cache_stop() {
+	local pid i=0
+	pid=$(cat "$WEBUI_DIR/cache.pid" 2> /dev/null)
+	case "$pid" in ''|*[!0-9]*) return 0 ;; esac
+	if [ -r "$EXODUS_PROC/$pid/cmdline" ] && tr '\000' '\n' < "$EXODUS_PROC/$pid/cmdline" | grep -Fxq "$EXODUS"; then
+		kill "$pid" 2> /dev/null || :
+		while kill -0 "$pid" 2> /dev/null && [ "$(cat "$WEBUI_DIR/cache.pid" 2>/dev/null)" = "$pid" ]; do
+			[ "$i" -lt 60 ] || return 1
+			i=$((i + 1)); msleep 100
+		done
+	fi
+	rm -f "$WEBUI_DIR/cache.pid"
 }

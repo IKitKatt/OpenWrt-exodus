@@ -28,6 +28,11 @@ test('packet limit and fresh foreign settings before each post', async()=>{
         assert.equal(f.calls[i].other, i===0?'initial':'new-'+(i-1));
     }
 });
+test('8 MiB upload keeps progressing beyond five minutes', async()=>{
+    const f=fixture();
+    assert.equal((await f.transport.request('profile_upload',{name:'large.yaml',content:'x'.repeat(8388608)})).success,true);
+    assert.ok(f.calls.length>6000);
+});
 test('response id and seq mismatch is not success', async()=>{
     const f=fixture({fetch:async url=>url.includes('appGet')?json({get_custom_settings:{}}):json({v:1,id:'f'.repeat(32),seq:7,phase:'complete',status:200,body:encode('{}')})});
     await assert.rejects(f.transport.request('load'), /unknown|timed out/i);

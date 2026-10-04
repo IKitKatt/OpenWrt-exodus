@@ -17,7 +17,7 @@ class ShellCase(unittest.TestCase):
         self.opt = self.root / 'opt'
         shutil.copytree(ROOT / 'asuswrt/opt', self.opt)
         for path in self.opt.rglob('*'):
-            if path.is_file() and path.suffix in ('.sh', '.cgi'):
+            if path.is_file() and (path.suffix in ('.sh', '.cgi') or path.name in ('exodus','S99exodus')):
                 path.write_bytes(path.read_bytes().replace(b'\r\n', b'\n'))
         self.share = self.opt / 'share/exodus'
         self.home = self.opt / 'etc/exodus'

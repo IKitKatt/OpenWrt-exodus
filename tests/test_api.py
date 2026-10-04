@@ -1,27 +1,11 @@
 import json
-import hashlib
-import subprocess
 from shell_support import ShellCase
 
 
 class ApiTests(ShellCase):
-    def test_cgi_authentication_compatibility(self):
-        cgi = self.share / 'www/api.cgi'
-        auth = 'salt:' + hashlib.sha256(b'saltpassword').hexdigest()
-        (self.home / 'web.auth').write_text(auth)
-        def request(body, **extra):
-            raw = json.dumps(body)
-            result = subprocess.run(['sh', str(cgi)], input=raw, text=True,
-                                    capture_output=True, check=True,
-                                    env={**self.env, 'REQUEST_METHOD': 'POST',
-                                         'CONTENT_LENGTH': str(len(raw)), **extra})
-            return result.stdout
-        self.assertIn('403', request({'action': 'load'}))
-        self.assertIn('401', request({'action': 'load'}, HTTP_X_EXODUS='1'))
-        login = request({'action': 'login', 'password': 'password'}, HTTP_X_EXODUS='1')
-        self.assertIn('200', login)
-        cookie = login.split('Set-Cookie: ')[1].split(';')[0]
-        self.assertIn('subscription_states', request({'action': 'load'}, HTTP_X_EXODUS='1', HTTP_COOKIE=cookie))
+    def test_native_dispatch_has_no_independent_login_or_password(self):
+        for action in ('login','logout','passwd'):
+            self.assertEqual(self.api(action)['status'],400)
 
     def test_load_preserves_config(self):
         original = json.loads((self.home / 'config.json').read_text())

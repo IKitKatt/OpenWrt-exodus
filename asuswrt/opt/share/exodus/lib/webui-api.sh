@@ -188,5 +188,12 @@ webui_cache_refresh() (
 
 webui_cache_loop() {
 	. "$LIB_DIR/api.sh"
-	while :; do webui_cache_refresh; webui_gc; sleep 5; done
+	. "$LIB_DIR/webui.sh"
+	local tick=0
+	while :; do
+		webui_cache_refresh; webui_gc
+		# Firmware menu rebuilds need recovery, even while the proxy is stopped.
+		if [ "$tick" -ge 12 ]; then webui_status || webui_mount; tick=0; fi
+		tick=$((tick + 1)); sleep 5
+	done
 }
