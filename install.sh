@@ -228,6 +228,11 @@ trap 'rm -rf "$temp_dir"' EXIT
 echo "install packages"
 opkg update > /dev/null 2>&1 || echo "warning: opkg update failed"
 opkg install curl jq ca-bundle lighttpd lighttpd-mod-cgi || fail "package install failed"
+# the busybox of the firmware may have no sha256sum or md5sum: secrets, the password and the update check need them
+for tool in sha256sum md5sum; do
+	command -v "$tool" > /dev/null 2>&1 || opkg install "coreutils-$tool" || fail "package install failed"
+	command -v "$tool" > /dev/null 2>&1 || fail "$tool is not found"
+done
 
 # access to github: through the given or the saved gh-proxy, then directly
 version_url="https://github.com/$repository/raw/$ref/asuswrt/opt/share/exodus/VERSION"

@@ -281,11 +281,14 @@ archive_commit() {
 # random lowercase hex, $1 is the number of bytes
 # busybox od has no -A and -t, so random bytes are hashed into hex instead
 random_hex() {
-	local chars out
+	local chars out chunk
 	chars=$(( $1 * 2 ))
 	out=
 	while [ "${#out}" -lt "$chars" ]; do
-		out="$out$(head -c 32 /dev/urandom | sha256sum | cut -d ' ' -f 1)"
+		chunk=$(head -c 32 /dev/urandom | sha256sum | cut -d ' ' -f 1)
+		# without sha256sum the chunk is empty and the loop would never end
+		[ -n "$chunk" ] || return 1
+		out="$out$chunk"
 	done
 	printf '%s' "$out" | cut -c "1-$chars"
 }

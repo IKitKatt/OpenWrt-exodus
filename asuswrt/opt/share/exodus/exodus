@@ -32,8 +32,8 @@ ensure_config() {
 	password=$(cfg_get .mixin.password)
 	hwid=$(cfg_get .config.hwid)
 	if [ -z "$secret" ] || [ -z "$password" ] || [ -z "$hwid" ]; then
-		[ -n "$secret" ] || secret=$(random_hex 8)
-		[ -n "$password" ] || password=$(random_hex 8)
+		[ -n "$secret" ] || secret=$(random_hex 8) || return 1
+		[ -n "$password" ] || password=$(random_hex 8) || return 1
 		[ -n "$hwid" ] || hwid=$(generate_hwid)
 		cfg_update '.mixin.api_secret = $secret | .mixin.password = $password | .config.hwid = $hwid' \
 			--arg secret "$secret" --arg password "$password" --arg hwid "$hwid"
@@ -434,7 +434,7 @@ web() {
 }
 
 set_password() {
-	local password confirm salt
+	local password confirm salt hash
 	if [ -t 0 ]; then
 		stty -echo 2> /dev/null
 		printf 'New password of the web ui: '
@@ -455,8 +455,13 @@ set_password() {
 		return 1
 	fi
 	salt=$(random_hex 8)
+	hash=$(printf '%s' "$salt$password" | sha256sum | cut -d ' ' -f 1)
+	if [ -z "$salt" ] || [ -z "$hash" ]; then
+		echo "sha256sum is not found"
+		return 1
+	fi
 	umask 077
-	echo "$salt:$(printf '%s' "$salt$password" | sha256sum | cut -d ' ' -f 1)" > "$AUTH_PATH"
+	echo "$salt:$hash" > "$AUTH_PATH"
 	# sessions of the old password end
 	rm -f "$SESSIONS_DIR"/* 2> /dev/null
 	echo "password is set"

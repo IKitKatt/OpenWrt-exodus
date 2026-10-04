@@ -62,6 +62,8 @@ password_valid() {
 	[ -n "$stored" ] || return 1
 	salt="${stored%%:*}"
 	hash="${stored#*:}"
+	# an empty hash would match the empty output of a missing sha256sum
+	[ -n "$hash" ] || return 1
 	[ "$( { printf '%s' "$salt"; jq -j ".$1 // \"\"" "$req"; } | sha256sum | cut -d ' ' -f 1)" = "$hash" ]
 }
 
@@ -534,12 +536,14 @@ action_update_dashboard() {
 }
 
 action_password() {
-	local salt
+	local salt hash
 	password_valid old || { sleep 2; fail "403 Forbidden" "wrong password"; }
 	[ "$(jq -r '.new // "" | length' "$req")" -ge 4 ] || fail "400 Bad Request" "the password is too short"
 	salt=$(random_hex 8)
+	hash=$( { printf '%s' "$salt"; jq -j '.new' "$req"; } | sha256sum | cut -d ' ' -f 1)
+	{ [ -n "$salt" ] && [ -n "$hash" ]; } || fail "500 Internal Server Error" "sha256sum is not found"
 	umask 077
-	echo "$salt:$( { printf '%s' "$salt"; jq -j '.new' "$req"; } | sha256sum | cut -d ' ' -f 1)" > "$AUTH_PATH"
+	echo "$salt:$hash" > "$AUTH_PATH"
 	# other sessions end, this one stays
 	token=$(session_token)
 	find "$SESSIONS_DIR" -type f ! -name "$token" -exec rm -f {} + 2> /dev/null
@@ -563,7 +567,7 @@ case "$action" in
 			sleep 2
 			fail "403 Forbidden" "wrong password"
 		fi
-		token=$(random_hex 16)
+		token=$(random_hex 16) || fail "500 Internal Server Error" "sha256sum is not found"
 		echo "$(($(date +%s) + SESSION_TTL))" > "$SESSIONS_DIR/$token"
 		cookie="exodus_session=$token"
 		echo '{"success": true}' | ok
