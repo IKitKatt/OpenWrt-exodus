@@ -1,6 +1,7 @@
 ![GitHub License](https://img.shields.io/github/license/prettyleaf/openwrt-exodus?style=for-the-badge&logo=github)
 
 Русский | [English](README.md)
+[Документация](https://prettyleaf.github.io/OpenWrt-exodus/install/asuswrt/)
 
 # Exodus для Asuswrt-Merlin
 

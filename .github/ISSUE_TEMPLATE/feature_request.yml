@@ -9,7 +9,7 @@ body:
       label: Confirm / 确认
       description: Please confirm / 请你确认
       options:
-        - label: I have checked the wiki and can't find the feature I'm looking for / 我已经查看过Wiki，没有找到我想要的功能
+        - label: I have checked the documentation and can't find the feature I'm looking for / 我已经查看过文档，没有找到我想要的功能
           required: true
         - label: I have searched the Issue and found no related feature requests / 我已经搜索过Issue，没有找到相关的功能请求
           required: true
