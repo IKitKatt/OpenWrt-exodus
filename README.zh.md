@@ -1,7 +1,7 @@
 ![GitHub License](https://img.shields.io/github/license/prettyleaf/openwrt-exodus?style=for-the-badge&logo=github) ![GitHub Tag](https://img.shields.io/github/v/release/prettyleaf/openwrt-exodus?style=for-the-badge&logo=github) ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/prettyleaf/openwrt-exodus/total?style=for-the-badge&logo=github)
 
 中文 | [English](README.md)
-[Wiki](https://github.com/prettyleaf/OpenWrt-exodus/wiki)
+[文档 (English / Русский)](https://prettyleaf.github.io/OpenWrt-exodus/en/)
 
 # Exodus
 
@@ -37,7 +37,7 @@
 wget -O - https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/main/install.sh | ash
 ```
 
-安装脚本首先检查路由器能否从 GitHub 下载，然后询问要安装哪个[内核](https://github.com/prettyleaf/OpenWrt-exodus/wiki#core)。运行参数[可以](https://github.com/prettyleaf/OpenWrt-exodus/wiki#install--update)以环境变量的形式写在 `ash` 之前。
+安装脚本首先检查路由器能否从 GitHub 下载，然后询问要安装哪个[内核](https://prettyleaf.github.io/OpenWrt-exodus/en/install/options/#core)。运行参数[可以](https://prettyleaf.github.io/OpenWrt-exodus/en/install/options/#variables)以环境变量的形式写在 `ash` 之前。
 
 ```shell
 wget -O - https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/main/install.sh | VERSION=v1.26.1 CORE=alpha ash
