@@ -192,31 +192,7 @@ function toast(message, type) {
 // ---------- api ----------
 
 async function api(action, params) {
-    let response;
-    try {
-        response = await fetch('api.cgi', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json', 'X-Exodus': '1' },
-            body: JSON.stringify(Object.assign({ action: action }, params || {}))
-        });
-    } catch (e) {
-        throw new Error(_('The router does not answer'));
-    }
-    let data;
-    try {
-        data = await response.json();
-    } catch (e) {
-        data = { error: _('Invalid answer of the router (%s)', `${response.status} ${response.statusText}`) };
-    }
-    if (response.status === 401 && action !== 'login') {
-        showLogin();
-        throw new Error(_('Login required'));
-    }
-    if (!response.ok || data.error) {
-        throw new Error(data.error || response.statusText);
-    }
-    return data;
+    return window.ExodusMerlin.request(action, params || {});
 }
 
 function run(promise, success) {
