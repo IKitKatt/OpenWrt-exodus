@@ -885,8 +885,23 @@ function openDashboard() {
     const host = window.location.hostname;
     const query = new URLSearchParams({ host: host, hostname: host, port: port, secret: info.secret || '' }).toString();
     const path = info.ui_name ? `/ui/${info.ui_name}/` : '/ui/';
-    const url = `${protocol}://${host.includes(':') && !host.startsWith('[') ? `[${host}]` : host}:${port}${path}?${query}`;
+    // zashboard and metacubexd keep the backends they know and take a new secret of the link only on their setup page, yacd reads the query
+    const setup = /yacd/i.test(info.ui_url || '') ? '' : `#/setup?${query}`;
+    const url = `${protocol}://${host.includes(':') && !host.startsWith('[') ? `[${host}]` : host}:${port}${path}?${query}${setup}`;
     window.open(url, '_blank', 'noopener');
+}
+
+// the expire date of the provider: 0 and dates from 2099 on mean no expiry, a state of an older version has the date as text
+function expireText(st) {
+    if (typeof st.expire_ts !== 'number') {
+        return st.expire || '—';
+    }
+    if (st.expire_ts === 0 || st.expire_ts >= 4070908800) {
+        return '∞';
+    }
+    const date = new Date(st.expire_ts * 1000);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 const CORE_TITLES = { meta: 'Mihomo Meta', alpha: 'Mihomo Alpha', prizrak: 'Prizrak-Core' };
@@ -1301,7 +1316,7 @@ function pageProfiles() {
                     host ? E('div', { class: 'description mono' }, host) : null
                 ]),
                 E('td', { class: 'nowrap' }, st.used || st.total ? `${st.used || '—'} / ${st.total || '∞'}` : '—'),
-                E('td', { class: 'nowrap' }, st.expire || '—'),
+                E('td', { class: 'nowrap' }, expireText(st)),
                 E('td', { class: 'nowrap' }, [
                     st.success === false ? badge(_('Failed'), 'destructive') : (st.update || '—'),
                     E('div', { class: 'description' }, intervalText(sub))
