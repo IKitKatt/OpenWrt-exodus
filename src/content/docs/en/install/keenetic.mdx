@@ -1,0 +1,75 @@
+---
+title: Keenetic / Netcraze
+description: Preparing the router, Entware, installation and specifics of Keenetic.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+## Requirements
+
+- KeeneticOS 4.x or newer.
+- Architectures: `aarch64` (arm64), `mipsel` and `mips` (softfloat).
+- Entware on a USB drive or the internal storage and about 70 MB free on it: the Mihomo core is about 40 MB, yq about 15 MB.
+- XKeen stopped and removed from autostart: both intercept the same traffic, see [migrating from XKeen](/en/install/migration/#from-xkeen-keenetic).
+
+## Preparation
+
+<Steps>
+
+1. **KeeneticOS components.** General settings → Change component set, the router reboots.
+
+   | Component | Why |
+   | --- | --- |
+   | Open Package support (OPKG) | required, Entware runs on it |
+   | Kernel modules for Netfilter | required: TPROXY (UDP, and TCP in the TPROXY mode) and the DSCP marks |
+   | IPv6 protocol | for IPv6 through the proxy, always on in KeeneticOS 5 |
+   | USB and the Ext file system | when Entware is on a USB drive |
+
+2. **Entware.** Install it by the [official Keenetic guide](https://help.keenetic.com/hc/en-us/articles/360021214160) or by the [guide from XKeen](https://github.com/Corvus-Malus/XKeen#%D1%83%D1%81%D1%82%D0%B0%D0%BD%D0%BE%D0%B2%D0%BA%D0%B0-%D1%81%D0%B8%D1%81%D1%82%D0%B5%D0%BC%D1%8B-%D0%BF%D0%B0%D0%BA%D0%B5%D1%82%D0%BE%D0%B2-%D1%80%D0%B5%D0%BF%D0%BE%D0%B7%D0%B8%D1%82%D0%BE%D1%80%D0%B8%D1%8F-entware-%D0%BD%D0%B0-usb-%D0%BD%D0%B0%D0%BA%D0%BE%D0%BF%D0%B8%D1%82%D0%B5%D0%BB%D1%8C) (in Russian, with partitioning of the drive and swap).
+
+3. **SSH console of Entware.** User `root`, password `keenetic` (change it with `passwd`). Port 222 when the SSH server component is installed on the router, 22 otherwise.
+
+</Steps>
+
+## Install & update
+
+In the SSH console of Entware:
+
+```shell
+opkg update && opkg install curl
+curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/keenetic/install.sh | sh
+```
+
+The installer installs Entware packages, checks access to GitHub, asks for the [core](/en/install/options/#core) and the password of the web UI, downloads Mihomo and yq into `/opt/libexec/exodus`. At the end it prints the address of the [web UI](/en/usage/web-ui/), `http://192.168.1.1:9099/` by default.
+
+To update, run the same command or use the **Updates** page of the web UI. Installer options (core, password, gh-proxy) are on the [Installer options](/en/install/options/) page.
+
+If `opkg` fails inside the installer, install the packages beforehand:
+
+```shell
+opkg update
+opkg install curl ca-bundle jq ipset iptables ip-full lighttpd lighttpd-mod-cgi
+```
+
+| Package | Why |
+| --- | --- |
+| `curl`, `ca-bundle` | downloads over HTTPS: the installer, subscriptions, updates |
+| `jq` | settings and the API of the web UI |
+| `ipset`, `iptables` | interception rules and sets of devices, `ip6tables` is a part of `iptables` |
+| `ip-full` | the route and the rule of TPROXY |
+| `lighttpd`, `lighttpd-mod-cgi` | the web UI |
+
+## Keenetic specifics
+
+- NDM rebuilds iptables on many events. The rules are restored by the hook `/opt/etc/ndm/netfilter.d/50-exodus.sh`, and every 15 seconds the watcher checks them too.
+- Names of devices, Wi-Fi points and parental control come from RCI of the router (`127.0.0.1:79`, requests from the router itself need no token). The firmware version and the model for the HWID headers come from there too, or from `ndmc`. If the router does not give the list, only the neighbours from its ARP table are shown.
+- TCP goes through Redirect and UDP through TPROXY by default. TPROXY for TCP needs port 443 of the router free: move the web interface of the router to another port on the Users and access page. TUN is not supported, TUN of the profile is turned off.
+- Traffic that bypasses the proxy (DSCP mark 62, excluded devices) keeps hardware acceleration and QoS of the router. Speed limits and priorities of IntelliQoS do not apply to proxied traffic: the router itself sends it out.
+
+## Uninstall
+
+```shell
+curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/keenetic/uninstall.sh | sh
+```
+
+With `KEEP_CONFIG=1` before `sh` the settings, profiles and subscriptions in `/opt/etc/exodus` are kept. Entware packages are not removed: other applications may use them.

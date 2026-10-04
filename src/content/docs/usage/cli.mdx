@@ -1,0 +1,69 @@
+---
+title: Командная строка и файлы
+description: Команды сервиса и расположение файлов на каждой платформе.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+## Команды
+
+<Tabs syncKey="platform">
+<TabItem label="Keenetic и Asus">
+
+```shell
+exodus start | stop | restart | status
+exodus update_subscription <id>   # скачать подписку, работающее ядро получит её, если она используется
+exodus hard_update     # удалить скачанные провайдеры, обновить подписку и перезапустить
+exodus debug           # отчёт для issue, адреса серверов и пароли скрыты
+exodus web restart     # перезапустить веб-интерфейс (также start, stop, status)
+exodus passwd          # сменить пароль веб-интерфейса
+```
+
+</TabItem>
+<TabItem label="OpenWrt">
+
+```shell
+/etc/init.d/nikki start | stop | restart | reload
+/etc/init.d/nikki update_subscription <id>   # скачать подписку по id секции
+/etc/init.d/nikki hard_update                # удалить скачанные провайдеры, обновить подписку и перезапустить
+/etc/nikki/scripts/debug.sh                  # отчёт для issue, как «Журнал» → «Отладочный лог»; включает сервис, если он выключен
+```
+
+Сервис по-прежнему называется `nikki`: Exodus — его форк и использует те же пути.
+
+</TabItem>
+</Tabs>
+
+## Файлы
+
+<Tabs syncKey="platform">
+<TabItem label="Keenetic и Asus">
+
+| Путь | Назначение |
+| --- | --- |
+| `/opt/etc/exodus/config.json` | настройки |
+| `/opt/etc/exodus/mixin.yaml` | [mixin-файл](/usage/subscriptions/#mixin-файл) |
+| `/opt/etc/exodus/profiles/` | загруженные профили |
+| `/opt/etc/exodus/subscriptions/` | подписки и то, что о них сообщил провайдер |
+| `/opt/etc/exodus/run/` | рабочий каталог ядра: профиль запуска, провайдеры, панель |
+| `/opt/share/exodus/` | скрипты и веб-интерфейс |
+| `/opt/libexec/exodus/` | `mihomo` и `yq` |
+| `/opt/etc/init.d/S99exodus` | запуск вместе с Entware |
+| `/tmp/exodus/log/` | логи приложения, ядра и обновления |
+| `/opt/etc/ndm/netfilter.d/50-exodus.sh` | только Keenetic: восстановление правил после NDM |
+| `/jffs/scripts/firewall-start`, `nat-start`, `unmount` | только Asus: по одной строке с пометкой `# exodus` |
+
+</TabItem>
+<TabItem label="OpenWrt">
+
+| Путь | Назначение |
+| --- | --- |
+| `/etc/config/nikki` | настройки (UCI) |
+| `/etc/nikki/mixin.yaml` | [mixin-файл](/usage/subscriptions/#mixin-файл) |
+| `/etc/nikki/profiles/` | загруженные профили |
+| `/etc/nikki/subscriptions/` | подписки |
+| `/etc/nikki/run/` | рабочий каталог ядра: профиль запуска, провайдеры, панель |
+| `/var/log/nikki/` | логи приложения и ядра |
+
+</TabItem>
+</Tabs>

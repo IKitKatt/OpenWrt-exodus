@@ -1,0 +1,65 @@
+---
+title: OpenWrt
+description: Requirements, installation, updates and removal on OpenWrt.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+## Requirements
+
+- OpenWrt 24.10 or newer: firewall4, Linux kernel 5.13+.
+- Prebuilt packages are published for OpenWrt 24.10, 25.12 and SNAPSHOT on `x86_64`, `aarch64_cortex-a53`, `aarch64_generic`, `aarch64_cortex-a72`, `aarch64_cortex-a76`, `mipsel_24kc`, `arm_cortex-a7_neon-vfpv4`. The architecture of the router is `DISTRIB_ARCH` in `/etc/openwrt_release`. For other architectures [build the packages from source](/en/development/#building-from-source).
+
+### If OpenWrt is not installed yet
+
+- [Firmware Selector](https://firmware-selector.openwrt.org/) — find the model and download the firmware: `factory` to install over the stock firmware, `sysupgrade` to upgrade OpenWrt.
+- [Table of Hardware](https://openwrt.org/toh/start) — whether the model is supported and how to flash it.
+- [Generic flashing guide](https://openwrt.org/docs/guide-user/installation/generic.flashing).
+
+## Install & update
+
+In the SSH console of the router:
+
+```shell
+wget -O - https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/main/install.sh | ash
+```
+
+The installer checks access to GitHub, asks which [core](/en/install/options/#core) to install, downloads `exodus`, `luci-app-exodus` and `luci-i18n-exodus-*` from the [releases](https://github.com/prettyleaf/openwrt-exodus/releases) for the architecture and OpenWrt version of the router and installs them. Dependencies come from the official OpenWrt feeds. If Nikki is installed, the installer replaces it and keeps its settings, see [migrating from Nikki](/en/install/migration/#from-nikki-openwrt).
+
+To update, run the same command or open **Services → Exodus → Update** in LuCI: it runs the same installer with the core and the gh-proxy chosen last time. With little free flash, enable the low flash space mode there: the current core is removed before the new one is installed.
+
+Installer options (version, core, gh-proxy) are on the [Installer options](/en/install/options/) page.
+
+## First start
+
+<Steps>
+
+1. **Services → Exodus → Profile**: add a subscription or upload a profile.
+2. **App Config**: choose the profile, enable the app, choose the mode and the devices, then Save & Apply.
+3. **Open Dashboard** next to Restart Service opens the dashboard (Zashboard), the core downloads it on the first start.
+
+</Steps>
+
+The pages in detail — [LuCI](/en/usage/luci/).
+
+## Installing without access to GitHub
+
+When GitHub is blocked, installing through [gh-proxy](/en/install/options/#if-github-is-blocked) is the easiest. Without it, download `exodus_<arch>-<branch>.tar.gz` for your router from the [releases page](https://github.com/prettyleaf/openwrt-exodus/releases) on another machine, copy it to `/tmp` on the router and install the packages from it (only the Mihomo Meta core):
+
+```shell
+# <arch> is DISTRIB_ARCH from /etc/openwrt_release, <branch> is openwrt-24.10, openwrt-25.12 or SNAPSHOT
+# if nikki is installed, remove it first (the config is kept): opkg remove luci-app-nikki nikki / apk del luci-app-nikki nikki
+mkdir -p /tmp/exodus && tar -x -z -f /tmp/exodus_<arch>-<branch>.tar.gz -C /tmp/exodus
+# opkg (OpenWrt 24.10); --force-downgrade replaces exodus versioned by date (2026.04.08) or a newer release
+opkg update && opkg install --force-downgrade /tmp/exodus/mihomo-meta_*.ipk /tmp/exodus/exodus_*.ipk /tmp/exodus/luci-app-exodus_*.ipk
+# apk (OpenWrt 25.12 and SNAPSHOT)
+apk update && apk add --allow-untrusted /tmp/exodus/mihomo-meta-[0-9]*.apk /tmp/exodus/exodus-[0-9]*.apk /tmp/exodus/luci-app-exodus-[0-9]*.apk
+```
+
+## Uninstall
+
+```shell
+wget -O - https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/main/uninstall.sh | ash
+```
+
+The script removes the packages together with the settings. To keep the settings, remove only the packages: `opkg remove luci-app-exodus exodus` or `apk del luci-app-exodus exodus`.

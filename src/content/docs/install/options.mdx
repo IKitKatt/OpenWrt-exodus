@@ -1,0 +1,100 @@
+---
+title: Параметры установщика
+description: Переменные установщика, выбор ядра и установка, когда GitHub заблокирован.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+## Переменные
+
+Параметры передаются переменными окружения после `|`, перед `ash` или `sh`:
+
+<Tabs syncKey="platform">
+<TabItem label="OpenWrt">
+
+```shell
+wget -O - https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/main/install.sh | VERSION=v1.26.1 CORE=alpha ash
+```
+
+</TabItem>
+<TabItem label="Keenetic">
+
+```shell
+curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/keenetic/install.sh | CORE=alpha PASSWORD=secret sh
+```
+
+</TabItem>
+<TabItem label="Asus">
+
+```shell
+curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/install.sh | CORE=alpha PASSWORD=secret sh
+```
+
+</TabItem>
+</Tabs>
+
+| Переменная | Платформы | Значение |
+| --- | --- | --- |
+| `CORE` | все | `meta`, `alpha` или `prizrak` — поставить это [ядро](#ядро) без вопроса |
+| `GH_PROXY` | все | адрес [gh-proxy](#если-github-заблокирован) с токеном, например `https://example.com/ghproxy/TOKEN`; `GH_PROXY=` — снова скачивать напрямую |
+| `LOW_SPACE=1` | все | удалить текущее ядро перед установкой нового, если на накопителе мало места |
+| `VERSION` | OpenWrt | релиз вместо последнего, например `v1.26.1` |
+| `PASSWORD` | Keenetic, Asus | пароль веб-интерфейса при первой установке, иначе он спрашивается или генерируется |
+| `REF` | Keenetic, Asus | ветка или тег вместо `keenetic` / `asuswrt` |
+
+Выбранные ядро и gh-proxy сохраняются (`/etc/config/nikki` на OpenWrt, `/opt/etc/exodus/config.json` на Keenetic и Asus): следующие запуски установщика и страница обновлений используют их.
+
+## Ядро
+
+В терминале установщик спрашивает ядро, Enter оставляет текущее. `CORE=` выбирает его без вопроса.
+
+| Ядро | `CORE` | Что ставится |
+| --- | --- | --- |
+| Mihomo Meta | `meta` | последний стабильный релиз [MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo/releases), по умолчанию |
+| Mihomo Alpha | `alpha` | последняя сборка для разработки, [Prerelease-Alpha](https://github.com/MetaCubeX/mihomo/releases/tag/Prerelease-Alpha) |
+| Prizrak-Core | `prizrak` | последний релиз [legiz-ru/Prizrak-Core](https://github.com/legiz-ru/Prizrak-Core/releases), форка mihomo |
+
+Ядро скачивается из релизов на GitHub под архитектуру роутера, повторный запуск установщика и страница обновлений обновляют его до последней сборки. На OpenWrt Mihomo Meta ставится пакетом `mihomo-meta` с проверкой sha256, а Alpha и Prizrak-Core заменяют его бинарник; пакет остаётся как зависимость. Повторный выбор Mihomo Meta возвращает стабильное ядро версии этого пакета.
+
+## Если GitHub заблокирован
+
+Установщик сначала проверяет доступ к GitHub. Если GitHub недоступен, он проверяет [jsDelivr](https://www.jsdelivr.com/): если тот доступен, GitHub блокирует провайдер; если нет — у роутера, скорее всего, нет интернета или DNS. jsDelivr отдаёт файлы репозитория, но не файлы релизов, поэтому пакеты и ядро скачиваются только с GitHub.
+
+Решение — [gh-proxy](https://github.com/prettyleaf/gh-proxy) на сервере с доступом к GitHub. Его адрес с токеном выглядит как `https://example.com/ghproxy/TOKEN`. В терминале установщик сам спросит адрес. Его можно передать и заранее, скачав установщик через тот же gh-proxy или с jsDelivr:
+
+<Tabs syncKey="platform">
+<TabItem label="OpenWrt">
+
+```shell
+# через gh-proxy
+wget -O - https://example.com/ghproxy/TOKEN/https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/main/install.sh | GH_PROXY=https://example.com/ghproxy/TOKEN ash
+# установщик с jsDelivr, он может отставать от репозитория на несколько часов
+wget -O - https://cdn.jsdelivr.net/gh/prettyleaf/openwrt-exodus@main/install.sh | GH_PROXY=https://example.com/ghproxy/TOKEN ash
+```
+
+</TabItem>
+<TabItem label="Keenetic">
+
+```shell
+# через gh-proxy
+curl -fsSL https://example.com/ghproxy/TOKEN/https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/keenetic/install.sh | GH_PROXY=https://example.com/ghproxy/TOKEN sh
+# установщик с jsDelivr, он может отставать от репозитория на несколько часов
+curl -fsSL https://cdn.jsdelivr.net/gh/prettyleaf/openwrt-exodus@keenetic/install.sh | GH_PROXY=https://example.com/ghproxy/TOKEN sh
+```
+
+</TabItem>
+<TabItem label="Asus">
+
+```shell
+# через gh-proxy
+curl -fsSL https://example.com/ghproxy/TOKEN/https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/install.sh | GH_PROXY=https://example.com/ghproxy/TOKEN sh
+# установщик с jsDelivr, он может отставать от репозитория на несколько часов
+curl -fsSL https://cdn.jsdelivr.net/gh/prettyleaf/openwrt-exodus@asuswrt/install.sh | GH_PROXY=https://example.com/ghproxy/TOKEN sh
+```
+
+</TabItem>
+</Tabs>
+
+- Адрес сохраняется, следующие запуски и страница обновлений скачивают через него. Если сохранённый gh-proxy не работает, установщик пробует скачать напрямую.
+- Если в gh-proxy задан `GHP_ALLOW_LIST`, разрешите в нём `prettyleaf/openwrt-exodus`, а для ядер Alpha и Prizrak-Core — ещё `MetaCubeX/mihomo` и `legiz-ru/Prizrak-Core`. На неверный токен и репозиторий вне списка gh-proxy отвечает 404.
+- На OpenWrt можно поставить пакеты и без gh-proxy, из архива релиза: [установка без доступа к GitHub](/install/openwrt/#установка-без-доступа-к-github).

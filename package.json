@@ -1,0 +1,21 @@
+{
+  "name": "exodus-docs",
+  "type": "module",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/markdown-remark": "^7.3.1",
+    "@astrojs/starlight": "^0.42.5",
+    "@lucide/astro": "^1.14.0",
+    "astro": "^7.3.5",
+    "sharp": "^0.34.5",
+    "starlight-scroll-to-top": "^2.0.0"
+  }
+}

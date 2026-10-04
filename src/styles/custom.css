@@ -1,0 +1,643 @@
+/*
+ * Exodus docs: the design of the web UI (shadcn/ui new-york, neutral), see style.css of the web UI.
+ * Starlight is dark by default (`:root`) and switches to light with `[data-theme='light']`,
+ * the Starlight palette below is derived from the `--ex-*` tokens of both themes.
+ */
+
+/* ----------------------------------------------------------------- tokens -- */
+
+:root {
+	--ex-radius: 0.625rem;
+	--ex-font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+	--ex-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+
+	--ex-background: #0a0a0a;
+	--ex-foreground: #fafafa;
+	--ex-text: #d4d4d4;
+	--ex-card: #171717;
+	--ex-primary: #e5e5e5;
+	--ex-primary-foreground: #171717;
+	--ex-muted: #262626;
+	--ex-muted-foreground: #a3a3a3;
+	--ex-border: rgba(255, 255, 255, 0.1);
+	--ex-input: rgba(255, 255, 255, 0.15);
+	--ex-ring: #737373;
+	--ex-destructive: #f87171;
+	--ex-success: #4ade80;
+	--ex-warning: #fbbf24;
+	--ex-info: #a3a3a3;
+	--ex-overlay: rgba(0, 0, 0, 0.7);
+
+	/* the active tab and segment: a raised input in the dark theme, a white sheet in the light one */
+	--ex-tab-active: color-mix(in srgb, var(--ex-input) 30%, transparent);
+	--ex-tab-active-border: var(--ex-input);
+
+	--ex-shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+	--ex-shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+
+	color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+	--ex-background: #ffffff;
+	--ex-foreground: #0a0a0a;
+	--ex-text: #262626;
+	--ex-card: #ffffff;
+	--ex-primary: #171717;
+	--ex-primary-foreground: #fafafa;
+	--ex-muted: #f5f5f5;
+	--ex-muted-foreground: #737373;
+	--ex-border: #e5e5e5;
+	--ex-input: #e5e5e5;
+	--ex-ring: #a3a3a3;
+	--ex-destructive: #dc2626;
+	--ex-success: #16a34a;
+	--ex-warning: #d97706;
+	--ex-info: #525252;
+	--ex-overlay: rgba(0, 0, 0, 0.5);
+
+	--ex-tab-active: var(--ex-background);
+	--ex-tab-active-border: transparent;
+
+	color-scheme: light;
+}
+
+/* ------------------------------------------------- Starlight palette mapping -- */
+
+:root {
+	--sl-font: var(--ex-font);
+	--sl-font-mono: var(--ex-mono);
+
+	--sl-color-white: var(--ex-foreground);
+	--sl-color-gray-1: var(--ex-foreground);
+	--sl-color-gray-2: var(--ex-text);
+	--sl-color-gray-3: var(--ex-muted-foreground);
+	--sl-color-gray-4: var(--ex-ring);
+	--sl-color-gray-5: var(--ex-input);
+	--sl-color-gray-6: var(--ex-border);
+	--sl-color-gray-7: var(--ex-muted);
+	--sl-color-black: var(--ex-background);
+
+	--sl-color-accent-low: var(--ex-muted);
+	--sl-color-accent: var(--ex-primary);
+	--sl-color-accent-high: var(--ex-foreground);
+
+	--sl-color-text: var(--ex-text);
+	--sl-color-text-accent: var(--ex-foreground);
+	--sl-color-text-invert: var(--ex-primary-foreground);
+	--sl-color-bg: var(--ex-background);
+	--sl-color-bg-nav: color-mix(in srgb, var(--ex-background) 85%, transparent);
+	--sl-color-bg-sidebar: var(--ex-background);
+	--sl-color-bg-inline-code: var(--ex-muted);
+	--sl-color-bg-accent: var(--ex-primary);
+	--sl-color-hairline-light: var(--ex-border);
+	--sl-color-hairline: var(--ex-border);
+	--sl-color-hairline-shade: var(--ex-border);
+
+	--sl-text-h1: 1.875rem;
+	--sl-text-h2: 1.5rem;
+	--sl-text-h3: 1.25rem;
+	--sl-text-h4: 1.0625rem;
+	--sl-text-h5: 1rem;
+	--sl-text-code: 0.8125rem;
+	--sl-line-height: 1.7;
+	--sl-line-height-headings: 1.25;
+
+	--sl-nav-height: 3.5rem;
+}
+
+::backdrop {
+	--sl-color-backdrop-overlay: rgba(0, 0, 0, 0.6);
+}
+
+@media (min-width: 50em) {
+	:root {
+		--sl-text-h1: 2.25rem;
+	}
+}
+
+/* ------------------------------------------------------------------- base -- */
+
+body {
+	background-color: var(--ex-background);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+	text-wrap: balance;
+}
+
+p {
+	text-wrap: pretty;
+}
+
+::selection {
+	background-color: color-mix(in srgb, var(--ex-ring) 40%, transparent);
+	color: var(--ex-foreground);
+}
+
+:focus-visible {
+	outline-color: var(--ex-ring);
+}
+
+/* ------------------------------------------------------------------ header -- */
+
+header.header {
+	border-bottom: 1px solid var(--ex-border);
+	-webkit-backdrop-filter: blur(8px);
+	backdrop-filter: blur(8px);
+}
+
+@media (min-width: 50rem) {
+	/* the search looks like an input of the web UI */
+	site-search button[data-open-modal] {
+		height: 2.25rem;
+		border: 1px solid var(--ex-input);
+		border-radius: calc(var(--ex-radius) - 2px);
+		background-color: transparent;
+		box-shadow: var(--ex-shadow-xs);
+		color: var(--ex-muted-foreground);
+		padding-inline: 0.75rem 0.375rem;
+		transition: color 0.15s, border-color 0.15s;
+	}
+	:root:not([data-theme='light']) site-search button[data-open-modal] {
+		background-color: color-mix(in srgb, var(--ex-input) 30%, transparent);
+	}
+	site-search button[data-open-modal]:hover {
+		border-color: var(--ex-ring);
+		color: var(--ex-foreground);
+	}
+	site-search button[data-open-modal] > kbd {
+		border: 1px solid var(--ex-border);
+		border-radius: 4px;
+		background-color: var(--ex-muted);
+		padding-inline: 0.375rem;
+		font-family: var(--ex-mono);
+	}
+}
+
+site-search dialog {
+	border: 1px solid var(--ex-border);
+	border-radius: calc(var(--ex-radius) + 4px);
+	background-color: var(--ex-card);
+}
+
+/* the menu button is an outline icon button of the web UI */
+.sl-menu-button {
+	border: 1px solid var(--ex-input);
+	border-radius: calc(var(--ex-radius) - 2px);
+	background-color: var(--ex-background);
+	color: var(--ex-foreground);
+	box-shadow: var(--ex-shadow-xs);
+}
+
+.sl-menu-button:has(~ :popover-open) {
+	background-color: var(--ex-muted);
+}
+
+/* ----------------------------------------------------------------- sidebar -- */
+
+.sidebar-content {
+	--sl-sidebar-item-padding-inline: 0.625rem;
+}
+
+/* group titles are the section titles of the web UI */
+.sidebar-content .group-label .large {
+	font-size: 0.8125rem;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--ex-muted-foreground);
+}
+
+.sidebar-content summary {
+	border-radius: calc(var(--ex-radius) - 2px);
+}
+
+.sidebar-content ul ul li {
+	margin-inline-start: 0;
+	border-inline-start: 0;
+	padding-inline-start: 0;
+}
+
+.sidebar-content ul ul {
+	margin-top: 0.25rem;
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+
+.sidebar-content a,
+.sidebar-content a.large {
+	border-radius: calc(var(--ex-radius) - 2px);
+	padding-block: 0.375rem;
+	font-size: var(--sl-text-sm);
+	font-weight: 500;
+	color: var(--ex-muted-foreground);
+	transition: color 0.15s, background-color 0.15s;
+}
+
+.sidebar-content a:hover,
+.sidebar-content a:focus-visible {
+	color: var(--ex-foreground);
+	background-color: var(--ex-muted);
+}
+
+/* the current page is the active item of the navigation of the web UI */
+.sidebar-content a[aria-current='page'],
+.sidebar-content a[aria-current='page']:hover,
+.sidebar-content a[aria-current='page']:focus {
+	font-weight: 500;
+	color: var(--ex-foreground);
+	background-color: var(--ex-muted);
+}
+
+/* --------------------------------------------------------- table of contents -- */
+
+starlight-toc h2 {
+	font-size: 0.8125rem;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--ex-muted-foreground);
+}
+
+starlight-toc a {
+	color: var(--ex-muted-foreground);
+	transition: color 0.15s;
+}
+
+starlight-toc a:hover,
+starlight-toc a[aria-current='true'],
+starlight-toc a[aria-current='true']:hover,
+starlight-toc a[aria-current='true']:focus {
+	color: var(--ex-foreground);
+}
+
+starlight-toc a[aria-current='true'] {
+	font-weight: 500;
+}
+
+mobile-starlight-toc nav {
+	border-bottom: 1px solid var(--ex-border);
+	background-color: color-mix(in srgb, var(--ex-background) 85%, transparent);
+	-webkit-backdrop-filter: blur(8px);
+	backdrop-filter: blur(8px);
+}
+
+/* ------------------------------------------------------------------ content -- */
+
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6):not(:where(.not-content *)) {
+	font-weight: 600;
+	letter-spacing: -0.025em;
+	color: var(--ex-foreground);
+}
+
+.sl-markdown-content .sl-heading-wrapper.level-h2 {
+	padding-bottom: 0.375rem;
+	border-bottom: 1px solid var(--ex-border);
+}
+
+.sl-markdown-content :is(h4, h5, h6):not(:where(.not-content *)) {
+	letter-spacing: -0.01em;
+}
+
+.sl-markdown-content a:not(:where(.not-content *)) {
+	color: var(--ex-foreground);
+	font-weight: 500;
+	text-decoration-color: var(--ex-ring);
+	text-underline-offset: 4px;
+	transition: text-decoration-color 0.15s;
+}
+
+.sl-markdown-content a:not(:where(.not-content *)):hover {
+	text-decoration-color: currentColor;
+}
+
+.sl-markdown-content .sl-anchor-link {
+	font-weight: inherit;
+}
+
+.sl-markdown-content :is(ul, ol) li::marker {
+	color: var(--ex-muted-foreground);
+}
+
+.sl-markdown-content strong:not(:where(.not-content *)) {
+	color: var(--ex-foreground);
+	font-weight: 600;
+}
+
+.sl-markdown-content :not(pre) > code:not(:where(.not-content *)) {
+	border-radius: 4px;
+	padding: 0.125em 0.3em;
+	background-color: var(--ex-muted);
+	color: var(--ex-foreground);
+	font-size: 0.875em;
+}
+
+.sl-markdown-content blockquote:not(:where(.not-content *)) {
+	border-inline-start: 2px solid var(--ex-border);
+	color: var(--ex-muted-foreground);
+}
+
+.sl-markdown-content hr:not(:where(.not-content *)) {
+	border-color: var(--ex-border);
+}
+
+.sl-markdown-content kbd:not(:where(.not-content *)) {
+	border: 1px solid var(--ex-border);
+	border-radius: 4px;
+	background-color: var(--ex-muted);
+	font-family: var(--ex-mono);
+}
+
+/* tables: the table of the web UI in a card */
+.sl-markdown-content table:not(:where(.not-content *)) {
+	border-collapse: separate;
+	border-spacing: 0;
+	border: 1px solid var(--ex-border);
+	border-radius: calc(var(--ex-radius) + 4px);
+	background-color: var(--ex-card);
+	box-shadow: var(--ex-shadow-xs);
+	font-size: var(--sl-text-sm);
+}
+
+@media (min-width: 50rem) {
+	.sl-markdown-content table:not(:where(.not-content *)) {
+		display: table;
+		width: 100%;
+	}
+}
+
+.sl-markdown-content :is(th, td):not(:where(.not-content *)) {
+	border: 0;
+	border-bottom: 1px solid var(--ex-border);
+	padding: 0.5rem 0.875rem;
+	vertical-align: top;
+}
+
+.sl-markdown-content tr:last-child > td:not(:where(.not-content *)) {
+	border-bottom: 0;
+}
+
+.sl-markdown-content th:not(:where(.not-content *)) {
+	background-color: transparent;
+	color: var(--ex-muted-foreground);
+	font-weight: 500;
+	text-align: start;
+	white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ asides -- */
+
+/* the alert of the web UI: a card with a colored icon */
+.starlight-aside {
+	--ex-aside-accent: var(--ex-info);
+	border: 1px solid var(--ex-border);
+	border-radius: var(--ex-radius);
+	background: var(--ex-card);
+	padding: 0.75rem 1rem;
+	color: var(--ex-text);
+	font-size: var(--sl-text-sm);
+}
+
+.starlight-aside--tip {
+	--ex-aside-accent: var(--ex-success);
+}
+
+.starlight-aside--caution {
+	--ex-aside-accent: var(--ex-warning);
+	border-color: color-mix(in srgb, var(--ex-warning) 35%, transparent);
+	background: color-mix(in srgb, var(--ex-warning) 6%, var(--ex-card));
+}
+
+.starlight-aside--danger {
+	--ex-aside-accent: var(--ex-destructive);
+	border-color: color-mix(in srgb, var(--ex-destructive) 35%, transparent);
+	background: color-mix(in srgb, var(--ex-destructive) 6%, var(--ex-card));
+}
+
+.starlight-aside__title {
+	font-size: var(--sl-text-sm);
+	font-weight: 600;
+	color: var(--ex-foreground);
+}
+
+.starlight-aside__icon {
+	color: var(--ex-aside-accent);
+}
+
+/* -------------------------------------------------------------------- tabs -- */
+
+/* the tabs list of the web UI */
+starlight-tabs [role='tablist'] {
+	display: inline-flex;
+	gap: 0;
+	max-width: 100%;
+	height: 2.25rem;
+	padding: 3px;
+	border: 0;
+	border-radius: var(--ex-radius);
+	background: var(--ex-muted);
+}
+
+starlight-tabs .tab > [role='tab'] {
+	height: 100%;
+	padding: 0 0.75rem;
+	border: 1px solid transparent;
+	border-radius: calc(var(--ex-radius) - 2px);
+	box-shadow: none;
+	color: var(--ex-muted-foreground);
+	font-size: var(--sl-text-sm);
+	font-weight: 500;
+	white-space: nowrap;
+	transition: color 0.15s, background-color 0.15s, box-shadow 0.15s;
+}
+
+starlight-tabs .tab > [role='tab']:hover {
+	color: var(--ex-foreground);
+}
+
+starlight-tabs .tab [role='tab'][aria-selected='true'] {
+	border-color: var(--ex-tab-active-border);
+	background: var(--ex-tab-active);
+	box-shadow: var(--ex-shadow-sm);
+	color: var(--ex-foreground);
+	font-weight: 500;
+}
+
+starlight-tabs .tablist-wrapper ~ [role='tabpanel'] {
+	margin-top: 0.75rem;
+}
+
+/* ------------------------------------------------------------------- steps -- */
+
+.sl-steps {
+	--bullet-size: 1.75rem;
+	--bullet-margin: 0.375rem;
+}
+
+.sl-steps > li::before {
+	border: 1px solid var(--ex-border);
+	background-color: var(--ex-muted);
+	color: var(--ex-foreground);
+	font-weight: 600;
+	font-size: var(--sl-text-xs);
+	line-height: calc(var(--bullet-size) - 2px);
+}
+
+.sl-steps > li::after {
+	background-color: var(--ex-border);
+	width: 1px;
+	inset-inline-start: calc((var(--bullet-size) - 1px) / 2);
+}
+
+/* ------------------------------------------------------------ cards & links -- */
+
+.card {
+	border: 1px solid var(--ex-border);
+	border-radius: calc(var(--ex-radius) + 4px);
+	background-color: var(--ex-card);
+	box-shadow: var(--ex-shadow-xs);
+	padding: 1.25rem;
+}
+
+.card .title {
+	font-weight: 600;
+	letter-spacing: -0.01em;
+}
+
+.card .icon {
+	border-radius: 8px;
+	background-color: var(--ex-primary);
+	color: var(--ex-primary-foreground);
+	padding: 0.25rem;
+}
+
+.sl-link-card,
+.pagination-links a {
+	border: 1px solid var(--ex-border);
+	border-radius: calc(var(--ex-radius) + 4px);
+	background-color: var(--ex-card);
+	box-shadow: var(--ex-shadow-xs);
+	transition: border-color 0.15s, background-color 0.15s;
+}
+
+.sl-link-card:hover,
+.pagination-links a:hover {
+	border-color: var(--ex-ring);
+	background-color: var(--ex-card);
+}
+
+.sl-link-card .title,
+.pagination-links .link-title {
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	color: var(--ex-foreground);
+}
+
+.pagination-links .link-title {
+	font-size: var(--sl-text-lg);
+}
+
+.sl-link-card .description {
+	color: var(--ex-muted-foreground);
+}
+
+.sl-link-card .icon {
+	color: var(--ex-muted-foreground);
+}
+
+.sl-link-card:hover .icon {
+	color: var(--ex-foreground);
+}
+
+/* ---------------------------------------------------------------- buttons -- */
+
+.sl-link-button {
+	height: 2.5rem;
+	padding-inline: 1.25rem;
+	border: 1px solid transparent;
+	border-radius: calc(var(--ex-radius) - 2px);
+	font-size: var(--sl-text-sm);
+	font-weight: 500;
+	transition: background-color 0.15s, border-color 0.15s;
+}
+
+.sl-link-button.primary {
+	background-color: var(--ex-primary);
+	color: var(--ex-primary-foreground);
+	box-shadow: var(--ex-shadow-xs);
+}
+
+.sl-link-button.primary:hover {
+	background-color: color-mix(in srgb, var(--ex-primary) 90%, transparent);
+	color: var(--ex-primary-foreground);
+}
+
+.sl-link-button.secondary {
+	background-color: var(--ex-background);
+	border-color: var(--ex-input);
+	color: var(--ex-foreground);
+	box-shadow: var(--ex-shadow-xs);
+}
+
+:root:not([data-theme='light']) .sl-link-button.secondary {
+	background-color: color-mix(in srgb, var(--ex-input) 30%, transparent);
+}
+
+.sl-link-button.secondary:hover {
+	background-color: var(--ex-muted);
+	color: var(--ex-foreground);
+}
+
+.sl-link-button.minimal {
+	color: var(--ex-foreground);
+}
+
+/* ------------------------------------------------------------------ badges -- */
+
+.sl-badge {
+	border-radius: 6px;
+	font-weight: 500;
+}
+
+/* -------------------------------------------------------------- page footer -- */
+
+footer.sl-flex .meta,
+footer.sl-flex .kudos {
+	color: var(--ex-muted-foreground);
+}
+
+/* ----------------------------------------------------------- scroll to top -- */
+
+:root .scroll-to-top-button {
+	width: 2.5rem;
+	height: 2.5rem;
+	right: 1.5rem;
+	bottom: 1.5rem;
+	border: 1px solid var(--ex-input);
+	border-radius: var(--ex-radius);
+	background-color: var(--ex-background);
+	color: var(--ex-foreground);
+	box-shadow: var(--ex-shadow-sm);
+}
+
+:root .scroll-to-top-button:hover,
+:root .scroll-to-top-button:active {
+	border-color: var(--ex-ring);
+	background-color: var(--ex-muted);
+	color: var(--ex-foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html {
+		scroll-behavior: auto;
+	}
+}

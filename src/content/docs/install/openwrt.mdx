@@ -1,0 +1,65 @@
+---
+title: OpenWrt
+description: Требования, установка, обновление и удаление на OpenWrt.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+## Требования
+
+- OpenWrt 24.10 или новее: firewall4, ядро Linux 5.13+.
+- Готовые пакеты собираются для OpenWrt 24.10, 25.12 и SNAPSHOT на архитектурах `x86_64`, `aarch64_cortex-a53`, `aarch64_generic`, `aarch64_cortex-a72`, `aarch64_cortex-a76`, `mipsel_24kc`, `arm_cortex-a7_neon-vfpv4`. Архитектура роутера — `DISTRIB_ARCH` в `/etc/openwrt_release`. Для остальных пакеты [собираются из исходников](/development/#сборка-из-исходников).
+
+### Если OpenWrt ещё не стоит
+
+- [Firmware Selector](https://firmware-selector.openwrt.org/) — найдите модель и скачайте прошивку: `factory` для установки со стоковой прошивки, `sysupgrade` для обновления OpenWrt.
+- [Table of Hardware](https://openwrt.org/toh/start) — поддерживается ли модель и как её прошить.
+- [Общая инструкция по прошивке](https://openwrt.org/docs/guide-user/installation/generic.flashing).
+
+## Установка и обновление
+
+В SSH-консоли роутера:
+
+```shell
+wget -O - https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/main/install.sh | ash
+```
+
+Установщик проверяет доступ к GitHub, спрашивает, какое [ядро](/install/options/#ядро) поставить, скачивает пакеты `exodus`, `luci-app-exodus` и `luci-i18n-exodus-*` из [релизов](https://github.com/prettyleaf/openwrt-exodus/releases) под архитектуру и версию OpenWrt роутера и ставит их. Зависимости ставятся из официальных фидов OpenWrt. Если стоит Nikki, установщик заменяет его и сохраняет настройки, см. [переход с Nikki](/install/migration/#с-nikki-openwrt).
+
+Обновление — та же команда или страница **«Службы» → «Exodus» → «Обновить»** в LuCI: она запускает тот же установщик с ядром и gh-proxy, выбранными в прошлый раз. Если на флеше мало места, включите там режим «мало места»: текущее ядро удаляется перед установкой нового.
+
+Параметры установщика (версия, ядро, gh-proxy) — на странице [Параметры установщика](/install/options/).
+
+## Первый запуск
+
+<Steps>
+
+1. **«Службы» → «Exodus» → «Профиль»**: добавьте подписку или загрузите профиль.
+2. **«Настройки приложения»**: выберите профиль, включите приложение, выберите режим и устройства, затем «Сохранить и применить».
+3. Кнопка **«Открыть панель»** рядом с «Перезапустить сервис» открывает панель (Zashboard), ядро скачивает её при первом запуске.
+
+</Steps>
+
+Подробно о страницах — [LuCI](/usage/luci/).
+
+## Установка без доступа к GitHub
+
+Если GitHub заблокирован, удобнее всего ставить через [gh-proxy](/install/options/#если-github-заблокирован). Без него скачайте `exodus_<arch>-<branch>.tar.gz` для своего роутера со [страницы релизов](https://github.com/prettyleaf/openwrt-exodus/releases) на другом компьютере, скопируйте в `/tmp` роутера и поставьте пакеты из архива (только ядро Mihomo Meta):
+
+```shell
+# <arch> — DISTRIB_ARCH из /etc/openwrt_release, <branch> — openwrt-24.10, openwrt-25.12 или SNAPSHOT
+# если стоит nikki, сначала удалите его (настройки сохранятся): opkg remove luci-app-nikki nikki / apk del luci-app-nikki nikki
+mkdir -p /tmp/exodus && tar -x -z -f /tmp/exodus_<arch>-<branch>.tar.gz -C /tmp/exodus
+# opkg (OpenWrt 24.10); --force-downgrade заменяет exodus с версией-датой (2026.04.08) или более новый релиз
+opkg update && opkg install --force-downgrade /tmp/exodus/mihomo-meta_*.ipk /tmp/exodus/exodus_*.ipk /tmp/exodus/luci-app-exodus_*.ipk
+# apk (OpenWrt 25.12 и SNAPSHOT)
+apk update && apk add --allow-untrusted /tmp/exodus/mihomo-meta-[0-9]*.apk /tmp/exodus/exodus-[0-9]*.apk /tmp/exodus/luci-app-exodus-[0-9]*.apk
+```
+
+## Удаление
+
+```shell
+wget -O - https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/main/uninstall.sh | ash
+```
+
+Скрипт удаляет пакеты вместе с настройками. Чтобы сохранить настройки, удалите только пакеты: `opkg remove luci-app-exodus exodus` или `apk del luci-app-exodus exodus`.

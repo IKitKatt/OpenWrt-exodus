@@ -1,0 +1,35 @@
+---
+title: Exodus
+description: Прозрачный прокси на Mihomo для роутеров с OpenWrt, Keenetic и Asuswrt-Merlin.
+template: splash
+hero:
+  tagline: Прозрачный прокси на ядре Mihomo для роутеров с OpenWrt, Keenetic и Asuswrt-Merlin. Подписка, выбор устройств и веб-интерфейс — без ручной правки конфигов.
+  actions:
+    - text: Начать
+      link: /overview/
+      icon: right-arrow
+    - text: GitHub
+      link: https://github.com/prettyleaf/openwrt-exodus
+      icon: external
+      variant: secondary
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## Установка
+
+<CardGrid>
+	<LinkCard title="OpenWrt" description="OpenWrt 24.10 и новее, пакеты для LuCI." href="/install/openwrt/" />
+	<LinkCard title="Keenetic / Netcraze" description="KeeneticOS 4 и новее с Entware, вместо XKeen." href="/install/keenetic/" />
+	<LinkCard title="Asus" description="Asuswrt-Merlin с Entware на USB-накопителе." href="/install/asuswrt/" />
+	<LinkCard title="Переход с другого прокси" description="Nikki, XKeen, XRAYUI и другие аддоны." href="/install/migration/" />
+</CardGrid>
+
+## Документация
+
+<CardGrid>
+	<LinkCard title="Веб-интерфейс" description="Статус, устройства, профили и обновления на Keenetic и Asus." href="/usage/web-ui/" />
+	<LinkCard title="Настройки" description="Режимы прокси, порты, DSCP, правила и сервис." href="/usage/settings/" />
+	<LinkCard title="Подписки и профили" description="Автообновление, заголовки провайдера, HWID и mixin." href="/usage/subscriptions/" />
+	<LinkCard title="Решение проблем" description="Что делать, если что-то не работает." href="/troubleshooting/" />
+</CardGrid>

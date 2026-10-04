@@ -1,0 +1,40 @@
+---
+/** The Exodus mark on a tile of the primary color, like the logo in the header of the web UI. */
+import mark from '../assets/logo.svg?raw';
+
+interface Props {
+	size?: 'sm' | 'lg';
+}
+
+const { size = 'sm' } = Astro.props;
+---
+
+<span class:list={['logo-tile', size]} aria-hidden="true" set:html={mark} />
+
+<style>
+	.logo-tile {
+		display: inline-flex;
+		flex-shrink: 0;
+		align-items: center;
+		justify-content: center;
+		border-radius: 8px;
+		background-color: var(--ex-primary);
+		color: var(--ex-primary-foreground);
+	}
+
+	.sm {
+		width: 28px;
+		height: 28px;
+	}
+
+	.lg {
+		width: 56px;
+		height: 56px;
+		border-radius: 14px;
+	}
+
+	.logo-tile :global(svg) {
+		width: 71%;
+		height: auto;
+	}
+</style>

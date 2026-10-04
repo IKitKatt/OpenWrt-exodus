@@ -1,0 +1,42 @@
+---
+import config from 'virtual:starlight/user-config';
+import Segmented from './Segmented.astro';
+
+const currentLocale = Astro.locals.starlightRoute.locale;
+
+// The current page path without the base and the locale prefix (the root locale has none).
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+let path = Astro.url.pathname.startsWith(base) ? Astro.url.pathname.slice(base.length) : Astro.url.pathname;
+if (currentLocale) path = path.replace(new RegExp(`^/${currentLocale}(?=/|$)`), '');
+path ||= '/';
+
+const languages = Object.entries(config.locales ?? {}).map(([code, locale]) => {
+	const prefix = code === 'root' ? '' : `/${code}`;
+	return {
+		href: `${base}${prefix}${path}`,
+		short: (locale!.lang ?? code).split('-')[0]!.toUpperCase(),
+		label: locale!.label,
+		lang: locale!.lang,
+		current: (code === 'root' ? undefined : code) === currentLocale,
+	};
+});
+---
+
+{
+	config.isMultilingual && (
+		<Segmented label={Astro.locals.t('languageSelect.accessibleLabel')}>
+			{languages.map(({ href, short, label, lang, current }) => (
+				<a
+					href={href}
+					hreflang={lang}
+					lang={lang}
+					aria-label={label}
+					title={label}
+					aria-current={current ? 'page' : undefined}
+				>
+					{short}
+				</a>
+			))}
+		</Segmented>
+	)
+}

@@ -1,0 +1,57 @@
+---
+title: Asus (Asuswrt-Merlin)
+description: Прошивка Merlin, Entware, установка и особенности роутеров Asus.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+## Требования
+
+- [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) на модели с Broadcom. Стоковая прошивка не запускает пользовательские скрипты: тогда правила восстанавливает только сторож, в течение 15 секунд после каждого перезапуска файрвола.
+- Архитектуры: `arm64` (RT-AX86U, RT-AX88U, GT-AX6000 и другие модели HND) и `armv7` (RT-AX58U, RT-AC68U и другие). Модели без FPU, как RT-AC68U, получают сборку ядра `armv5`.
+- Entware на USB-накопителе с ext4 и ~70 МБ свободного места на нём: ядро Mihomo ~40 МБ, yq ~15 МБ.
+- Другие прозрачные прокси (XRAYUI и похожие аддоны) остановлены и убраны из автозапуска, см. [переход](/install/migration/#с-xrayui-и-других-аддонов-asus).
+- Для UDP через прокси нужен модуль TPROXY в прошивке. Без него UDP идёт напрямую, а TCP — через Redirect; об этом пишется в лог Exodus.
+
+## Подготовка
+
+<Steps>
+
+1. **Прошивка.** Проверьте модель в [списке поддерживаемых](https://github.com/RMerl/asuswrt-merlin.ng/wiki/Supported-Devices), скачайте прошивку на [asuswrt-merlin.net](https://www.asuswrt-merlin.net/download) и поставьте её через «Администрирование» → «Обновление микропрограммы» по [официальной инструкции](https://github.com/RMerl/asuswrt-merlin.ng/wiki/Installation).
+
+2. **SSH.** «Администрирование» → «Система» → «Включить SSH»: только LAN.
+
+3. **JFFS.** «Enable JFFS custom scripts and configs» («Администрирование» → «Система») должен быть включён. Если он выключен, установщик включит его сам.
+
+4. **Entware.** Подключите USB-накопитель с ext4, зайдите по SSH, запустите `amtm` и установите Entware пунктом `ep`. Подробнее — [amtm](https://github.com/RMerl/asuswrt-merlin.ng/wiki/AMTM) и [Entware](https://github.com/RMerl/asuswrt-merlin.ng/wiki/Entware) в вики Merlin.
+
+</Steps>
+
+## Установка и обновление
+
+В SSH-консоли роутера:
+
+```shell
+curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/install.sh | sh
+```
+
+Установщик ставит из Entware `curl jq ca-bundle lighttpd lighttpd-mod-cgi`, iptables и ipset берутся из прошивки — они соответствуют её ядру. В конце он печатает адрес [веб-интерфейса](/usage/web-ui/), с адресом роутера по умолчанию — `http://192.168.50.1:9099/`.
+
+Обновление — та же команда или страница **«Обновления»** веб-интерфейса. Параметры установщика — на странице [Параметры установщика](/install/options/).
+
+## Особенности Asus
+
+- Прошивка восстанавливает свои таблицы iptables без правил аддонов при каждом перезапуске файрвола: переподключении WAN, изменении настроек в веб-интерфейсе. Установщик добавляет строку с пометкой `# exodus` в `/jffs/scripts/firewall-start` и `/jffs/scripts/nat-start` сразу после shebang, строки других аддонов сохраняются. Раз в 15 секунд правила проверяет и сторож.
+- `/jffs/scripts/unmount` останавливает прокси перед отключением USB-накопителя: правила не должны оставаться без ядра.
+- **Сети Wi-Fi** — это радиомодули (`wl0`, `wl1`, `wl2`) и гостевые сети (`wl0.1` и другие): устройства, подключённые к ним на этом роутере, из `wl assoclist`, синхронизация каждые 30 секунд. Клиенты узлов AiMesh не видны. Имена устройств — из списка клиентов роутера (`custom_clientlist`), DHCP и карты сети.
+- Проксируемый трафик идёт на сам роутер, мимо фильтрации транзитного трафика. С **«Учитывать родительский контроль»** его проверяет цепочка родительского контроля прошивки (`PControls`): блокировка устройств и расписания действуют и на него. Фильтры контента AiProtection не видят содержимое проксируемого трафика.
+- `router.asus.com`, `www.asusrouter.com` и `www.asusnetwork.net` резолвятся в адрес роутера, имена локального домена спрашиваются у роутера.
+- Таблица маршрутов TPROXY — 7892: таблицы 111–115 заняты VPN-клиентами Merlin.
+
+## Удаление
+
+```shell
+curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/uninstall.sh | sh
+```
+
+Строки Exodus удаляются из `/jffs/scripts`, строки других аддонов остаются. С `KEEP_CONFIG=1` перед `sh` настройки, профили и подписки в `/opt/etc/exodus` сохраняются. Пакеты Entware не удаляются.

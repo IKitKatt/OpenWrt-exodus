@@ -1,0 +1,59 @@
+---
+title: Web UI
+description: Pages of the Exodus web UI on Keenetic and Asus.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+The web UI runs on Keenetic and Asus, on OpenWrt [LuCI](/en/usage/luci/) plays its role. The address is `http://<router address>:9099/`, the password is set by the installer. Forgot it — `exodus passwd` over SSH. The UI is in English and Russian, with light and dark themes.
+
+## Quick start
+
+<Steps>
+
+1. **Profiles**: add a subscription or upload a profile.
+2. **Status**: enable the service, choose the profile, choose the mode and the devices in the Devices section.
+3. Press **Save & Apply**.
+
+</Steps>
+
+## Status
+
+- **Service**: the state, the Start, Stop, Restart and Dashboard buttons. **Enable** runs the service and starts it when the router boots.
+- **Profile**: a subscription or an uploaded file. Save & Apply restarts the service with the chosen profile.
+- When the provider of the subscription sends an announce, a block with its logo, text and a Support button appears on top.
+- **Devices** — who goes through the proxy:
+  - **All except selected** — all devices go through the proxy, the selected ones go directly (the default).
+  - **Only selected** — only the selected devices go through the proxy.
+
+  You can choose:
+  - a **network segment** (home, guest) — all its devices;
+  - a **Wi-Fi network** — the devices connected to it at the moment, synced every 30 seconds. On Keenetic these are Wi-Fi points, on Asus the radios and guest networks of this router, without AiMesh nodes;
+  - a **device** — by MAC, with IPv4 and IPv6;
+  - **Add by address** — a MAC, an IP or a network like `192.168.1.0/24` for devices the router does not list. The IP of a device the router knows is saved as its MAC, so the choice follows the device when its address changes.
+
+  DNS follows the choice: proxied devices ask the core, the others ask the router. If the interception is off in the settings (**Settings → Proxy → Enable**), the device selection has no effect.
+
+**Dashboard** opens the dashboard of the core (Zashboard by default): proxy selection in groups, connections, logs. The core downloads it on the first start, it is available while the service is running.
+
+## Profiles
+
+- **Subscriptions**: name, URL, info URL, user agent, update interval, Send HWID. Each shows its traffic, expiry and update time; Update downloads it right away. The fields in detail — [Subscriptions and profiles](/en/usage/subscriptions/).
+- **Profile files**: upload, download and delete your own Mihomo configs.
+- **Hard update**: removes everything downloaded by the providers of the current profile, downloads the subscription again and restarts the service. Files of local providers are kept.
+
+## Editor
+
+Editing files on the router: the mixin file, the profile for startup (read only — rewritten on restart), profile files, subscriptions, rule and proxy providers. Save or Save & Restart.
+
+## Logs
+
+The Exodus log and the core log. **Debug report** builds a report for an issue: server addresses, passwords and subscription links are hidden in it, but check it before you share it.
+
+Logs are kept in RAM, the size limit and clearing at stop are in [Settings → Service](/en/usage/settings/#service).
+
+## Updates
+
+Versions of Exodus and the core: installed and latest, the architecture, free space. GitHub is asked at most every 6 hours, Check again asks now. An update is offered when the code of the branch of the router changes (a change of the readme does not count), the core is compared by its version.
+
+Update downloads Exodus and the core from GitHub into Entware, settings, profiles and subscriptions are kept, the proxy restarts. The core and the gh-proxy chosen in the installer are kept — run the [installer](/en/install/options/) again to change them. **Low flash space mode** removes the current core before installing the new one when the update fails for lack of space; the proxy does not work until the new core is installed.

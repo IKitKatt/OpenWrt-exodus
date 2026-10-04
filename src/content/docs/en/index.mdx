@@ -1,0 +1,35 @@
+---
+title: Exodus
+description: Transparent proxy with Mihomo for OpenWrt, Keenetic and Asuswrt-Merlin routers.
+template: splash
+hero:
+  tagline: Transparent proxy with the Mihomo core for OpenWrt, Keenetic and Asuswrt-Merlin routers. Subscriptions, device selection and a web UI — no config editing by hand.
+  actions:
+    - text: Get started
+      link: /en/overview/
+      icon: right-arrow
+    - text: GitHub
+      link: https://github.com/prettyleaf/openwrt-exodus
+      icon: external
+      variant: secondary
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## Installation
+
+<CardGrid>
+	<LinkCard title="OpenWrt" description="OpenWrt 24.10 and newer, packages for LuCI." href="/en/install/openwrt/" />
+	<LinkCard title="Keenetic / Netcraze" description="KeeneticOS 4 and newer with Entware, in place of XKeen." href="/en/install/keenetic/" />
+	<LinkCard title="Asus" description="Asuswrt-Merlin with Entware on a USB drive." href="/en/install/asuswrt/" />
+	<LinkCard title="Migrating from another proxy" description="Nikki, XKeen, XRAYUI and other addons." href="/en/install/migration/" />
+</CardGrid>
+
+## Documentation
+
+<CardGrid>
+	<LinkCard title="Web UI" description="Status, devices, profiles and updates on Keenetic and Asus." href="/en/usage/web-ui/" />
+	<LinkCard title="Settings" description="Proxy modes, ports, DSCP, rules and the service." href="/en/usage/settings/" />
+	<LinkCard title="Subscriptions and profiles" description="Auto update, provider headers, HWID and the mixin file." href="/en/usage/subscriptions/" />
+	<LinkCard title="Troubleshooting" description="What to do when something does not work." href="/en/troubleshooting/" />
+</CardGrid>

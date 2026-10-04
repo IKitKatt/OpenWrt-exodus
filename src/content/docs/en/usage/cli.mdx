@@ -1,0 +1,69 @@
+---
+title: Command line and files
+description: Service commands and file locations on every platform.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+## Commands
+
+<Tabs syncKey="platform">
+<TabItem label="Keenetic and Asus">
+
+```shell
+exodus start | stop | restart | status
+exodus update_subscription <id>   # download a subscription, the running core gets it when it is in use
+exodus hard_update     # remove downloaded providers, update the subscription and restart
+exodus debug           # report for an issue, server addresses and passwords are hidden
+exodus web restart     # restart the web UI (also start, stop, status)
+exodus passwd          # change the password of the web UI
+```
+
+</TabItem>
+<TabItem label="OpenWrt">
+
+```shell
+/etc/init.d/nikki start | stop | restart | reload
+/etc/init.d/nikki update_subscription <id>   # download a subscription by its section id
+/etc/init.d/nikki hard_update                # remove downloaded providers, update the subscription and restart
+/etc/nikki/scripts/debug.sh                  # report for an issue, like Log → Debug Log; enables the service when it is off
+```
+
+The service is still called `nikki`: Exodus is its fork and uses the same paths.
+
+</TabItem>
+</Tabs>
+
+## Files
+
+<Tabs syncKey="platform">
+<TabItem label="Keenetic and Asus">
+
+| Path | Purpose |
+| --- | --- |
+| `/opt/etc/exodus/config.json` | settings |
+| `/opt/etc/exodus/mixin.yaml` | [mixin file](/en/usage/subscriptions/#mixin-file) |
+| `/opt/etc/exodus/profiles/` | uploaded profiles |
+| `/opt/etc/exodus/subscriptions/` | subscriptions and what the provider told about them |
+| `/opt/etc/exodus/run/` | working directory of the core: profile for startup, providers, dashboard |
+| `/opt/share/exodus/` | scripts and the web UI |
+| `/opt/libexec/exodus/` | `mihomo` and `yq` |
+| `/opt/etc/init.d/S99exodus` | start with Entware |
+| `/tmp/exodus/log/` | logs of the app, the core and the update |
+| `/opt/etc/ndm/netfilter.d/50-exodus.sh` | Keenetic only: restores the rules after NDM |
+| `/jffs/scripts/firewall-start`, `nat-start`, `unmount` | Asus only: one line marked `# exodus` in each |
+
+</TabItem>
+<TabItem label="OpenWrt">
+
+| Path | Purpose |
+| --- | --- |
+| `/etc/config/nikki` | settings (UCI) |
+| `/etc/nikki/mixin.yaml` | [mixin file](/en/usage/subscriptions/#mixin-file) |
+| `/etc/nikki/profiles/` | uploaded profiles |
+| `/etc/nikki/subscriptions/` | subscriptions |
+| `/etc/nikki/run/` | working directory of the core: profile for startup, providers, dashboard |
+| `/var/log/nikki/` | logs of the app and the core |
+
+</TabItem>
+</Tabs>

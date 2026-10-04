@@ -1,0 +1,79 @@
+---
+/** A group of toggles (theme, language), the tabs list of the web UI. */
+interface Props {
+	label: string;
+	class?: string;
+}
+
+const { label, class: className } = Astro.props;
+---
+
+<div role="group" aria-label={label} class:list={['segmented', className]}>
+	<slot />
+</div>
+
+<style>
+	.segmented {
+		display: inline-flex;
+		flex-shrink: 0;
+		height: 2rem;
+		padding: 3px;
+		border-radius: var(--ex-radius);
+		background-color: var(--ex-muted);
+	}
+
+	.segmented > :global(*) {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding-inline: 0.5rem;
+		border: 1px solid transparent;
+		border-radius: calc(var(--ex-radius) - 2px);
+		background: transparent;
+		color: var(--ex-muted-foreground);
+		font: inherit;
+		font-size: 0.75rem;
+		font-weight: 500;
+		line-height: 1;
+		text-decoration: none;
+		cursor: pointer;
+		transition: color 0.15s, background-color 0.15s, box-shadow 0.15s;
+	}
+
+	.segmented > :global(*:hover) {
+		color: var(--ex-foreground);
+	}
+
+	.segmented > :global(*:focus-visible) {
+		outline: none;
+		border-color: var(--ex-ring);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--ex-ring) 50%, transparent);
+	}
+
+	.segmented > :global(:is([aria-pressed='true'], [aria-current='page'])) {
+		background-color: var(--ex-tab-active);
+		border-color: var(--ex-tab-active-border);
+		color: var(--ex-foreground);
+		box-shadow: var(--ex-shadow-sm);
+	}
+
+	.segmented :global(svg) {
+		width: 0.875rem;
+		height: 0.875rem;
+	}
+
+	/* touch-friendly size inside the mobile menu */
+	:global(.mobile-preferences) .segmented {
+		height: 2.5rem;
+	}
+
+	:global(.mobile-preferences) .segmented > :global(*) {
+		padding-inline: 0.875rem;
+		font-size: var(--sl-text-sm);
+	}
+
+	:global(.mobile-preferences) .segmented :global(svg) {
+		width: 1rem;
+		height: 1rem;
+	}
+</style>

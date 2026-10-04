@@ -1,0 +1,75 @@
+---
+title: Keenetic / Netcraze
+description: Подготовка роутера, Entware, установка и особенности Keenetic.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+## Требования
+
+- KeeneticOS 4.x или новее.
+- Архитектуры: `aarch64` (arm64), `mipsel` и `mips` (softfloat).
+- Entware на USB-накопителе или во встроенной памяти и ~70 МБ свободного места на нём: ядро Mihomo ~40 МБ, yq ~15 МБ.
+- XKeen остановлен и убран из автозапуска: оба перехватывают один и тот же трафик, см. [переход с XKeen](/install/migration/#с-xkeen-keenetic).
+
+## Подготовка
+
+<Steps>
+
+1. **Компоненты KeeneticOS.** «Общие настройки» → «Изменить набор компонентов», роутер перезагрузится.
+
+   | Компонент | Зачем |
+   | --- | --- |
+   | «Поддержка открытых пакетов» (OPKG) | обязательно, на нём работает Entware |
+   | «Модули ядра подсистемы Netfilter» | обязательно: TPROXY (UDP и TCP в режиме TPROXY) и метки DSCP |
+   | «Протокол IPv6» | для IPv6 через прокси, в KeeneticOS 5 включён всегда |
+   | «Интерфейс USB» и «Файловая система Ext» | если Entware стоит на USB-накопителе |
+
+2. **Entware.** Установите по [официальной инструкции Keenetic](https://help.keenetic.com/hc/ru/articles/360021214160) или по [инструкции из XKeen](https://github.com/Corvus-Malus/XKeen#%D1%83%D1%81%D1%82%D0%B0%D0%BD%D0%BE%D0%B2%D0%BA%D0%B0-%D1%81%D0%B8%D1%81%D1%82%D0%B5%D0%BC%D1%8B-%D0%BF%D0%B0%D0%BA%D0%B5%D1%82%D0%BE%D0%B2-%D1%80%D0%B5%D0%BF%D0%BE%D0%B7%D0%B8%D1%82%D0%BE%D1%80%D0%B8%D1%8F-entware-%D0%BD%D0%B0-usb-%D0%BD%D0%B0%D0%BA%D0%BE%D0%BF%D0%B8%D1%82%D0%B5%D0%BB%D1%8C) (с разметкой накопителя и swap).
+
+3. **SSH-консоль Entware.** Логин `root`, пароль `keenetic` (смените его командой `passwd`). Порт 222, если в роутере установлен компонент «Сервер SSH», иначе 22.
+
+</Steps>
+
+## Установка и обновление
+
+В SSH-консоли Entware:
+
+```shell
+opkg update && opkg install curl
+curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/keenetic/install.sh | sh
+```
+
+Установщик ставит пакеты Entware, проверяет доступ к GitHub, спрашивает [ядро](/install/options/#ядро) и пароль веб-интерфейса, скачивает Mihomo и yq в `/opt/libexec/exodus`. В конце он печатает адрес [веб-интерфейса](/usage/web-ui/), по умолчанию `http://192.168.1.1:9099/`.
+
+Обновление — та же команда или страница **«Обновления»** веб-интерфейса. Параметры установщика (ядро, пароль, gh-proxy) — на странице [Параметры установщика](/install/options/).
+
+Если `opkg` падает внутри установщика, поставьте пакеты заранее:
+
+```shell
+opkg update
+opkg install curl ca-bundle jq ipset iptables ip-full lighttpd lighttpd-mod-cgi
+```
+
+| Пакет | Зачем |
+| --- | --- |
+| `curl`, `ca-bundle` | загрузки по HTTPS: установщик, подписки, обновления |
+| `jq` | настройки и API веб-интерфейса |
+| `ipset`, `iptables` | правила перехвата и наборы устройств, `ip6tables` входит в `iptables` |
+| `ip-full` | маршрут и правило для TPROXY |
+| `lighttpd`, `lighttpd-mod-cgi` | веб-интерфейс |
+
+## Особенности Keenetic
+
+- NDM пересобирает iptables при многих событиях. Правила восстанавливает хук `/opt/etc/ndm/netfilter.d/50-exodus.sh`, а раз в 15 секунд их проверяет сторож.
+- Имена устройств, точки Wi-Fi и родительский контроль берутся из RCI роутера (`127.0.0.1:79`, запросы с самого роутера не требуют токена). Версия прошивки и модель для заголовков HWID — оттуда же или из `ndmc`. Если роутер не отдаёт список, показываются только соседи из его ARP-таблицы.
+- TCP по умолчанию идёт через Redirect, UDP — через TPROXY. TPROXY для TCP требует свободного порта 443 роутера: перенесите веб-интерфейс роутера на другой порт на странице «Пользователи и доступ». TUN не поддерживается, TUN профиля выключается.
+- Трафик в обход прокси (метка DSCP 62, исключённые устройства) сохраняет аппаратное ускорение и QoS роутера. Ограничения скорости и приоритеты IntelliQoS на проксируемый трафик не действуют: его отправляет сам роутер.
+
+## Удаление
+
+```shell
+curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/keenetic/uninstall.sh | sh
+```
+
+С `KEEP_CONFIG=1` перед `sh` настройки, профили и подписки в `/opt/etc/exodus` сохраняются. Пакеты Entware не удаляются: ими могут пользоваться другие приложения.
