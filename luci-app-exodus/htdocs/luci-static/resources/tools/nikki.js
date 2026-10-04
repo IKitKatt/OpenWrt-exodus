@@ -199,6 +199,7 @@ return baseclass.extend({
     openDashboard: async function () {
         const profile = await callNikkiProfile({
             'external-ui-name': null,
+            'external-ui-url': null,
             'external-controller': null,
             'external-controller-tls': null,
             'secret': null
@@ -228,11 +229,13 @@ return baseclass.extend({
             secret: apiSecret
         };
         const query = new URLSearchParams(params).toString();
+        // zashboard and metacubexd keep the backends they know and take a new secret of the link only on their setup page, yacd reads the query
+        const setup = /yacd/i.test(profile['external-ui-url'] ?? '') ? '' : `#/setup?${query}`;
         let url;
         if (uiName) {
-            url = `${protocol}://${window.location.hostname}:${port}/ui/${uiName}/?${query}`;
+            url = `${protocol}://${window.location.hostname}:${port}/ui/${uiName}/?${query}${setup}`;
         } else {
-            url = `${protocol}://${window.location.hostname}:${port}/ui/?${query}`;
+            url = `${protocol}://${window.location.hostname}:${port}/ui/?${query}${setup}`;
         }
 
         setTimeout(function () { window.open(url, '_blank') }, 0);

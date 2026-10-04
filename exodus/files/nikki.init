@@ -747,7 +747,10 @@ update_subscription() {
 				fi
 			fi
 			# update subscription info
-			if [ -n "$subscription_expire" ]; then
+			# 0 and dates from 2099 on mean no expiry
+			if [ "$subscription_expire" = 0 ] || { [ -n "$subscription_expire" ] && [ "$subscription_expire" -ge 4070908800 ]; } 2> /dev/null; then
+				uci_set "nikki" "$subscription_section" "expire" "∞"
+			elif [ -n "$subscription_expire" ]; then
 				uci_set "nikki" "$subscription_section" "expire" "$(date "+%Y-%m-%d %H:%M:%S" -d "@$subscription_expire")"
 			fi
 			if [ -n "$subscription_upload" ]; then
