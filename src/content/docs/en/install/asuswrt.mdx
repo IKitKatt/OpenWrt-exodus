@@ -10,7 +10,7 @@ import { Steps } from '@astrojs/starlight/components';
 - [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) on a Broadcom model. The stock firmware runs no user scripts: the rules are then restored only by the watcher, within 15 seconds after every restart of the firewall.
 - Architectures: `arm64` (RT-AX86U, RT-AX88U, GT-AX6000 and other HND models) and `armv7` (RT-AX58U, RT-AC68U and others). Models without an FPU, like RT-AC68U, get the `armv5` build of the core.
 - Entware on an ext4 USB drive and about 70 MB free on it: the Mihomo core is about 40 MB, yq about 15 MB.
-- Other transparent proxies (XRAYUI and similar addons) stopped and removed from autostart, see [migrating](/en/install/migration/#from-xrayui-and-other-addons-asus).
+- Other proxies (XRAYUI and similar) stopped and removed from autostart, see [migrating](/en/install/migration/#from-xrayui-and-similar-asus).
 - UDP through the proxy needs the TPROXY module of the firmware. Without it UDP goes directly and TCP through Redirect, the Exodus log tells about it.
 
 ## Preparation
@@ -41,7 +41,7 @@ To update, run the same command or use the **Updates** page of the web UI. Insta
 
 ## Asus specifics
 
-- The firmware restores its iptables tables without the rules of addons on every restart of the firewall: a reconnect of the WAN, a change in the web interface. The installer adds a line marked `# exodus` to `/jffs/scripts/firewall-start` and `/jffs/scripts/nat-start` right after the shebang, the lines of other addons are kept. The watcher checks the rules every 15 seconds too.
+- The firmware restores its iptables tables without third-party rules on every restart of the firewall: a reconnect of the WAN, a change in the web interface. The installer adds a line marked `# exodus` to `/jffs/scripts/firewall-start` and `/jffs/scripts/nat-start` right after the shebang, the lines of other scripts are kept. The watcher checks the rules every 15 seconds too.
 - `/jffs/scripts/unmount` stops the proxy before its USB drive is unmounted: the rules must not stay without the core.
 - **Wi-Fi networks** are the radios (`wl0`, `wl1`, `wl2`) and the guest networks (`wl0.1` and others): the devices connected to them on this router, from `wl assoclist`, synced every 30 seconds. Clients of AiMesh nodes are not seen. Device names come from the client list of the router (`custom_clientlist`), DHCP and its network map.
 - The proxied traffic goes to the router itself, past the filtering of forwarded traffic. With **Respect parental control** it is checked by the parental control chain of the firmware (`PControls`): blocked devices and time scheduling apply to it too. Content filters of AiProtection do not see inside the proxied traffic.
@@ -54,4 +54,4 @@ To update, run the same command or use the **Updates** page of the web UI. Insta
 curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/uninstall.sh | sh
 ```
 
-The lines of Exodus are removed from `/jffs/scripts`, the lines of other addons are kept. With `KEEP_CONFIG=1` before `sh` the settings, profiles and subscriptions in `/opt/etc/exodus` are kept. Entware packages are not removed.
+The lines of Exodus are removed from `/jffs/scripts`, the lines of other scripts are kept. With `KEEP_CONFIG=1` before `sh` the settings, profiles and subscriptions in `/opt/etc/exodus` are kept. Entware packages are not removed.

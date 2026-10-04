@@ -16,7 +16,7 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'Exodus',
-			description: 'Transparent proxy with Mihomo for OpenWrt, Keenetic and Asuswrt-Merlin routers.',
+			description: 'Proxy with the Mihomo core for OpenWrt, Keenetic and Asuswrt-Merlin routers.',
 			plugins: [starlightScrollToTop({ showTooltip: false, borderRadius: '10' })],
 			customCss: ['./src/styles/custom.css'],
 			favicon: '/favicon.svg',

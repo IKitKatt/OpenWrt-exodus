@@ -1,9 +1,9 @@
 ---
 title: Migrating from another proxy
-description: Moving from Nikki, XKeen, XRAYUI and other transparent proxies.
+description: Moving from Nikki, XKeen, XRAYUI and other proxies.
 ---
 
-Two transparent proxies can not intercept the same traffic: stop the old one and remove it from autostart before installing Exodus.
+Two proxies can not intercept the same traffic: stop the old one and remove it from autostart before installing Exodus.
 
 A profile moves as it is when it is a subscription or a Mihomo (Clash Meta) config: upload it on the profiles page. On Keenetic and Asus Exodus sets its ports, the DNS listener, the API and the dashboard over the profile, TUN of the profile is turned off. An Xray config does not fit — Exodus needs a subscription or a config for Mihomo.
 
@@ -39,9 +39,9 @@ Exodus is a fork of Nikki and takes its settings as they are, the migration is t
 
 **Going back:** turn off **Enable** on **Status** or [uninstall Exodus](/en/install/keenetic/#uninstall), then `xkeen -auto on` and `xkeen -start`.
 
-## From XRAYUI and other addons (Asus)
+## From XRAYUI and similar (Asus)
 
-1. Stop the other addon (XRAYUI, a Clash or sing-box addon) and turn off its autostart, or remove it by its instructions.
+1. Stop the other proxy (XRAYUI, Clash or sing-box) and turn off its autostart, or remove it by its instructions.
 2. [Install Exodus](/en/install/asuswrt/#install--update).
 3. **Profiles**: add the subscription of your provider or upload a Mihomo config.
 4. **Status → Devices**: choose the devices that go through the proxy, then **Save & Apply**.

@@ -3,7 +3,7 @@ title: Обзор
 description: Что такое Exodus, на каких роутерах он работает и как устроен.
 ---
 
-Exodus — прозрачный прокси на ядре [Mihomo](https://github.com/MetaCubeX/mihomo) для роутеров. Устройства сети ходят через прокси без настройки на них самих: роутер перехватывает их трафик и отдаёт ядру, а ядро решает по правилам профиля, что пустить через прокси, а что напрямую.
+Exodus — прокси на ядре [Mihomo](https://github.com/MetaCubeX/mihomo) для роутеров. Устройства сети ходят через прокси без настройки на них самих: роутер перехватывает их трафик и отдаёт ядру, а ядро решает по правилам профиля, что пустить через прокси, а что напрямую.
 
 Версия для OpenWrt — форк [OpenWrt-nikki](https://github.com/nikkinikki-org/OpenWrt-nikki). Версии для Keenetic и Asus работают в Entware и берут идеи из [XKeen](https://github.com/jameszeroX/XKeen).
 
@@ -13,7 +13,7 @@ Exodus — прозрачный прокси на ядре [Mihomo](https://gith
 | --- | --- | --- | --- |
 | [OpenWrt](/install/openwrt/) 24.10+ | `main` | LuCI: «Службы» → «Exodus» | Nikki |
 | [Keenetic / Netcraze](/install/keenetic/) | `keenetic` | [свой веб-интерфейс](/usage/web-ui/), порт 9099 | XKeen |
-| [Asus с Asuswrt-Merlin](/install/asuswrt/) | `asuswrt` | [свой веб-интерфейс](/usage/web-ui/), порт 9099 | XRAYUI и похожие аддоны |
+| [Asus с Asuswrt-Merlin](/install/asuswrt/) | `asuswrt` | [свой веб-интерфейс](/usage/web-ui/), порт 9099 | XRAYUI и подобные |
 
 У Exodus одна версия для всех роутеров — версия [релиза](https://github.com/prettyleaf/openwrt-exodus/releases).
 
@@ -27,12 +27,5 @@ Exodus — прозрачный прокси на ядре [Mihomo](https://gith
 - Выбор ядра: Mihomo Meta, Mihomo Alpha или Prizrak-Core.
 - Обновление из интерфейса и установка через свой [gh-proxy](/install/options/#если-github-заблокирован), если провайдер блокирует GitHub.
 - Панель Zashboard (или MetaCubeXD, YACD) для выбора прокси и просмотра соединений.
-
-## Как это работает
-
-1. При запуске профиль (подписка или загруженный файл) объединяется с настройками Exodus и mixin-файлом. Подписка скачивается заново, если прошёл её интервал.
-2. Запускается Mihomo. Если ядро падает, его перезапускают.
-3. Когда ядро слушает свои порты, включаются правила перехвата: nftables на OpenWrt, iptables и ipset на Keenetic и Asus.
-4. На Keenetic и Asus сторож раз в 15 секунд проверяет правила (прошивка их сбрасывает), обновляет подписку, перезапускает сервис по расписанию и чистит логи.
 
 Особенности каждой прошивки — на странице установки для неё.
