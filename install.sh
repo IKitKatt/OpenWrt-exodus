@@ -231,6 +231,10 @@ opkg install curl jq ca-bundle lighttpd lighttpd-mod-cgi || fail "package instal
 # the busybox of the firmware may have no sha256sum or md5sum: secrets, the password and the update check need them
 for tool in sha256sum md5sum; do
 	command -v "$tool" > /dev/null 2>&1 || opkg install "coreutils-$tool" || fail "package install failed"
+	# the package puts the tool into /opt/libexec, the link in /opt/bin is an opkg alternative and may be missing
+	if ! command -v "$tool" > /dev/null 2>&1 && [ -x "/opt/libexec/$tool-coreutils" ]; then
+		ln -sf "/opt/libexec/$tool-coreutils" "/opt/bin/$tool"
+	fi
 	command -v "$tool" > /dev/null 2>&1 || fail "$tool is not found"
 done
 
