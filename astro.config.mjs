@@ -7,10 +7,11 @@ import rehypeBaseLinks from './src/plugins/rehype-base-links.mjs';
 const repository = 'https://github.com/prettyleaf/openwrt-exodus';
 // the path of GitHub Pages is case-sensitive and follows the name of the repository
 const base = '/OpenWrt-exodus';
+const site = 'https://prettyleaf.github.io';
 
 export default defineConfig({
 	// GitHub Pages of the repository: https://prettyleaf.github.io/OpenWrt-exodus/
-	site: 'https://prettyleaf.github.io',
+	site,
 	base,
 	markdown: { processor: unified({ rehypePlugins: [[rehypeBaseLinks, { base }]] }) },
 	integrations: [
@@ -20,6 +21,13 @@ export default defineConfig({
 			plugins: [starlightScrollToTop({ showTooltip: false, borderRadius: '10' })],
 			customCss: ['./src/styles/custom.css'],
 			favicon: '/favicon.svg',
+			// Starlight gives the title and the description of the page, the preview image is one for all pages
+			head: [
+				{ tag: 'meta', attrs: { property: 'og:image', content: `${site}${base}/og.png` } },
+				{ tag: 'meta', attrs: { property: 'og:image:width', content: '1200' } },
+				{ tag: 'meta', attrs: { property: 'og:image:height', content: '630' } },
+				{ tag: 'meta', attrs: { property: 'og:image:alt', content: 'Exodus — Mihomo · OpenWrt · Keenetic · Asuswrt-Merlin' } },
+			],
 			editLink: { baseUrl: `${repository}/edit/docs/` },
 			social: [{ icon: 'github', label: 'GitHub', href: repository }],
 			// Russian is the default language and lives at the root, English is under /en/.
