@@ -26,7 +26,7 @@ export default defineConfig({
 				{ tag: 'meta', attrs: { property: 'og:image', content: `${site}${base}/og.png` } },
 				{ tag: 'meta', attrs: { property: 'og:image:width', content: '1200' } },
 				{ tag: 'meta', attrs: { property: 'og:image:height', content: '630' } },
-				{ tag: 'meta', attrs: { property: 'og:image:alt', content: 'Exodus — Mihomo · OpenWrt · Keenetic · Asuswrt-Merlin' } },
+				{ tag: 'meta', attrs: { property: 'og:image:alt', content: 'Exodus' } },
 			],
 			editLink: { baseUrl: `${repository}/edit/docs/` },
 			social: [{ icon: 'github', label: 'GitHub', href: repository }],
