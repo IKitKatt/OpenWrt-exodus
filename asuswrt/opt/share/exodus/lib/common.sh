@@ -6,6 +6,10 @@
 
 EXODUS_OPT="${EXODUS_OPT:-/opt}"
 EXODUS_TMP="${EXODUS_TMP:-/tmp/exodus}"
+EXODUS_JFFS="${EXODUS_JFFS:-/jffs}"
+EXODUS_WWW="${EXODUS_WWW:-/www}"
+EXODUS_HELPER="${EXODUS_HELPER:-/usr/sbin/helper.sh}"
+EXODUS_MENU="${EXODUS_MENU:-/tmp/menuTree.js}"
 
 # entware binaries first, the firmware ones are older or limited
 export PATH="$EXODUS_OPT/bin:$EXODUS_OPT/sbin:/sbin:/bin:/usr/sbin:/usr/bin"
@@ -85,6 +89,10 @@ PROFILE_JSON_PATH="$RUN_TMP/profile.json"
 API_JSON_PATH="$RUN_TMP/api.json"
 SESSIONS_DIR="$RUN_TMP/sessions"
 ROUTER_INFO_PATH="$RUN_TMP/router.json"
+WEBUI_DIR="$RUN_TMP/webui"
+WEBUI_ADDON="$EXODUS_JFFS/addons/exodus"
+WEBUI_PUBLIC="$EXODUS_WWW/user/exodus"
+WEBUI_SETTINGS="$EXODUS_JFFS/addons/custom_settings.txt"
 
 # listeners of dscp 61, the mark and the route table of tproxy
 # tables 111-115 belong to the vpn clients of asuswrt-merlin, the table of tproxy has the number of its port
