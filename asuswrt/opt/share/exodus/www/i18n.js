@@ -1,5 +1,10 @@
 // russian translation of the web ui, keys are the english strings of app.js
 window.I18N_RU = {
+    'Integration': 'Интеграция',
+    'File exceeds 8 MiB.': 'Размер файла превышает 8 МиБ.',
+    'Web Admin session expired. Your unsaved changes are kept in this tab.': 'Сессия Web Admin истекла. Несохранённые изменения остаются в этой вкладке.',
+    'Sign in to Web Admin': 'Войти в Web Admin',
+    'Continue after signing in': 'Продолжить после входа',
     "%s is uploaded.": "%s загружен.",
     "<code>{version}</code> is replaced with the version of Exodus.": "<code>{version}</code> заменяется версией Exodus.",
     "<strong>No resolve</strong> is for rules by IP (IP-CIDR, IP-ASN, GEOIP): the domain is not resolved to check the rule, it matches only connections to an IP address.": "<strong>Без резолва</strong> — для правил по IP (IP-CIDR, IP-ASN, GEOIP): домен не резолвится ради проверки правила, оно срабатывает только на соединения к IP-адресу.",

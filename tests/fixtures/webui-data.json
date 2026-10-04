@@ -1,0 +1,9 @@
+{
+  "status": {"running":true,"started":true,"app_version":"1.27.4","core_version":"v1.19.15","core_type":"meta","hijack":true,"api":{"listen":"0.0.0.0:9090","secret":"mock-secret","ui_name":"zashboard"}},
+  "hosts": {"router":true,"segments":[{"ifname":"br0","name":"LAN","id":"","address":"192.168.50.1/24"}],"aps":[{"id":"wl0","ssid":"Home Wi-Fi","description":"","state":"up","segment":"br0","guest":false,"band":"2.4 GHz","clients":1}],"hosts":[{"mac":"AA:BB:CC:DD:EE:01","ip":"192.168.50.10","name":"Ноутбук — длинное имя устройства для проверки переноса","hostname":"laptop","active":true,"ap":"wl0","ssid":"Home Wi-Fi","segment":"br0","access":""}]},
+  "interfaces": {"interfaces":["br0","eth0","tun0"]},
+  "proxies": {"groups":["Proxy","Select"],"proxies":["Germany"]},
+  "hwid": {"headers":{"X-HWID":"mock-device"},"generated":"mock-device"},
+  "check_update": {"app":"1.27.4","app_latest":"1.27.4","app_update":false,"core_type":"meta","core":"v1.19.15","core_latest":"v1.19.15","arch":"aarch64","free_space":200000000,"core_size":30000000,"gh_proxy":null},
+  "about": {"app":"1.27.4","ref":"asuswrt","commit":"preview","installed":"2026-10-04","repository":"prettyleaf/openwrt-exodus","core":"v1.19.15","core_type":"meta","model":"MOCK RT-BE88U","os":"Asuswrt-Merlin","firmware":"3006.102.1","arch":"aarch64"}
+}

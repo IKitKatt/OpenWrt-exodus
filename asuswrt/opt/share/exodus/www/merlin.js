@@ -17,7 +17,8 @@
         const fetcher = options.fetch || root.fetch.bind(root);
         const makeId = options.id || (() => Array.from(root.crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join(''));
         let closed = false, login = false, active = false;
-        const queue = [], reads = new Map(), controller = new AbortController();
+        const queue = [], reads = new Map();
+        let controller = new AbortController();
         const check = () => { if (login) throw Error('Web Admin session expired. Sign in to the router again; your draft is kept in this tab.'); if (closed) throw Error('Transport closed'); };
         function expire() {
             login = true;
@@ -132,7 +133,7 @@
                 });
             } catch (error) { return Promise.reject(error); }
         }
-        return {request, dispose() {closed=true; controller.abort(); for (const item of queue.splice(0)) item.reject(Error('Transport closed')); }};
+        return {request, resume() { if (closed) throw Error('Transport closed'); login=false; controller=new AbortController(); }, dispose() {closed=true; controller.abort(); for (const item of queue.splice(0)) item.reject(Error('Transport closed')); }};
     }
     if (typeof module !== 'undefined' && module.exports) module.exports = {createTransport,encode,decode};
     else root.ExodusMerlin = createTransport();

@@ -1,6 +1,6 @@
 'use strict';
 
-// web ui of exodus for asuswrt-merlin, built after shadcn/ui without any framework
+// Exodus controls inside the native Merlin Web Admin.
 // the config is edited as a draft copy and saved as a whole
 
 (function () {
@@ -15,8 +15,10 @@ function storageSet(key, value) {
     try { localStorage.setItem(key, value); } catch (e) { /* private mode */ }
 }
 
-const lang = storageGet('exodus.lang') || ((navigator.language || '').toLowerCase().startsWith('ru') ? 'ru' : 'en');
-document.documentElement.lang = lang;
+const firmwareLang = ((window.ExodusBootstrap || {}).lang || '').toLowerCase();
+const savedLang = storageGet('exodus.lang');
+const lang = ['ru', 'en'].includes(savedLang) ? savedLang : (['ru', 'en'].includes(firmwareLang) ? firmwareLang : ((navigator.language || '').toLowerCase().startsWith('ru') ? 'ru' : 'en'));
+document.getElementById('exodus-root').lang = lang;
 
 function _(text) {
     let result = (lang === 'ru' && window.I18N_RU && window.I18N_RU[text]) || text;
@@ -227,7 +229,7 @@ const state = {
     invalid: new Set(),
     timers: [],
     statusTimer: null,
-    loginShown: false,
+    sessionExpired: false,
     editorFile: null
 };
 
@@ -322,7 +324,7 @@ async function refreshStatus() {
     try {
         state.status = await api('status');
     } catch (e) {
-        return;
+        state.status = null;
     }
     renderAboutButton();
     liveViews.forEach((update) => update());
@@ -384,7 +386,7 @@ function alertBox(variant, title, body) {
 
 function card(opts) {
     const header = opts.title || opts.description || opts.action ? E('div', { class: 'card-header' }, [
-        opts.title ? E('div', { class: 'card-title' }, [opts.title, opts.info ? infoButton(opts.title, opts.info) : null]) : null,
+        opts.title ? E('h2', { class: 'card-title' }, [opts.title, opts.info ? infoButton(opts.title, opts.info) : null]) : null,
         opts.description ? E('div', { class: 'card-description' }, opts.description) : null,
         opts.action ? E('div', { class: 'card-action' }, opts.action) : null
     ]) : null;
@@ -417,12 +419,15 @@ function infoList(rows) {
 // ---------- dialog ----------
 
 let dialogClose = null;
+let dialogTrigger = null;
 
 function openDialog(opts) {
     const overlay = document.getElementById('dialog');
-    const box = E('div', { class: `dialog${opts.wide ? ' wide' : ''}`, role: 'dialog', 'aria-modal': 'true' }, [
+    if (overlay.hidden) dialogTrigger = document.activeElement;
+    const titleId = nextId();
+    const box = E('div', { class: `dialog${opts.wide ? ' wide' : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId }, [
         E('div', { class: 'dialog-header' }, [
-            E('h2', { class: 'dialog-title' }, opts.title),
+            E('h2', { class: 'dialog-title', id: titleId }, opts.title),
             opts.description ? E('p', { class: 'dialog-description' }, opts.description) : null
         ]),
         opts.content ? E('div', { class: 'stack' }, opts.content) : null,
@@ -431,8 +436,9 @@ function openDialog(opts) {
     ]);
     append(clear(overlay), box);
     overlay.hidden = false;
+    for (const id of ['content','menu','savebar']) document.getElementById(id).inert = true;
     dialogClose = opts.onClose || null;
-    const focus = box.querySelector('.stack input, .stack select') || box.querySelector('.dialog-footer .btn:last-child');
+    const focus = box.querySelector('.stack input, .stack select') || box.querySelector('.dialog-footer .btn:last-child') || box.querySelector('.dialog-close');
     if (focus) {
         focus.focus();
     }
@@ -444,7 +450,10 @@ function closeDialog(result) {
         return;
     }
     overlay.hidden = true;
+    for (const id of ['content','menu','savebar']) document.getElementById(id).inert = false;
     clear(overlay);
+    if (dialogTrigger && dialogTrigger.isConnected) dialogTrigger.focus();
+    dialogTrigger = null;
     const callback = dialogClose;
     dialogClose = null;
     if (callback) {
@@ -488,6 +497,7 @@ function changed() {
 
 function markInvalid(el, id, invalid) {
     el.classList.toggle('invalid', invalid);
+    el.setAttribute('aria-invalid', String(invalid));
     if (invalid) {
         state.invalid.add(id);
     } else {
@@ -533,11 +543,11 @@ function labelTarget(control) {
 // label, control and a muted description under it; descriptions are static strings and may hold <code>
 // info moves a longer explanation behind an (i) next to the label
 function field(label, control, description, depends, info) {
+    if (control.getAttribute('role') === 'radiogroup') control.setAttribute('aria-label', label);
     const title = label ? E('label', { class: 'label', for: labelTarget(control) }, label) : null;
     return dependOn(E('div', { class: 'field' }, [
         info ? E('div', { class: 'label-row' }, [title, infoButton(label, info)]) : title,
-        control,
-        description ? E('p', { class: 'description', html: description }) : null
+        E('div', { class: 'field-control' }, [control, description ? E('p', { class: 'description', html: description }) : null])
     ]), depends);
 }
 
@@ -554,14 +564,9 @@ function infoButton(title, paragraphs) {
 }
 
 function switchControl(r) {
-    const el = E('button', { type: 'button', role: 'switch', class: 'switch' }, E('span', { class: 'switch-thumb' }));
-    const sync = () => el.setAttribute('aria-checked', r.get() === true ? 'true' : 'false');
-    sync();
-    el.addEventListener('click', () => {
-        r.set(r.get() !== true);
-        sync();
-        changed();
-    });
+    const el = E('input', { type: 'checkbox', class: 'checkbox switch' });
+    el.checked = r.get() === true;
+    el.addEventListener('change', () => { r.set(el.checked); changed(); });
     return el;
 }
 
@@ -756,19 +761,35 @@ function tags(r, opts) {
 // two or three choices like a toggle group
 function segmented(r, options) {
     const el = E('div', { class: 'segmented', role: 'radiogroup' });
-    const render = () => {
-        clear(el);
-        for (const [value, label] of options) {
-            const active = r.get() === value;
-            el.appendChild(E('button', { type: 'button', role: 'radio', 'aria-checked': active ? 'true' : 'false', class: `tabs-trigger${active ? ' active' : ''}`, onclick: () => {
-                r.set(value);
-                render();
-                changed();
-            } }, label));
-        }
+    const buttons = options.map(([value, label]) => E('button', {type:'button',role:'radio',class:'tabs-trigger',onclick:()=>{
+        r.set(value); sync(); changed();
+    }}, label));
+    const sync = () => {
+        buttons.forEach((button, i) => {
+            const active = r.get() === options[i][0];
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-checked', String(active));
+            button.tabIndex = active ? 0 : -1;
+        });
     };
-    render();
+    append(el, buttons);
+    compositeKeys(el, buttons);
+    sync();
     return el;
+}
+
+function compositeKeys(group, buttons) {
+    group.addEventListener('keydown', event => {
+        const index = buttons.indexOf(document.activeElement);
+        if (index < 0) return;
+        let target;
+        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') target = (index + 1) % buttons.length;
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') target = (index + buttons.length - 1) % buttons.length;
+        if (event.key === 'Home') target = 0;
+        if (event.key === 'End') target = buttons.length - 1;
+        if (target == null) return;
+        event.preventDefault(); buttons[target].click(); buttons[target].focus();
+    });
 }
 
 // tabs keep their choice while the page is open
@@ -776,20 +797,23 @@ const tabChoice = {};
 
 function tabs(id, list) {
     const selected = tabChoice[id] && list.some((t) => t[0] === tabChoice[id]) ? tabChoice[id] : list[0][0];
-    const triggers = E('div', { class: 'tabs-list', role: 'tablist' });
+    const triggers = E('div', { class: 'tabs-list', role: 'tablist', 'aria-label': _(id === 'settings' ? 'Settings' : 'Logs') });
     const container = E('div', { class: 'tabs' }, triggers);
     const panes = [];
     for (const [key, title, content] of list) {
-        const pane = E('div', { class: 'stack', role: 'tabpanel', hidden: key !== selected }, content);
-        const trigger = E('button', { type: 'button', role: 'tab', class: `tabs-trigger${key === selected ? ' active' : ''}`, 'aria-selected': key === selected ? 'true' : 'false' }, title);
+        const paneId=nextId(), triggerId=nextId();
+        const pane = E('div', { id:paneId, class: 'stack', role: 'tabpanel', 'aria-labelledby':triggerId, hidden: key !== selected }, content);
+        const trigger = E('button', { id:triggerId, type: 'button', role: 'tab', tabindex:key===selected?0:-1, 'aria-controls':paneId, class: `tabs-trigger${key === selected ? ' active' : ''}`, 'aria-selected': key === selected ? 'true' : 'false' }, title);
         trigger.addEventListener('click', () => {
             tabChoice[id] = key;
             triggers.querySelectorAll('.tabs-trigger').forEach((t) => {
                 t.classList.remove('active');
                 t.setAttribute('aria-selected', 'false');
+                t.tabIndex=-1;
             });
             trigger.classList.add('active');
             trigger.setAttribute('aria-selected', 'true');
+            trigger.tabIndex=0;
             panes.forEach((p) => { p.hidden = true; });
             pane.hidden = false;
         });
@@ -797,6 +821,7 @@ function tabs(id, list) {
         panes.push(pane);
         container.appendChild(pane);
     }
+    compositeKeys(triggers, Array.from(triggers.children));
     return container;
 }
 
@@ -824,21 +849,13 @@ async function save(apply) {
         toast(_('Some fields are invalid, fix them before saving.'), 'error');
         return;
     }
-    const oldPort = state.config.web && state.config.web.port;
-    const newPort = state.draft.web && state.draft.web.port;
     await run(api('config_set', { config: state.draft, apply: apply }), apply === 'restart' ? _('Settings are saved, the service is restarting.') : _('Settings are saved.'));
     state.config = clone(state.draft);
     updateDirty();
     if (apply === 'restart') {
         setTimeout(refreshStatus, 3000);
     }
-    // the web ui moves to the new port
-    if (newPort && oldPort !== newPort) {
-        toast(_('The web UI moves to port %s.', newPort), 'info');
-        setTimeout(() => {
-            location.href = `${location.protocol}//${location.hostname}:${newPort}/`;
-        }, 2500);
-    }
+
 }
 
 // ---------- service ----------
@@ -1398,6 +1415,7 @@ function pageProfiles() {
             return;
         }
         const name = file.name.replace(/[^A-Za-z0-9._ -]/g, '_').replace(/^[._ -]+/, '') || 'profile.yaml';
+        if (file.size > 8388608) { toast(_('File exceeds 8 MiB.'), 'error'); return; }
         const content = await file.text();
         fileInput.value = '';
         await run(api('profile_upload', { name: name, content: content }), _('%s is uploaded.', name));
@@ -1691,10 +1709,6 @@ function pageSettings() {
         })
     ];
 
-    const passwordOld = E('input', { class: 'input', type: 'password', autocomplete: 'current-password' });
-    const passwordNew = E('input', { class: 'input', type: 'password', autocomplete: 'new-password' });
-    const passwordRepeat = E('input', { class: 'input', type: 'password', autocomplete: 'new-password' });
-
     const serviceTab = [
         card({
             title: _('Service'),
@@ -1716,28 +1730,6 @@ function pageSettings() {
                     [_('Logs are kept in RAM, a log over the limit is cleared.')]),
                 switchField(_('Clear logs at stop'), null, ref('log.clear_at_stop'))
             ])
-        }),
-        card({
-            title: _('Web UI'),
-            info: [_('The web UI moves to the new port after saving.'), _('The password can also be reset with exodus passwd over SSH.')],
-            content: E('div', { class: 'grid-4' }, [
-                field(_('Port'), input(ref('web.port'), { number: true, type: 'port', empty: 9099, placeholder: '9099' })),
-                field(_('Current password'), passwordOld),
-                field(_('New password'), passwordNew),
-                field(_('Repeat'), passwordRepeat)
-            ]),
-            footer: btn(_('Change password'), { variant: 'outline', onClick: async () => {
-                if (passwordNew.value !== passwordRepeat.value) {
-                    toast(_('Passwords do not match.'), 'error');
-                    return;
-                }
-                if (passwordNew.value.length < 4) {
-                    toast(_('The password is too short, at least 4 characters.'), 'error');
-                    return;
-                }
-                await run(api('password', { old: passwordOld.value, new: passwordNew.value }), _('The password is changed.'));
-                passwordOld.value = passwordNew.value = passwordRepeat.value = '';
-            } })
         })
     ];
 
@@ -1863,7 +1855,8 @@ function pageLogs() {
         ]),
         tabs('logs', [
             ['app', _('Exodus'), logView('app')],
-            ['core', _('Core'), logView('core')]
+            ['core', _('Core'), logView('core')],
+            ['web', _('Integration'), logView('web')]
         ])
     ];
 }
@@ -2026,12 +2019,12 @@ function renderAboutButton() {
     const button = document.getElementById('about');
     const version = (state.status && state.status.app_version) || (state.update && state.update.app);
     const update = updateAvailable(state.update);
-    const key = JSON.stringify([state.loginShown, version, update]);
+    const key = JSON.stringify([state.sessionExpired, version, update]);
     if (key === aboutKey) {
         return;
     }
     aboutKey = key;
-    button.hidden = state.loginShown || !version;
+    button.hidden = state.sessionExpired || !version;
     button.classList.toggle('update', update);
     button.title = update ? _('Update available') : _('Build info');
     append(clear(button), [update ? E('span', { class: 'dot' }) : icon('git-branch'), version || '']);
@@ -2176,7 +2169,7 @@ let renderToken = 0;
 
 async function render() {
     // the login form stays until the password is entered, start() renders the page then
-    if (state.loginShown) {
+    if (state.sessionExpired) {
         return;
     }
     const token = ++renderToken;
@@ -2237,52 +2230,11 @@ window.addEventListener('beforeunload', (ev) => {
     }
 });
 
-// ---------- login ----------
-
-function showLogin() {
-    state.timers.forEach((t) => clearInterval(t));
-    state.timers = [];
-    clearInterval(state.statusTimer);
-    state.statusTimer = null;
-    if (state.loginShown) {
-        return;
-    }
-    state.loginShown = true;
-    closeDialog();
-    renderAboutButton();
-    document.getElementById('logout').hidden = true;
-    document.getElementById('menu').hidden = true;
-    document.getElementById('savebar').hidden = true;
-    const password = E('input', { class: 'input', type: 'password', autocomplete: 'current-password' });
-    const form = E('form', { class: 'card' }, [
-        E('div', { class: 'card-header' }, [
-            E('span', { class: 'logo-tile large' }, logo()),
-            E('div', { class: 'card-title' }, 'Exodus'),
-            E('div', { class: 'card-description' }, _('Enter the password of the web UI. It is set by the installer, reset it with exodus passwd over SSH.'))
-        ]),
-        E('div', { class: 'card-content' }, field(_('Password'), password)),
-        E('div', { class: 'card-footer' }, E('button', { class: 'btn btn-default', type: 'submit', style: { width: '100%' } }, _('Sign in')))
-    ]);
-    form.addEventListener('submit', async (ev) => {
-        ev.preventDefault();
-        try {
-            await api('login', { password: password.value });
-        } catch (e) {
-            toast(e.message === 'wrong password' ? _('Invalid password') : e.message, 'error');
-            password.select();
-            return;
-        }
-        clear(document.getElementById('toaster'));
-        start();
-    });
-    append(clear(document.getElementById('content')), E('div', { class: 'login' }, form));
-    password.focus();
-}
+// ---------- native session ----------
 
 async function start() {
-    state.loginShown = false;
+    state.sessionExpired = false;
     document.getElementById('menu').hidden = false;
-    document.getElementById('logout').hidden = false;
     state.config = null;
     state.hosts = null;
     await render();
@@ -2295,35 +2247,6 @@ async function start() {
 
 // ---------- init ----------
 
-function effectiveTheme() {
-    const chosen = document.documentElement.getAttribute('data-theme');
-    if (chosen === 'light' || chosen === 'dark') {
-        return chosen;
-    }
-    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
-function renderThemeButton() {
-    const button = document.getElementById('theme');
-    append(clear(button), icon(effectiveTheme() === 'dark' ? 'sun' : 'moon'));
-    button.title = effectiveTheme() === 'dark' ? _('Light theme') : _('Dark theme');
-}
-
-document.querySelectorAll('[data-logo]').forEach((el) => el.appendChild(logo()));
-renderThemeButton();
-document.getElementById('theme').addEventListener('click', () => {
-    const next = effectiveTheme() === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
-    storageSet('exodus.theme', next);
-    renderThemeButton();
-});
-if (window.matchMedia) {
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    if (media.addEventListener) {
-        media.addEventListener('change', renderThemeButton);
-    }
-}
-
 const langButton = document.getElementById('lang');
 langButton.textContent = lang === 'ru' ? 'EN' : 'RU';
 langButton.title = lang === 'ru' ? 'English' : 'Русский';
@@ -2332,25 +2255,10 @@ langButton.addEventListener('click', () => {
     location.reload();
 });
 
-const logoutButton = document.getElementById('logout');
-logoutButton.title = _('Log out');
-logoutButton.setAttribute('aria-label', _('Log out'));
-logoutButton.appendChild(icon('log-out'));
-logoutButton.addEventListener('click', async () => {
-    if (isDirty() && !await confirmDialog(_('Log out?'), _('There are unsaved changes, they will be lost.'), { confirm: _('Log out'), destructive: true })) {
-        return;
-    }
-    await api('logout').catch(() => {});
-    state.config = null;
-    state.draft = null;
-    updateDirty();
-    showLogin();
-});
-
 renderSavebar();
 document.getElementById('about').addEventListener('click', openAbout);
 setInterval(() => {
-    if (!state.loginShown) {
+    if (!state.sessionExpired) {
         checkUpdates();
     }
 }, 3 * 3600 * 1000);
@@ -2360,10 +2268,35 @@ document.getElementById('dialog').addEventListener('mousedown', (ev) => {
     }
 });
 document.addEventListener('keydown', (ev) => {
+    const overlay = document.getElementById('dialog');
+    if (ev.key === 'Tab' && !overlay.hidden) {
+        const nodes = Array.from(overlay.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href]')).filter(el => el.getClientRects().length);
+        const first = nodes[0], last = nodes[nodes.length - 1];
+        if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+        else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+    }
     if (ev.key === 'Escape') {
         closeDialog();
     }
 });
+
+window.addEventListener('exodus-session-expired', () => {
+    state.sessionExpired = true;
+    state.timers.forEach(clearInterval);
+    clearInterval(state.statusTimer);
+    state.statusTimer = null;
+    const banner = document.getElementById('session-warning');
+    banner.hidden = false;
+    append(clear(banner), [
+        E('p', {}, _('Web Admin session expired. Your unsaved changes are kept in this tab.')),
+        E('a', {href:'/Main_Login.asp', target:'_blank', rel:'noopener', class:'btn btn-outline'}, _('Sign in to Web Admin')),
+        btn(_('Continue after signing in'), {onClick: () => {
+            window.ExodusMerlin.resume(); state.sessionExpired = false; banner.hidden = true;
+            state.statusTimer = setInterval(refreshStatus, 5000); refreshStatus();
+        }})
+    ]);
+});
+window.addEventListener('pagehide', () => window.ExodusMerlin.dispose());
 
 start();
 

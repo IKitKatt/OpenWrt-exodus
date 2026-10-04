@@ -8,7 +8,7 @@
 <script src="/state.js"></script><script src="/general.js"></script>
 <script src="/popup.js"></script><script src="/help.js"></script>
 <script src="/js/jquery.js"></script><script src="/js/httpApi.js"></script>
-<script>window.ExodusBootstrap = {lang: '<% nvram_get("preferred_lang"); %>'};</script>
+<script>window.ExodusBootstrap = {lang: '<% nvram_get("preferred_lang"); %>'}; function done_validating() { /* Responses are polled; preserve the draft. */ }</script>
 </head><body onload="show_menu();">
 <div id="TopBanner"></div><div id="Loading" class="popup_bg"></div>
 <iframe name="exodus_apply_frame" id="exodus_apply_frame" hidden></iframe>
@@ -23,10 +23,11 @@
 <td width="17" valign="top"></td><td width="202" valign="top"><div id="mainMenu"></div><div id="subMenu"></div></td>
 <td valign="top"><div id="tabMenu" class="submenuBlock"></div>
 <main id="exodus-root" class="FormTitle">
-<div class="exodus-heading"><strong>Exodus</strong><button id="lang-toggle" type="button">RU / EN</button><button id="about" type="button">About</button></div>
-<nav id="menu" aria-label="Exodus"></nav><div id="content"></div>
-<div id="save-bar" hidden></div><div id="toasts" aria-live="polite"></div>
-<div id="dialog" hidden><div id="dialog-box" role="dialog" aria-modal="true"><button id="dialog-close" type="button" aria-label="Close">×</button><div id="dialog-content"></div></div></div>
+<div class="exodus-heading"><strong>Exodus</strong><div class="row"><button id="about" class="version-chip" type="button">About</button><button id="lang" class="btn btn-outline" type="button">RU / EN</button></div></div>
+<div id="session-warning" class="alert alert-warning" role="alert" hidden></div>
+<nav id="menu" class="nav" aria-label="Exodus"></nav><div id="content"></div>
+<div id="savebar" class="savebar" hidden></div><div id="toaster" class="toaster" aria-live="polite"></div>
+<div id="dialog" class="dialog-overlay" hidden></div>
 </main></td><td width="10"></td></tr></table><div id="footer"></div>
 <script src="/ext/exodus/i18n.js"></script><script src="/ext/exodus/merlin.js"></script><script src="/ext/exodus/app.js"></script>
 </body></html>
