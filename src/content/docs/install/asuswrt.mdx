@@ -35,7 +35,7 @@ import { Steps } from '@astrojs/starlight/components';
 curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/install.sh | sh
 ```
 
-Установщик ставит из Entware `curl jq ca-bundle lighttpd lighttpd-mod-cgi`, iptables и ipset берутся из прошивки — они соответствуют её ядру. В конце он печатает адрес [веб-интерфейса](/usage/web-ui/), с адресом роутера по умолчанию — `http://192.168.50.1:9099/`.
+Установщик ставит из Entware `curl jq ca-bundle lighttpd lighttpd-mod-cgi`, а если в прошивке нет `sha256sum` или `md5sum` — ещё `coreutils-sha256sum` и `coreutils-md5sum`. iptables и ipset берутся из прошивки — они соответствуют её ядру. В конце он печатает адрес [веб-интерфейса](/usage/web-ui/), с адресом роутера по умолчанию — `http://192.168.50.1:9099/`.
 
 Обновление — та же команда или страница **«Обновления»** веб-интерфейса. Параметры установщика — на странице [Параметры установщика](/install/options/).
 
