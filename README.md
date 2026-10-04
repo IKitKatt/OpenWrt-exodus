@@ -74,13 +74,13 @@ Exodus replaces XKeen with the Mihomo core, both intercept the same traffic and 
 4. **Status → Devices**: XKeen proxies the devices of the `XKeen` access policy, Exodus chooses them here. To proxy only them, choose the mode **Only selected** and these devices or their segment. The policy can be removed in the router afterwards.
 5. **Settings**: the DSCP marks 61, 62 and 63 are the same as in XKeen. The ports of `port_proxying.lst` and `port_exclude.lst` and the networks of `ip_exclude.lst` from `/opt/etc/xkeen` go to **Ports and exclusions**.
 
-Going back to XKeen: turn off **Enable** on **Status** or [uninstall](#uninstall) Exodus, then `xkeen -auto on` and `xkeen -start`.
+Going back to XKeen: stop the service and turn off **Autostart** on **Status** or [uninstall](#uninstall) Exodus, then `xkeen -auto on` and `xkeen -start`.
 
 ## How To Use
 
 1. Open `http://<router address>:9099/` and log in. The web UI is in English and Russian, with light and dark themes.
 2. **Profiles**: add a subscription or upload a profile.
-3. **Status**: enable the service, choose the profile, choose the mode and the devices / Wi-Fi points / segments in the Devices section, then **Save & Apply**.
+3. **Status**: turn on **Autostart**, choose the profile, choose the mode and the devices / Wi-Fi points / segments in the Devices section, then **Save & Apply**.
 4. **Settings** holds only what makes sense to change on Keenetic: proxy modes, ports and exclusions, DSCP, a few Mihomo options, your own rules, the service. Everything else (DNS servers, hosts, sniffer, rule providers) goes to the profile or to the mixin file on the **Editor** page, it is merged into the profile on every start.
 
 The **Dashboard** button opens Zashboard, the core downloads it on the first start.
