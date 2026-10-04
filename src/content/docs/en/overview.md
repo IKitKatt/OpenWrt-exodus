@@ -22,7 +22,7 @@ Exodus has one version for all routers, the version of the [release](https://git
 - TCP through Redirect or TPROXY, UDP through TPROXY, IPv4 and IPv6. TUN on OpenWrt as well.
 - Device selection: proxy all except the selected devices, or only the selected ones. On Keenetic and Asus also network segments and Wi-Fi networks.
 - [Subscriptions](/en/usage/subscriptions/) updated by the interval of the provider, provider headers (title, announce, logo, traffic) and HWID for panels with a device limit.
-- Your own rules and a mixin file over the profile, an editor of the files on the router.
+- Your own rules and a [mixin file](/en/usage/overrides/) over the profile, an editor of the files on the router.
 - DSCP marks to choose the route per application (Keenetic, Asus).
 - Choice of the core: Mihomo Meta, Mihomo Alpha or Prizrak-Core.
 - Updates from the UI and installation through your own [gh-proxy](/en/install/options/#if-github-is-blocked) when the provider blocks GitHub.

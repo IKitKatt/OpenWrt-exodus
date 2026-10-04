@@ -3,7 +3,7 @@ title: Settings
 description: Every option of the Settings page of the web UI on Keenetic and Asus.
 ---
 
-The **Settings** page holds only what makes sense to change on the router. Everything else (DNS servers, hosts, sniffer, rule providers) goes to the profile or to the [mixin file](/en/usage/subscriptions/#mixin-file). On changes a bar appears at the bottom: Save only saves, Save & Apply also restarts the service. On OpenWrt the similar options are on the [Advanced](/en/usage/luci/#advanced) page of LuCI.
+The **Settings** page holds only what makes sense to change on the router. Everything else (DNS servers, hosts, sniffer, rule providers) goes to the profile or to the [mixin file](/en/usage/overrides/#mixin-file). On changes a bar appears at the bottom: Save only saves, Save & Apply also restarts the service. On OpenWrt the similar options are on the [Advanced](/en/usage/luci/#advanced) page of LuCI.
 
 ## Proxy
 

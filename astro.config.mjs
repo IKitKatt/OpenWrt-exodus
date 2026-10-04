@@ -66,6 +66,7 @@ export default defineConfig({
 						{ label: 'Settings', translations: { ru: 'Настройки' }, slug: 'usage/settings' },
 						{ label: 'LuCI (OpenWrt)', slug: 'usage/luci' },
 						{ label: 'Subscriptions and profiles', translations: { ru: 'Подписки и профили' }, slug: 'usage/subscriptions' },
+						{ label: 'Overrides', translations: { ru: 'Оверрайды' }, slug: 'usage/overrides' },
 						{ label: 'Command line and files', translations: { ru: 'Командная строка и файлы' }, slug: 'usage/cli' },
 					],
 				},

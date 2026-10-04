@@ -45,11 +45,11 @@ For experienced users. Wrong values can break the proxy or the internet access o
 | ↳ LAN Proxy | inbound interfaces (`lan` by default) and access control — the device selection rules, matched from top to bottom |
 | ↳ Bypass | TCP and UDP ports to proxy, bypass by DSCP and fwmark, bypass of China mainland IP |
 | ↳ Misc | reserved IPv4 and IPv6 networks (go directly), TUN timeouts, [HWID](/en/usage/subscriptions/#hwid) and the headers sent to subscriptions |
-| **Mixin Option** | what Exodus sets over the profile |
+| **Mixin Option** | what Exodus sets over the profile, see [Overrides](/en/usage/overrides/) |
 | ↳ General Config | log level, mode, outbound interface, IPv6, TCP keep-alive |
 | ↳ External Control Config | the dashboard (Zashboard by default) and its update, the API address and secret |
 | ↳ Inbound Config | HTTP, SOCKS, mixed (7890), Redirect (7891) and TPROXY (7892) ports, authentication |
 | ↳ TUN, DNS, Sniffer | TUN options; DNS (Fake-IP `198.18.0.1/16` and the `[::]:1053` listener by default), hosts, DNS servers and policies; the sniffer |
 | ↳ Rule, GeoX | your own rules and rule providers over the profile; GeoIP/GeoSite databases and their auto update |
-| ↳ Mixin File Content | Enable — apply the [mixin file](/en/usage/subscriptions/#mixin-file) (off by default), the file itself is edited on the Editor page |
+| ↳ Mixin File Content | Enable — apply the [mixin file](/en/usage/overrides/#mixin-file) (off by default), the file itself is edited on the Editor page |
 | **Environment, procd, RLIMIT** | environment variables of the core, fast reload, process limits |

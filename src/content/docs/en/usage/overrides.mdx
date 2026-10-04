@@ -1,0 +1,199 @@
+---
+title: Overrides
+description: Your own options over the subscription — the merge order, what Exodus sets itself, the mixin file and examples.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+A subscription is downloaded again on every update, so edits in its file are lost. Your own options go over the profile: Exodus applies them on every start and on every update of the subscription.
+
+## Merge order
+
+The profile for startup is built from three layers, each next one wins over the previous:
+
+1. **Profile** — a subscription or an uploaded file.
+2. **[Mixin file](#mixin-file)** — your Mihomo options.
+3. **Exodus settings** — the [Settings](/en/usage/settings/) page on Keenetic and Asus, [Advanced → Mixin Option](/en/usage/luci/#advanced) in LuCI on OpenWrt. An empty option keeps the value of the profile.
+
+Then Exodus adds what the interception can not work without, see [what Exodus sets itself](#what-exodus-sets-itself). The result is the profile for startup `run/config.yaml`. It can be viewed on the Editor page, it is read only and rewritten on every start.
+
+How the layers are merged:
+
+- **Maps by keys.** `dns: { nameserver: [...] }` in the mixin file changes only the servers, the other `dns` options of the profile are kept.
+- **Lists and values as a whole.** `rules`, `proxies` or `proxy-groups` in the mixin file replace all rules, proxies or groups of the profile. To add your own to the profile, use the [`nikki-*` keys](#proxies-groups-and-rules).
+- Comments are removed, YAML anchors (`&`, `*`, `<<`) are expanded.
+
+## What Exodus sets itself
+
+<Tabs syncKey="platform">
+<TabItem label="Keenetic and Asus">
+
+The interception rules and the web UI do not work without these options, so the mixin file does not change them:
+
+| Option | Value |
+| --- | --- |
+| `redir-port`, `tproxy-port` | `7891`, `7892` |
+| `dns.enable`, `dns.listen` | `true`, `[::]:1053` |
+| `allow-lan` | `true` |
+| `external-controller` | `[::]:9090`, the port is API port |
+| `external-ui` | `ui` |
+| `profile.store-selected`, `profile.store-fake-ip` | `true` |
+
+From the Settings page, only when the option is filled in:
+
+| Option | From |
+| --- | --- |
+| `log-level` | Log level |
+| `interface-name` | Outbound interface |
+| `mixed-port` | Proxy port; when it is neither in the settings nor in the profile — `7890` |
+| `authentication` | Authentication: on — the username and password of the settings, off — no authentication, even when the profile has it |
+| `external-ui-url` | Panel |
+| `secret` | API secret |
+| `routing-mark` | `255` when Traffic of the router is on |
+
+When the interception is on (Settings → Enable), after the merge:
+
+- TUN is turned off: `tun.enable: false`, listeners with `type: tun` are removed. TUN would change the routes of the router.
+- For the [mark of the chosen proxy](/en/usage/settings/#dscp) the listeners `exodus-force-redir` and `exodus-force-tproxy` are added.
+- The names of the router itself are added to `dns.fake-ip-filter` when `fake-ip-filter-mode` is `blacklist` (the default): `my.keenetic.net`, the KeenDNS and Netcraze domains on Keenetic; `router.asus.com`, `www.asusrouter.com`, `www.asusnetwork.net`, `+.asuscomm.com` and the local domain on Asus.
+- Asus only: the names of the web interface go to `hosts` with the LAN address of the router, the local domain goes to `dns.nameserver-policy` with the DNS of the router. Values of the profile and the mixin file for these names win.
+
+The mode (`mode`), `ipv6` and the DNS mode (`dns.enhanced-mode`) are not set by Exodus: they come from the profile and can be changed in the mixin file.
+
+</TabItem>
+<TabItem label="OpenWrt">
+
+The options of Advanced → Mixin Option win over the mixin file. An empty option keeps the value of the profile.
+
+The Overwrite flags (Overwrite Hosts, Overwrite Nameserver, Overwrite Nameserver Policy, Overwrite Fake-IP Filter, Overwrite Authentication, Overwrite DNS Hijack and the flags of the sniffer): a flag that is on replaces the value of the profile with the list from LuCI, a flag that is off keeps the value of the profile as it is.
+
+- Append Rule — the rules from LuCI go to the **beginning** of the rules of the profile.
+- Append Rule Provider — the rule providers are added to the providers of the profile, a provider with the same name takes its options from LuCI.
+
+When the interception is on (Proxy Config → Enable), `auto-route`, `auto-redirect` and `auto-detect-interface` of the TUN of the profile are turned off: Exodus sets up the routes.
+
+With Core Only the profile runs as it is: without the mixin file and without Mixin Option.
+
+</TabItem>
+</Tabs>
+
+## Mixin file
+
+Any Mihomo options over the profile. It is edited on the Editor page: `/opt/etc/exodus/mixin.yaml` on Keenetic and Asus, `/etc/nikki/mixin.yaml` on OpenWrt.
+
+- **Keenetic and Asus:** always applied. While the file holds only comments, it changes nothing.
+- **OpenWrt:** applied only when Advanced → Mixin Option → Mixin File Content is enabled.
+
+Changes apply on the next start — Save & Restart in the editor. When the profile can not be built with the mixin file (for example, because of a YAML error), on Keenetic and Asus the service does not start and the Exodus log says `Mixin failed, check the mixin file and the profile.` On an update of the subscription on the fly the core then keeps the running profile.
+
+### Proxies, groups and rules
+
+The `nikki-proxies`, `nikki-proxy-groups` and `nikki-rules` keys add proxies, groups and rules to the **beginning** of the lists of the profile, without replacing them:
+
+```yaml
+nikki-proxies:
+  - name: PROXY
+    type: ss
+    server: proxy.example.com
+    port: 443
+    cipher: chacha20-ietf-poly1305
+    password: password
+nikki-proxy-groups:
+  - name: PROXY_GROUP
+    type: select
+    proxies:
+      - PROXY
+nikki-rules:
+  - DOMAIN,direct.example.com,DIRECT
+  - DOMAIN-SUFFIX,proxy.example.com,PROXY_GROUP
+```
+
+A rule refers to a group or a proxy by its name: a group of the profile, `DIRECT`, `REJECT` or one added above.
+
+:::caution
+The rule editor (Settings → [Rules](/en/usage/settings/#rules) on Keenetic and Asus, Append Rule in LuCI) passes its rules through `nikki-rules` too and wins over the mixin file. When the editor has at least one rule, `nikki-rules` of the mixin file are not applied. Keep your rules in one place.
+:::
+
+## Examples
+
+All examples are for the mixin file. Option reference — the [Mihomo documentation](https://wiki.metacubex.one/en/config/).
+
+### DNS servers
+
+```yaml
+dns:
+  nameserver:
+    - https://1.1.1.1/dns-query
+    - https://dns.google/dns-query
+```
+
+The list replaces `nameserver` of the profile, the other `dns` options of the profile are kept. On OpenWrt with Overwrite Nameserver the servers from LuCI win.
+
+### Domains without Fake-IP
+
+```yaml
+dns:
+  fake-ip-filter:
+    - +.lan
+    - +.local
+    - +.msftconnecttest.com
+```
+
+The list replaces `fake-ip-filter` of the profile as a whole: copy the entries of the profile you want to keep. Exodus adds the names of the router itself.
+
+### hosts
+
+```yaml
+hosts:
+  nas.home: 192.168.1.20
+  printer.home: 192.168.1.30
+```
+
+The entries are added to `hosts` of the profile, matching names are replaced.
+
+### Sniffer
+
+```yaml
+sniffer:
+  enable: true
+  sniff:
+    HTTP:
+      ports: [80, 8080-8880]
+      override-destination: true
+    TLS:
+      ports: [443, 8443]
+    QUIC:
+      ports: [443, 8443]
+  skip-domain:
+    - +.push.apple.com
+```
+
+### Rule provider
+
+```yaml
+rule-providers:
+  my-direct:
+    type: http
+    behavior: domain
+    format: text
+    url: https://example.com/direct.txt
+    interval: 86400
+nikki-rules:
+  - RULE-SET,my-direct,DIRECT
+```
+
+The provider is added to the providers of the profile, the rule with it goes to the beginning of the rules.
+
+### Override of a proxy provider
+
+When the subscription brings its proxies through `proxy-providers`, the [`override`](https://wiki.metacubex.one/en/config/proxy-providers/) key changes all proxies of the provider at once:
+
+```yaml
+proxy-providers:
+  provider-name:
+    override:
+      udp: true
+      additional-prefix: '[Sub] '
+```
+
+`provider-name` is the name of the provider in the subscription, it is seen in the profile for startup on the Editor page. The other options of the provider are kept. Also useful: `skip-cert-verify`, `dialer-proxy`, `interface-name`, `additional-suffix` and `proxy-name` to rename by a pattern. When the subscription lists its proxies right in `proxies`, there is no provider and `override` is not needed.
