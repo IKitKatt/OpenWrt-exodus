@@ -10,6 +10,19 @@ EXODUS_TMP="${EXODUS_TMP:-/tmp/exodus}"
 # entware binaries first, the firmware ones are older or limited
 export PATH="$EXODUS_OPT/bin:$EXODUS_OPT/sbin:/sbin:/bin:/usr/sbin:/usr/bin"
 
+# the busybox of asuswrt-merlin has no command builtin: a program is looked up in PATH by hand
+have() {
+	local dir IFS
+	case "$1" in
+		*/*) [ -x "$1" ] && [ ! -d "$1" ]; return ;;
+	esac
+	IFS=:
+	for dir in $PATH; do
+		[ -n "$dir" ] && [ -x "$dir/$1" ] && [ ! -d "$dir/$1" ] && return 0
+	done
+	return 1
+}
+
 # the busybox of the firmware has no sha256sum, openssl of the firmware gives the same in the same format
 if ! printf '' | sha256sum > /dev/null 2>&1; then
 	sha256sum() {
@@ -123,9 +136,9 @@ lock_release() {
 
 # run a command detached from the caller, the web ui must not wait for it
 daemonize() {
-	if command -v setsid > /dev/null 2>&1; then
+	if have setsid; then
 		setsid "$@" < /dev/null > /dev/null 2>&1 &
-	elif command -v start-stop-daemon > /dev/null 2>&1; then
+	elif have start-stop-daemon; then
 		local exe; exe="$1"
 		shift
 		start-stop-daemon -S -b -x "$exe" -- "$@"
@@ -199,7 +212,7 @@ core_version() {
 
 # a variable of nvram, empty outside of asuswrt
 nvram_get() {
-	command -v nvram > /dev/null 2>&1 && nvram get "$1" 2> /dev/null
+	have nvram && nvram get "$1" 2> /dev/null
 }
 
 # asuswrt-merlin has the helper of addons and marks itself in nvram, the stock firmware runs no user scripts
@@ -237,7 +250,7 @@ router_info() {
 # wi-fi networks of the router, "<id> <interface>" per line; the id is the prefix in nvram:
 # wl0, wl1, wl2 are the radios, they are listed always, wl0.1 and others are guest networks, listed when they are on
 wifi_networks() {
-	command -v nvram > /dev/null 2>&1 || return 0
+	have nvram || return 0
 	nvram show 2> /dev/null | awk '
 		{ i = index($0, "="); if (i < 2) next; key = substr($0, 1, i - 1); value = substr($0, i + 1) }
 		key ~ /^wl[0-9]_ifname$/ && value != "" { radio[substr(key, 1, 3)] = value }
@@ -264,7 +277,7 @@ wifi_ifname() {
 
 # macs of the devices connected to a wi-fi interface, in upper case; the driver of broadcom answers through wl
 wifi_stations() {
-	command -v wl > /dev/null 2>&1 || return 0
+	have wl || return 0
 	wl -i "$1" assoclist 2> /dev/null | awk '$1 == "assoclist" { print toupper($2) }'
 }
 

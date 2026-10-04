@@ -205,7 +205,8 @@ stop() {
 	if pid_alive "$WATCH_PID_PATH"; then
 		kill "$(cat "$WATCH_PID_PATH")" 2> /dev/null
 	fi
-	rm -f "$WATCH_PID_PATH"
+	# the killed watcher removes its pid file too, the two removals may race
+	rm -f "$WATCH_PID_PATH" 2> /dev/null
 	# rules go first, traffic must not wait for a stopped core
 	lock_acquire firewall 100
 	fw_clean
@@ -275,7 +276,7 @@ watch() {
 	local last minute tick
 	prepare_files
 	echo "$$" > "$WATCH_PID_PATH"
-	trap 'rm -f "$WATCH_PID_PATH"; exit 0' TERM INT
+	trap 'rm -f "$WATCH_PID_PATH" 2> /dev/null; exit 0' TERM INT
 	cfg_load
 	# the minute of the start is skipped, a scheduled restart would repeat itself
 	last=$(date +%Y%m%d%H%M)

@@ -16,7 +16,8 @@ fi
 # the same as fw_clean in lib/firewall.sh, with the iptables and ipset of the firmware
 for name in iptables ip6tables; do
 	ipt="/usr/sbin/$name"
-	[ -x "$ipt" ] || ipt=$(command -v "$name") || continue
+	[ -x "$ipt" ] || ipt="/sbin/$name"
+	[ -x "$ipt" ] || continue
 	for table in nat mangle filter; do
 		rules=$("$ipt-save" -t "$table" 2> /dev/null) || continue
 		echo "$rules" | grep -E '^-A (PREROUTING|INPUT|OUTPUT) .*-j EXODUS_[A-Z_]+ *$' | sed 's/^-A //' | while read -r rule; do

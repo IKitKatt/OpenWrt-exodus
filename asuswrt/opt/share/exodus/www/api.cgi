@@ -199,7 +199,7 @@ action_hosts() {
 	local dir iface id ifname file
 	dir="$RUN_TMP/hosts.$$"
 	mkdir -p "$dir"
-	if command -v nvram > /dev/null 2>&1; then
+	if have nvram; then
 		nvram show 2> /dev/null | grep -E '^(wl[0-9](\.[0-9])?_(ssid|nband|radio)|custom_clientlist|MULTIFILTER_(ALL|ENABLE|MAC)|lan_ifname)=' \
 			| jq -R -s 'split("\n") | map(select(length > 0) | index("=") as $i | {(.[:$i]): .[$i + 1:]}) | add // {}' > "$dir/nvram.json"
 	fi

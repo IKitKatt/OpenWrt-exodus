@@ -668,7 +668,7 @@ fw_clean() {
 	"$FW_IPTABLES" -w -t filter -n -L INPUT > /dev/null 2>&1 && fw_wait="-w"
 	for family in 4 6; do
 		fw_tools "$family"
-		command -v "$ipt" > /dev/null 2>&1 || continue
+		have "$ipt" || continue
 		for table in nat mangle filter; do
 			rules=$("$ipt_save" -t "$table" 2> /dev/null) || continue
 			echo "$rules" | grep -E '^-A (PREROUTING|INPUT|OUTPUT) .*-j EXODUS_[A-Z_]+ *$' | sed 's/^-A //' | while read -r rule; do
@@ -690,7 +690,7 @@ fw_clean() {
 		while ip -"$family" rule del table "$table_id" > /dev/null 2>&1; do :; done
 		ip -"$family" route flush table "$table_id" > /dev/null 2>&1
 	done
-	if command -v "$FW_IPSET" > /dev/null 2>&1; then
+	if have "$FW_IPSET"; then
 		for set in $SET_MAC $SET_SRC4 $SET_SRC6 $SET_RSV4 $SET_RSV6 $SET_LOCAL4 $SET_LOCAL6; do
 			"$FW_IPSET" destroy "$set" > /dev/null 2>&1
 			"$FW_IPSET" destroy "${set}_new" > /dev/null 2>&1

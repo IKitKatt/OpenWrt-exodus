@@ -15,6 +15,19 @@ ref="${REF:-asuswrt}"
 
 export PATH="/opt/bin:/opt/sbin:/sbin:/bin:/usr/sbin:/usr/bin"
 
+# the busybox of asuswrt-merlin has no command builtin: a program is looked up in PATH by hand
+have() {
+	local dir IFS
+	case "$1" in
+		*/*) [ -x "$1" ] && [ ! -d "$1" ]; return ;;
+	esac
+	IFS=:
+	for dir in $PATH; do
+		[ -n "$dir" ] && [ -x "$dir/$1" ] && [ ! -d "$dir/$1" ] && return 0
+	done
+	return 1
+}
+
 # the busybox of the firmware has no sha256sum, openssl of the firmware gives the same in the same format
 if ! printf '' | sha256sum > /dev/null 2>&1; then
 	sha256sum() {
@@ -190,7 +203,7 @@ elif [ ! -f /usr/sbin/helper.sh ] && [ "$(nvram get 3rd-party 2> /dev/null)" != 
 	echo "warning: this is not Asuswrt-Merlin: the stock firmware runs no user scripts, the rules are restored only by the watcher"
 fi
 for tool in iptables iptables-save iptables-restore ipset; do
-	[ -x "/usr/sbin/$tool" ] || command -v "$tool" > /dev/null 2>&1 || fail "$tool of the firmware is not found"
+	[ -x "/usr/sbin/$tool" ] || have "$tool" || fail "$tool of the firmware is not found"
 done
 # other transparent proxies intercept the same traffic
 for name in xray sing-box v2ray clash; do
