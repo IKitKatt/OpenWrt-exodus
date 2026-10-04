@@ -15,6 +15,18 @@ ref="${REF:-asuswrt}"
 
 export PATH="/opt/bin:/opt/sbin:/sbin:/bin:/usr/sbin:/usr/bin"
 
+# the busybox of the firmware has no sha256sum, openssl of the firmware gives the same in the same format
+if ! printf '' | sha256sum > /dev/null 2>&1; then
+	sha256sum() {
+		openssl dgst -sha256 -r "$@" | sed 's/ \*/  /'
+	}
+fi
+if ! printf '' | md5sum > /dev/null 2>&1; then
+	md5sum() {
+		openssl dgst -md5 -r "$@" | sed 's/ \*/  /'
+	}
+fi
+
 share_dir="/opt/share/exodus"
 libexec_dir="/opt/libexec/exodus"
 home_dir="/opt/etc/exodus"
@@ -65,7 +77,7 @@ check_github() {
 # hash of the code in a source tree, the update page compares it with the latest one: a change of the readme is not an update
 # the same as code_hash in lib/common.sh
 code_hash() {
-	(cd "$1" && find asuswrt install.sh -type f 2> /dev/null | LC_ALL=C sort | xargs sha256sum 2> /dev/null) | sha256sum | cut -d ' ' -f 1
+	(cd "$1" && find asuswrt install.sh -type f 2> /dev/null | LC_ALL=C sort | while read -r file; do sha256sum "$file"; done 2> /dev/null) | sha256sum | cut -d ' ' -f 1
 }
 
 # github writes the commit into the pax header of an archive of a branch, the same as archive_commit in lib/common.sh
@@ -228,17 +240,8 @@ trap 'rm -rf "$temp_dir"' EXIT
 echo "install packages"
 opkg update > /dev/null 2>&1 || echo "warning: opkg update failed"
 opkg install curl jq ca-bundle lighttpd lighttpd-mod-cgi || fail "package install failed"
-# the busybox of the firmware may have no sha256sum or md5sum: secrets, the password and the update check need them
-for tool in sha256sum md5sum; do
-	command -v "$tool" > /dev/null 2>&1 && continue
-	# opkg counts a package as installed even when its file is gone, a plain install keeps it broken
-	opkg install --force-reinstall "coreutils-$tool" || fail "package install failed"
-	# the package puts the tool into /opt/libexec, the link in /opt/bin is an opkg alternative and may be missing
-	if ! command -v "$tool" > /dev/null 2>&1 && [ -x "/opt/libexec/$tool-coreutils" ]; then
-		ln -sf "/opt/libexec/$tool-coreutils" "/opt/bin/$tool"
-	fi
-	command -v "$tool" > /dev/null 2>&1 || fail "$tool is not found"
-done
+# secrets, the password and the update check need sha-256: sha256sum or openssl of the firmware
+printf '' | sha256sum 2> /dev/null | grep -q '^[0-9a-f]\{64\}' || fail "sha256sum is not found and openssl can not compute sha-256"
 
 # access to github: through the given or the saved gh-proxy, then directly
 version_url="https://github.com/$repository/raw/$ref/asuswrt/opt/share/exodus/VERSION"
