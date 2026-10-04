@@ -304,7 +304,7 @@ prepare_profile() {
 
 # merge the settings into the profile for startup
 mixin_profile() {
-	local mixin_gen expr
+	local mixin_gen expr anchors
 	log "Mixin" "Mixin config."
 	mixin_gen="$RUN_TMP/mixin.gen.yaml"
 	jq -f "$MIXIN_JQ" "$CONFIG_PATH" | "$YQ" -M -p json -o yaml > "$mixin_gen" || return 1
@@ -313,7 +313,10 @@ mixin_profile() {
 	set -- "$RUN_PROFILE_PATH"
 	[ -f "$MIXIN_FILE_PATH" ] && set -- "$@" "$MIXIN_FILE_PATH"
 	set -- "$@" "$mixin_gen"
-	"$YQ" -M -i eval-all '... comments="" | . as $item ireduce ({}; . * $item ) | .proxies = .nikki-proxies + .proxies | del(.nikki-proxies) | .proxy-groups = .nikki-proxy-groups + .proxy-groups | del(.nikki-proxy-groups) | .rules = .nikki-rules + .rules | del(.nikki-rules) | explode(.) | .mixed-port = (.mixed-port // 7890)' "$@" || return 1
+	# merge keys (<<) as the yaml spec and the core read them: the keys of the mapping win over the anchor; old yq has no such flag
+	anchors=
+	"$YQ" --help 2>&1 | grep -q -e '--yaml-fix-merge-anchor-to-spec' && anchors="--yaml-fix-merge-anchor-to-spec"
+	"$YQ" ${anchors:+"$anchors"} -M -i eval-all '... comments="" | . as $item ireduce ({}; . * $item ) | .proxies = .nikki-proxies + .proxies | del(.nikki-proxies) | .proxy-groups = .nikki-proxy-groups + .proxy-groups | del(.nikki-proxy-groups) | .rules = .nikki-rules + .rules | del(.nikki-rules) | explode(.) | .mixed-port = (.mixed-port // 7890)' "$@" || return 1
 	rm -f "$mixin_gen"
 
 	[ "$c_proxy_enabled" = 1 ] || return 0

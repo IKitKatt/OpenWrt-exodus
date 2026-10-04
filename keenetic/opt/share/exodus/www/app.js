@@ -1038,8 +1038,6 @@ function devicePicker() {
                     E('button', { type: 'button', title: _('Delete'), onclick: () => toggle(item, false) }, icon('x'))
                 ]))),
             btn(_('Refresh'), { variant: 'outline', size: 'sm', icon: 'refresh-cw', onClick: async () => {
-                state.hosts = null;
-                render();
                 await loadHosts();
                 render();
             } })));
@@ -1892,7 +1890,7 @@ function pageLogs() {
 }
 
 function pageUpdates() {
-    const container = E('div', { class: 'contents' }, loader());
+    const container = E('div', { class: 'contents' });
     const logView = E('textarea', { class: 'textarea', rows: 10, wrap: 'off', readonly: true, spellcheck: 'false' });
     const pollLog = async () => {
         const data = await api('log_read', { name: 'update' });
@@ -1904,11 +1902,9 @@ function pageUpdates() {
     };
     pollLog().catch(() => {});
 
-    const force = state.forceUpdateCheck === true;
-    state.forceUpdateCheck = false;
-    api('check_update', force ? { force: true } : {}).then((info) => {
-        state.update = info;
-        renderAboutButton();
+    let shown = null;
+    const renderVersions = (info) => {
+        shown = JSON.stringify(info);
         clear(container);
         const available = updateAvailable(info);
         // update is true, false, or null when github did not answer
@@ -1962,9 +1958,8 @@ function pageUpdates() {
                 _('The core and the gh-proxy chosen in the installer are kept, run the installer again to change them.'),
                 _('GitHub is asked at most every 6 hours, Check again asks now.')
             ],
-            action: btn(_('Check again'), { variant: 'outline', size: 'sm', icon: 'refresh-cw', onClick: () => {
-                state.forceUpdateCheck = true;
-                render();
+            action: btn(_('Check again'), { variant: 'outline', size: 'sm', icon: 'refresh-cw', onClick: async () => {
+                renderVersions(await run(fetchUpdate(true)));
             } }),
             content: [
                 table,
@@ -1977,9 +1972,23 @@ function pageUpdates() {
             ],
             footer: E('div', { class: 'row end', style: { width: '100%' } }, updateButton)
         }));
+    };
+
+    // the last answer is shown at once, the router answers again from its cache unless GitHub has to be asked
+    if (state.update) {
+        renderVersions(state.update);
+    } else {
+        container.appendChild(loader());
+    }
+    fetchUpdate().then((info) => {
+        if (JSON.stringify(info) !== shown) {
+            renderVersions(info);
+        }
     }).catch((e) => {
-        clear(container);
-        container.appendChild(alertBox('destructive', _('Failed to check for updates'), e.message));
+        if (!shown) {
+            clear(container);
+            container.appendChild(alertBox('destructive', _('Failed to check for updates'), e.message));
+        }
     });
 
     return [
@@ -2004,14 +2013,31 @@ function appBuild(version, commit) {
     return [version, commit ? commit.substring(0, 7) : null].filter(Boolean).join(' · ');
 }
 
+// one check at a time: the check at the start and the updates page share the request
+function fetchUpdate(force) {
+    if (!force && state.updateRequest) {
+        return state.updateRequest;
+    }
+    const request = api('check_update', force ? { force: true } : {}).then((info) => {
+        state.update = info;
+        renderAboutButton();
+        return info;
+    }).finally(() => {
+        if (state.updateRequest === request) {
+            state.updateRequest = null;
+        }
+    });
+    state.updateRequest = request;
+    return request;
+}
+
 // github is asked at most every few hours, the router keeps the answer
 async function checkUpdates() {
     try {
-        state.update = await api('check_update');
+        await fetchUpdate();
     } catch (e) {
-        return;
+        /* the updates page shows the error */
     }
-    renderAboutButton();
 }
 
 let aboutKey = null;
