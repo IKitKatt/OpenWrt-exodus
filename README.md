@@ -11,8 +11,8 @@ It borrows ideas from [XKeen](https://github.com/jameszeroX/XKeen).
 
 ## Requirements
 
-- Asuswrt-Merlin on a Broadcom model. The stock firmware runs no user scripts: the rules are then restored only by the watcher, within 15 seconds after every restart of the firewall.
-- Architectures: `arm64` (RT-AX86U, RT-AX88U, GT-AX6000 and other HND models) and `armv7` (RT-AX58U, RT-AC68U and others). Models without an FPU, like RT-AC68U, get the `armv5` build of the core.
+- Asuswrt-Merlin **3006.102.1 or newer**, with Addons API (`am_addons`), `/usr/sbin/helper.sh` and writable `/jffs/addons`. Stock firmware and older Merlin releases are rejected before installation changes.
+- The installer selects the core build for the router CPU. The router model must support the minimum firmware version above.
 - Entware on a USB drive, installed with [amtm](https://github.com/decoderman/amtm) (`amtm` → `ep`), and about 70 MB free on it: the Mihomo core is about 40 MB, yq about 15 MB.
 - Other transparent proxies (XRAYUI and similar addons) must be stopped and removed from autostart, they intercept the same traffic.
 - UDP through the proxy needs the TPROXY module of the firmware. Without it UDP goes directly, the app log tells about it.
@@ -31,18 +31,17 @@ In the SSH console of the router:
 curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/install.sh | sh
 ```
 
-At the end it prints the address of the web UI, `http://192.168.50.1:9099/` with the default address of the router.
+At the end it prints the Web Admin URL of the allocated `userN.asp` page. Sign in to the router and open **VPN → Exodus**. Exodus uses the router administrator session and its HTTP/HTTPS port; a separate listener on port 9099 and the `PASSWORD` option are no longer used.
 
 Options can be passed as environment variables before `sh`:
 
 ```shell
-curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/install.sh | CORE=alpha PASSWORD=secret sh
+curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/install.sh | CORE=alpha sh
 ```
 
 | Variable | Meaning |
 | --- | --- |
 | `CORE` | `meta` (stable Mihomo), `alpha` (Mihomo Alpha) or `prizrak` ([Prizrak-Core](https://github.com/legiz-ru/Prizrak-Core)), asked otherwise |
-| `PASSWORD` | password of the web UI on the first install, asked or generated otherwise |
 | `GH_PROXY` | download from GitHub through [gh-proxy](https://github.com/prettyleaf/gh-proxy): `https://example.com/ghproxy/TOKEN` |
 | `LOW_SPACE=1` | remove the current core before writing the new one |
 | `REF` | another branch or tag |
@@ -62,7 +61,7 @@ Two transparent proxies can not intercept the same traffic.
 
 ## How To Use
 
-1. Open `http://<router address>:9099/` and log in. The web UI is in English and Russian, with light and dark themes.
+1. Sign in to Merlin Web Admin and open **VPN → Exodus**. The interface follows the firmware styling and supports English and Russian.
 2. **Profiles**: add a subscription or upload a profile.
 3. **Status**: turn on **Autostart**, choose the profile, choose the mode and the devices / Wi-Fi networks / segments in the Devices section, then **Save & Apply**. Device names come from the client list of the router, DHCP and its network map.
 4. **Settings** holds only what makes sense to change on the router: proxy modes, ports and exclusions, DSCP, a few Mihomo options, your own rules, the service. Everything else (DNS servers, hosts, sniffer, rule providers) goes to the profile or to the mixin file on the **Editor** page, it is merged into the profile on every start.
@@ -77,6 +76,20 @@ The **Dashboard** button opens Zashboard, the core downloads it on the first sta
 4. The firmware restores its iptables tables without the rules of addons on every restart of the firewall: a reconnect of the WAN, a change in the web interface. The rules are restored by a line in `/jffs/scripts/firewall-start` and `/jffs/scripts/nat-start`, and every 15 seconds they are checked by the watcher (`watch`), which also syncs the clients of the chosen Wi-Fi networks, updates the subscription, runs the scheduled restart and clears the logs over the size limit.
 5. The proxied traffic goes to the router itself, past the filtering of forwarded traffic. With **Respect parental control** on, it is checked by the parental control chain of the firmware (`PControls`), so blocked devices and time scheduling apply to it too.
 6. `/jffs/scripts/unmount` stops the proxy before its USB drive is unmounted: the rules must not stay without the core.
+
+## Native Web Admin migration
+
+Updating an existing installation keeps profiles, subscriptions, mixin, API/proxy secrets and device ID. Legacy `.web.port` and `web.auth` are retained for a possible manual downgrade; they do not control native Web Admin. The installer stops only the verified Exodus Lighttpd process and no longer installs Lighttpd packages. Registration failure restores the previous Exodus code and settings instead of reporting success.
+
+The `services-start` recovery stub waits for Entware in the background, and `S99exodus` registers the page when USB storage becomes available. Status and logs use a separate RAM cache worker refreshed every five seconds; stopping the proxy leaves administration available. `exodus web stop` stops that worker and removes the Exodus page. Request IDs, chunk acknowledgements and stable workers preserve responses while an update replaces scripts.
+
+Uploaded profiles and editor files are limited to **8 MiB of UTF-8 data** (complete request: 16 MiB). Native forms transfer small acknowledged chunks, so large files can take tens of minutes; keep the tab open. Frequent status/log reads do not write JFFS. Other operations use the shared Addons API settings file. Fresh settings are fetched before every submission, but simultaneous writes from an unrelated addon are not atomic with Exodus. The final `exodus_packet` chunk remains there until the next submission or uninstall.
+
+If the router session expires, the tab retains the unsaved draft and pauses requests. Sign in to Web Admin in another tab, then use the resume button. Reloading the page discards an unsaved draft.
+
+For a manual downgrade, back up `/opt/etc/exodus`, run `exodus web stop`, remove only Exodus's marked lines from `services-start` and `service-event`, and remove `/jffs/addons/exodus`. Fetch the **installer from the selected older commit**, and run it with `REF` set to that same commit. The current native installer requires native registration helpers and cannot install an arbitrary legacy revision. Restore the backup if needed; a legacy first-time password may need to be set by the older installer.
+
+Automated checks use isolated firmware fixtures and a browser preview. Checks on a real router, including session protection of ASP and response URLs, are listed in [MERLIN-SMOKE.md](tests/MERLIN-SMOKE.md) and have not been performed in this environment.
 
 ## Uninstall
 
@@ -93,8 +106,8 @@ exodus start | stop | restart | status
 exodus update_subscription <id>   # download a subscription, the running core gets it when it is in use
 exodus hard_update     # remove downloaded providers, update the subscription and restart
 exodus debug           # report for an issue, server addresses and passwords are hidden
-exodus web restart     # restart the web UI
-exodus passwd          # change the password of the web UI
+exodus web start | stop | restart | status | url
+exodus passwd          # points to Administration → System for the router password
 ```
 
 ## Files
@@ -109,7 +122,10 @@ exodus passwd          # change the password of the web UI
 | `/opt/share/exodus/` | scripts and the web UI |
 | `/opt/libexec/exodus/` | `mihomo` and `yq` |
 | `/opt/etc/init.d/S99exodus` | start with Entware |
-| `/jffs/scripts/firewall-start`, `nat-start`, `unmount` | one line marked `# exodus` in each |
+| `/jffs/scripts/firewall-start`, `nat-start`, `unmount`, `services-start`, `service-event` | one line marked `# exodus` in each |
+| `/jffs/addons/exodus/` | persistent ASP page and boot recovery stub |
+| `/tmp/exodus/run/webui/` | request staging, response envelopes, status/log caches and cache worker PID |
+| `/www/user/exodus/` (`/ext/exodus/` in Web Admin) | authenticated static resources and RAM response/cache links |
 | `/tmp/exodus/log/` | logs of the app, the core and the update |
 
 ## Special Thanks

@@ -11,6 +11,7 @@
 <script>window.ExodusBootstrap = {lang: '<% nvram_get("preferred_lang"); %>'}; function done_validating() { /* Responses are polled; preserve the draft. */ }</script>
 </head><body onload="show_menu();">
 <div id="TopBanner"></div><div id="Loading" class="popup_bg"></div>
+<iframe name="hidden_frame" id="hidden_frame" hidden></iframe>
 <iframe name="exodus_apply_frame" id="exodus_apply_frame" hidden></iframe>
 <form id="exodus_apply" method="post" action="/start_apply.htm" target="exodus_apply_frame">
 <input type="hidden" name="action_mode" value="apply">

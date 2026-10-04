@@ -4,6 +4,10 @@ from shell_support import ShellCase, ROOT
 
 
 class WebuiTests(ShellCase):
+    def test_native_banner_form_target_exists(self):
+        asp=(self.share/'www/Exodus.asp').read_text()
+        self.assertIn('name="hidden_frame"',asp)
+
     def setUp(self):
         super().setUp()
         self.nv = {'firmver': '3.0.0.6', 'buildno': '102', 'extendno': '1',
