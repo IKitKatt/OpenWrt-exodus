@@ -3,14 +3,16 @@
 # Exodus for Asuswrt-Merlin installer and updater
 # installs into entware: the service, the web ui, the mihomo core and yq, settings and profiles are kept
 # adds a line to the user scripts firewall-start, nat-start and unmount in /jffs/scripts, other lines there are kept
-# REF=<branch|tag>  install another version, the asuswrt branch by default
+# REF=<branch|tag>  install another version, the asuswrt-native branch by default
+# REPOSITORY=<owner/repo> download application files from this fork
 # LOW_SPACE=1       remove the current core before installing the new one, for routers with little free space
 # CORE=<core>       install this core without asking: meta (stable), alpha (Mihomo Alpha) or prizrak (Prizrak-Core)
 # GH_PROXY=<url>    download from GitHub through gh-proxy (https://github.com/prettyleaf/gh-proxy), e.g. https://example.com/ghproxy/TOKEN, empty to download directly
+# SOURCE_DIR=<dir>  install application files from an extracted local bundle; dependencies still need internet
 # the core and GH_PROXY are saved in $EXODUS_OPT/etc/exodus/config.json, the next runs and the update page use them
 
-repository="prettyleaf/openwrt-exodus"
-ref="${REF:-asuswrt}"
+repository="${REPOSITORY:-prettyleaf/openwrt-exodus}"
+ref="${REF:-asuswrt-native}"
 
 EXODUS_OPT="${EXODUS_OPT:-/opt}"
 EXODUS_JFFS="${EXODUS_JFFS:-/jffs}"
@@ -52,8 +54,8 @@ yq_path="$libexec_dir/yq"
 
 # the last line is "success" or starts with "error:", the update page relies on it
 fail() {
-	echo "error: $1"
 	rollback
+	echo "error: $1${rollback_failed:+; recovery files kept in $temp_dir}${core_lost:+; previous core unavailable in LOW_SPACE mode}"
 	exit 1
 }
 
@@ -61,26 +63,52 @@ fail() {
 rollback() {
  [ "$migration_pending" = 1 ] || return 0
  migration_pending=0
- [ ! -x "$share_dir/exodus" ] || "$share_dir/exodus" web stop > /dev/null 2>&1
- rm -rf "$share_dir"
- [ ! -d "$share_dir.old" ] || mv "$share_dir.old" "$share_dir"
+ if [ -x "$share_dir/exodus" ]; then
+  [ "$service_attempted" != 1 ] || "$share_dir/exodus" stop > /dev/null 2>&1
+  "$share_dir/exodus" web stop > /dev/null 2>&1 || :
+ fi
+ if [ "$code_changed" = 1 ]; then
+  if rm -rf "$share_dir"; then
+   [ ! -d "$share_dir.old" ] || mv "$share_dir.old" "$share_dir" || rollback_failed=1
+  else rollback_failed=1; fi
+ fi
+ for name in mihomo yq; do
+  if [ -e "$temp_dir/backup/$name" ] || [ -L "$temp_dir/backup/$name" ]; then
+   mv -f "$temp_dir/backup/$name" "$libexec_dir/$name" || rollback_failed=1
+  elif [ -f "$temp_dir/backup/$name.absent" ]; then rm -f "$libexec_dir/$name" || rollback_failed=1; fi
+ done
  for name in config.json mixin.yaml; do
-  if [ -f "$temp_dir/backup/$name" ]; then cp -p "$temp_dir/backup/$name" "$home_dir/$name";
-  elif [ -f "$temp_dir/backup/$name.absent" ]; then rm -f "$home_dir/$name"; fi
+  if [ -f "$temp_dir/backup/$name" ]; then cp -p "$temp_dir/backup/$name" "$home_dir/$name" || rollback_failed=1;
+  elif [ -f "$temp_dir/backup/$name.absent" ]; then rm -f "$home_dir/$name" || rollback_failed=1; fi
  done
  for name in firewall-start nat-start unmount services-start service-event; do
-  if [ -f "$temp_dir/backup/$name" ]; then cp -p "$temp_dir/backup/$name" "$EXODUS_JFFS/scripts/$name";
-  else rm -f "$EXODUS_JFFS/scripts/$name"; fi
+  if [ -f "$temp_dir/backup/$name" ]; then cp -p "$temp_dir/backup/$name" "$EXODUS_JFFS/scripts/$name" || rollback_failed=1;
+  else rm -f "$EXODUS_JFFS/scripts/$name" || rollback_failed=1; fi
  done
- if [ -f "$temp_dir/backup/S99exodus" ]; then cp -p "$temp_dir/backup/S99exodus" "$EXODUS_OPT/etc/init.d/S99exodus";
- else rm -f "$EXODUS_OPT/etc/init.d/S99exodus"; fi
+ rm -rf "$EXODUS_JFFS/addons/exodus" || rollback_failed=1
+ [ ! -d "$temp_dir/backup/addon" ] || cp -Rp "$temp_dir/backup/addon" "$EXODUS_JFFS/addons/exodus" || rollback_failed=1
+ if [ -f "$temp_dir/backup/S99exodus" ]; then cp -p "$temp_dir/backup/S99exodus" "$EXODUS_OPT/etc/init.d/S99exodus" || rollback_failed=1;
+ else rm -f "$EXODUS_OPT/etc/init.d/S99exodus" || rollback_failed=1; fi
+ [ ! -f "$temp_dir/backup/home.absent" ] || rm -rf "$home_dir" || rollback_failed=1
  if [ -x "$share_dir/exodus" ]; then
-  ln -sf "$share_dir/exodus" "$EXODUS_OPT/bin/exodus"
-  [ "$was_web_running" != 1 ] || "$share_dir/exodus" web start > /dev/null 2>&1
+  ln -sf "$share_dir/exodus" "$EXODUS_OPT/bin/exodus" || rollback_failed=1
+  [ "$was_web_running" != 1 ] || "$share_dir/exodus" web start > /dev/null 2>&1 || rollback_failed=1
+  if [ "$service_attempted" = 1 ] && [ "$was_running" = 1 ]; then
+   "$share_dir/exodus" restart > /dev/null 2>&1 || rollback_failed=1
+  fi
  else
-  rm -f "$EXODUS_OPT/bin/exodus"
+  rm -f "$EXODUS_OPT/bin/exodus" || rollback_failed=1
  fi
- echo 'previous Exodus code and settings restored'
+ if [ -n "$rollback_failed" ]; then echo "rollback incomplete; recovery files: $temp_dir";
+ else echo 'previous Exodus code and settings restored'; fi
+}
+
+# Rename on Entware's filesystem retains the old inode without another full copy.
+backup_binary() {
+ local name="$1"
+ if [ -e "$libexec_dir/$name" ] || [ -L "$libexec_dir/$name" ]; then
+  mv "$libexec_dir/$name" "$temp_dir/backup/$name" || fail "can not preserve previous $name"
+ else touch "$temp_dir/backup/$name.absent" || fail "can not stage $name backup"; fi
 }
 
 # the installer is usually piped into the shell, so questions are asked on the terminal
@@ -120,7 +148,7 @@ check_github() {
 # hash of the code in a source tree, the update page compares it with the latest one: a change of the readme is not an update
 # the same as code_hash in lib/common.sh
 code_hash() {
-	(cd "$1" && find asuswrt install.sh -type f 2> /dev/null | LC_ALL=C sort | while read -r file; do sha256sum "$file"; done 2> /dev/null) | sha256sum | cut -d ' ' -f 1
+	(cd "$1" && find asuswrt install.sh uninstall.sh -type f 2> /dev/null | LC_ALL=C sort | while read -r file; do sha256sum "$file"; done 2> /dev/null) | sha256sum | cut -d ' ' -f 1
 }
 
 # github writes the commit into the pax header of an archive of a branch, the same as archive_commit in lib/common.sh
@@ -152,11 +180,12 @@ install_core() {
 	if ! download "$1" "$file" || ! gzip -t "$file" 2> /dev/null; then
 		fail "core download failed"
 	fi
-	mkdir -p "$libexec_dir"
+	mkdir -p "$libexec_dir" || fail "can not create core directory"
 	if [ "$LOW_SPACE" = 1 ]; then
 		echo "low space mode: remove current core"
 		# the running core keeps its file allocated, stop it first
 		[ -x "$share_dir/exodus" ] && "$share_dir/exodus" stop
+		core_lost=1
 		rm -f "$core_path"
 		gzip -dc "$file" > "$core_path" || fail "core install failed, the proxy does not work until the installer succeeds"
 		chmod 755 "$core_path"
@@ -172,7 +201,8 @@ install_core() {
 			rm -f "$core_path.new"
 			fail "the new core does not run on this router"
 		fi
-		mv -f "$core_path.new" "$core_path"
+		backup_binary mihomo
+		mv -f "$core_path.new" "$core_path" || fail "core activation failed"
 	fi
 	rm -f "$file"
 }
@@ -192,11 +222,13 @@ install_yq() {
 		rm -rf "$temp_dir/yq"
 		# the release of yq for arm needs an fpu, a yq of entware would be built for the cpu
 		if [ "$core_arch" = "armv5" ] && opkg install yq > /dev/null 2>&1 && "$EXODUS_OPT/bin/yq" --version 2> /dev/null | grep -q mikefarah; then
-			ln -sf "$EXODUS_OPT/bin/yq" "$yq_path"
+			backup_binary yq
+			ln -sf "$EXODUS_OPT/bin/yq" "$yq_path" || fail "yq activation failed"
 			return
 		fi
 		fail "yq does not run on this router"
 	fi
+	backup_binary yq
 	mv -f "$temp_dir/yq/yq_linux_$yq_arch" "$yq_path" || fail "yq install failed, not enough free space?"
 	rm -rf "$temp_dir/yq"
 }
@@ -204,21 +236,16 @@ install_yq() {
 # a line of exodus in a user script of asuswrt-merlin, right after the shebang: a script may end with exit
 # the lines of other addons are kept, the old line of exodus is replaced
 hook_add() {
-	local file line
+	local file line first
 	file="$EXODUS_JFFS/scripts/$1"
 	line="$2 # exodus"
-	if [ -f "$file" ] && head -n 1 "$file" | grep -q '^#!'; then
-		{
-			head -n 1 "$file"
-			echo "$line"
-			tail -n +2 "$file" | grep -v '# exodus$'
-		} > "$file.new"
-	else
-		{
-			echo '#!/bin/sh'
-			echo "$line"
-			[ -f "$file" ] && grep -v '# exodus$' "$file"
-		} > "$file.new"
+	first='#!/bin/sh'
+	[ ! -f "$file" ] || first=$(head -n 1 "$file") || return 1
+	case "$first" in '#!'*) ;; *) first='#!/bin/sh' ;; esac
+	printf '%s\n%s\n' "$first" "$line" > "$file.new" || return 1
+	if [ -f "$file" ]; then
+		# sed returns success for empty output and failure for a failed read/write.
+		sed '1{ /^#!/d; }; /# exodus$/d' "$file" >> "$file.new" || return 1
 	fi
 	mv -f "$file.new" "$file" && chmod 755 "$file"
 }
@@ -284,10 +311,23 @@ echo "architecture: $machine, core builds: $core_arch, entware: $arch"
 
 # temp dir
 temp_dir="$EXODUS_OPT/tmp/exodus-install"
-rm -rf "$temp_dir"
+install_lock="$EXODUS_OPT/tmp/exodus-install.lock"
+if [ -n "$SOURCE_DIR" ]; then
+ source_path=$(cd "$SOURCE_DIR" 2>/dev/null && pwd -P) || fail "SOURCE_DIR is not readable"
+ stage_path=$(readlink -f "$temp_dir" 2>/dev/null)
+ case "$source_path/" in "$temp_dir/"*|"${stage_path:-$temp_dir}/"*) fail "SOURCE_DIR must be outside installer staging" ;; esac
+fi
+# A failed rollback keeps its backup for manual recovery instead of overwriting it.
+[ ! -f "$temp_dir/recovery-required" ] || fail "resolve the previous recovery backup in $temp_dir first"
+mkdir -p "$EXODUS_OPT/tmp" || fail "can not create installer storage"
+mkdir "$install_lock" 2>/dev/null || fail "another installation owns $install_lock; resolve stale locks before retrying"
+trap 'rollback; if [ -n "$rollback_failed" ]; then touch "$temp_dir/recovery-required"; else rm -rf "$temp_dir"; fi; rm -f "$install_lock/pid"; rmdir "$install_lock"' EXIT
+echo "$$" > "$install_lock/pid" || fail "can not write installer lock"
+rm -rf "$temp_dir" || fail "can not clean staging directory"
 mkdir -p "$temp_dir" || fail "can not create $temp_dir"
-trap 'rollback; rm -rf "$temp_dir"' EXIT
-trap 'exit 1' HUP INT TERM
+trap 'fail "installation interrupted by HUP"' HUP
+trap 'fail "installation interrupted by INT"' INT
+trap 'fail "installation interrupted by TERM"' TERM
 
 # dependencies from entware, curl and jq are needed by the installer itself
 # iptables and ipset are of the firmware, they match its kernel
@@ -296,6 +336,7 @@ opkg update > /dev/null 2>&1 || echo "warning: opkg update failed"
 opkg install curl jq ca-bundle || fail "package install failed"
 # secrets, the password and the update check need sha-256: sha256sum or openssl of the firmware
 printf '' | sha256sum 2> /dev/null | grep -q '^[0-9a-f]\{64\}' || fail "sha256sum is not found and openssl can not compute sha-256"
+[ ! -f "$config" ] || jq -e 'type == "object"' "$config" > /dev/null 2>&1 || fail "existing config.json is not a valid JSON object"
 
 # access to github: through the given or the saved gh-proxy, then directly
 version_url="https://github.com/$repository/raw/$ref/asuswrt/opt/share/exodus/VERSION"
@@ -419,16 +460,30 @@ if [ "$core" = "meta" ]; then
 	core_release="https://github.com/MetaCubeX/mihomo/releases/download/$core_latest"
 fi
 
-# download the app, the archive is small and the temp dir is on the storage of entware
-echo "download exodus ($ref)"
-mkdir -p "$temp_dir/app"
-download "https://github.com/$repository/archive/$ref.tar.gz" "$temp_dir/app.tar.gz" 300 && tar -xzf "$temp_dir/app.tar.gz" -C "$temp_dir/app" 2> /dev/null
-commit=$(archive_commit "$temp_dir/app.tar.gz")
-rm -f "$temp_dir/app.tar.gz"
-src=$(find "$temp_dir/app" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+if [ -n "$SOURCE_DIR" ]; then
+ src=$(cd "$SOURCE_DIR" 2>/dev/null && pwd -P) || fail "SOURCE_DIR is not readable"
+ case "$src/" in "$temp_dir/"*) fail "SOURCE_DIR must be outside installer staging" ;; esac
+ echo "local exodus source: $src"
+else
+ # The application archive is small and staged on Entware storage.
+ echo "download exodus ($ref)"
+ mkdir -p "$temp_dir/app" || fail "can not stage application"
+ download "https://github.com/$repository/archive/$ref.tar.gz" "$temp_dir/app.tar.gz" 300 || fail "application download failed"
+ tar -xzf "$temp_dir/app.tar.gz" -C "$temp_dir/app" 2> /dev/null || fail "application extraction failed"
+ commit=$(archive_commit "$temp_dir/app.tar.gz")
+ rm -f "$temp_dir/app.tar.gz"
+ src=$(find "$temp_dir/app" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+fi
 if [ -z "$src" ] || [ ! -f "$src/asuswrt/opt/share/exodus/exodus" ]; then
 	fail "download failed, if the provider slows down GitHub, install through gh-proxy, see README"
 fi
+for file in install.sh uninstall.sh asuswrt/opt/etc/init.d/S99exodus asuswrt/opt/etc/exodus/config.json asuswrt/opt/etc/exodus/mixin.yaml asuswrt/opt/share/exodus/VERSION asuswrt/opt/share/exodus/www/Exodus.asp asuswrt/opt/share/exodus/www/app.js asuswrt/opt/share/exodus/www/merlin.js asuswrt/opt/share/exodus/www/i18n.js asuswrt/opt/share/exodus/www/style.css; do
+ [ -s "$src/$file" ] || fail "incomplete application payload: $file"
+done
+for file in "$src/install.sh" "$src/uninstall.sh" "$src/asuswrt/opt/share/exodus/exodus" "$src/asuswrt/opt/etc/init.d/S99exodus" "$src/asuswrt/opt/share/exodus/lib/"*.sh; do
+ sh -n "$file" || fail "invalid shell payload: $file"
+done
+jq -e 'type == "object"' "$src/asuswrt/opt/etc/exodus/config.json" > /dev/null || fail "invalid default config"
 echo "exodus $(cat "$src/asuswrt/opt/share/exodus/VERSION")${commit:+ ($(echo "$commit" | cut -c 1-7))}"
 code=$(code_hash "$src")
 
@@ -448,6 +503,8 @@ fi
  webui_preflight
 ) || fail "downloaded WebUI helper rejected this firmware"
 mkdir -p "$temp_dir/backup" || fail "can not stage migration backup"
+[ -d "$home_dir" ] || touch "$temp_dir/backup/home.absent" || fail "backup failed"
+[ ! -d "$EXODUS_JFFS/addons/exodus" ] || cp -Rp "$EXODUS_JFFS/addons/exodus" "$temp_dir/backup/addon" || fail "native registration backup failed"
 for name in config.json mixin.yaml; do
  if [ -f "$home_dir/$name" ]; then cp -p "$home_dir/$name" "$temp_dir/backup/$name" || fail "backup failed";
  else touch "$temp_dir/backup/$name.absent"; fi
@@ -462,32 +519,37 @@ rm -rf "$share_dir.new"
 mkdir -p "$share_dir.new" || fail "can not create $share_dir"
 cp -R "$src/asuswrt/opt/share/exodus/." "$share_dir.new/" || fail "install failed, not enough free space?"
 # the installer from the repository root, used by the update page
-cp -f "$src/install.sh" "$share_dir.new/install.sh"
-jq -n --arg ref "$ref" --arg commit "$commit" --arg code "$code" --arg installed "$(date '+%Y-%m-%d %H:%M:%S')" \
-	'{ref: $ref, commit: $commit, code: $code, installed: $installed}' > "$share_dir.new/BUILD"
+cp -f "$src/install.sh" "$share_dir.new/install.sh" || fail "installer staging failed"
+cp -f "$src/uninstall.sh" "$share_dir.new/uninstall.sh" || fail "uninstaller staging failed"
+jq -n --arg repository "$repository" --arg ref "$ref" --arg commit "$commit" --arg code "$code" --arg installed "$(date '+%Y-%m-%d %H:%M:%S')" \
+	'{repository: $repository, ref: $ref, commit: $commit, code: $code, installed: $installed}' > "$share_dir.new/BUILD" || fail "build metadata staging failed"
 was_web_running=0
+migration_pending=1
+touch "$temp_dir/recovery-required" || fail "can not mark migration recovery backup"
 # Never trust a stale PID file to stop another addon's server.
 (
  . "$src/asuswrt/opt/share/exodus/lib/common.sh"
  . "$src/asuswrt/opt/share/exodus/lib/webui.sh"
- if webui_status; then touch "$temp_dir/backup/web-active"; webui_cache_stop; fi
+ if webui_status; then touch "$temp_dir/backup/web-active"; webui_cache_stop || exit 1; fi
  if [ -f "$WEB_PID_PATH" ]; then
   webui_stop_legacy
   [ -f "$WEB_PID_PATH" ] || touch "$temp_dir/backup/web-active"
  fi
 )
+web_stop_result=$?
 [ ! -f "$temp_dir/backup/web-active" ] || was_web_running=1
+[ "$web_stop_result" = 0 ] || fail "previous WebUI did not stop"
 
-rm -rf "$share_dir.old"
-[ -d "$share_dir" ] && mv "$share_dir" "$share_dir.old"
-migration_pending=1
+rm -rf "$share_dir.old" || fail "can not clean previous code staging"
+if [ -d "$share_dir" ]; then mv "$share_dir" "$share_dir.old" || fail "can not preserve previous code"; fi
+code_changed=1
 mv "$share_dir.new" "$share_dir" || fail "install failed"
-chmod 755 "$share_dir/exodus" "$share_dir/install.sh"
+chmod 755 "$share_dir/exodus" "$share_dir/install.sh" "$share_dir/uninstall.sh" || fail "code permission update failed"
 
-mkdir -p "$EXODUS_OPT/etc/init.d" "$EXODUS_OPT/bin" "$home_dir/profiles" "$home_dir/subscriptions" "$home_dir/run/providers/rule" "$home_dir/run/providers/proxy"
-cp -f "$src/asuswrt/opt/etc/init.d/S99exodus" "$EXODUS_OPT/etc/init.d/S99exodus"
-chmod 755 "$EXODUS_OPT/etc/init.d/S99exodus"
-ln -sf "$share_dir/exodus" "$EXODUS_OPT/bin/exodus"
+mkdir -p "$EXODUS_OPT/etc/init.d" "$EXODUS_OPT/bin" "$home_dir/profiles" "$home_dir/subscriptions" "$home_dir/run/providers/rule" "$home_dir/run/providers/proxy" || fail "data directory creation failed"
+cp -f "$src/asuswrt/opt/etc/init.d/S99exodus" "$EXODUS_OPT/etc/init.d/S99exodus" || fail "init script install failed"
+chmod 755 "$EXODUS_OPT/etc/init.d/S99exodus" || fail "init script permissions failed"
+ln -sf "$share_dir/exodus" "$EXODUS_OPT/bin/exodus" || fail "CLI link install failed"
 
 # the firmware restores its tables without the rules of addons on every restart of the firewall, the user scripts apply them again
 # they run only with "Enable JFFS custom scripts and configs" (Administration - System)
@@ -497,16 +559,16 @@ if [ -d "$EXODUS_JFFS" ] && [ -n "$(nvram get productid 2> /dev/null)" ]; then
 		nvram set jffs2_scripts=1
 		nvram commit
 	fi
-	mkdir -p "$EXODUS_JFFS/scripts"
-	hook_add firewall-start "[ -x \"$share_dir/exodus\" ] && \"$share_dir/exodus\" hook firewall"
-	hook_add nat-start "[ -x \"$share_dir/exodus\" ] && \"$share_dir/exodus\" hook nat"
-	hook_add unmount "[ -x \"$share_dir/exodus\" ] && \"$share_dir/exodus\" hook unmount \"\$1\""
-	hook_add services-start "[ ! -x \"$EXODUS_JFFS/addons/exodus/boot.sh\" ] || \"$EXODUS_JFFS/addons/exodus/boot.sh\" > /dev/null 2>&1 &"
-	hook_add service-event "[ ! -x \"$EXODUS_JFFS/addons/exodus/boot.sh\" ] || \"$EXODUS_JFFS/addons/exodus/boot.sh\" event \"\$1\" \"\$2\""
+	mkdir -p "$EXODUS_JFFS/scripts" || fail "hook directory creation failed"
+	hook_add firewall-start "[ -x \"$share_dir/exodus\" ] && \"$share_dir/exodus\" hook firewall" || fail "firewall hook install failed"
+	hook_add nat-start "[ -x \"$share_dir/exodus\" ] && \"$share_dir/exodus\" hook nat" || fail "NAT hook install failed"
+	hook_add unmount "[ -x \"$share_dir/exodus\" ] && \"$share_dir/exodus\" hook unmount \"\$1\"" || fail "unmount hook install failed"
+	hook_add services-start "[ ! -x \"$EXODUS_JFFS/addons/exodus/boot.sh\" ] || \"$EXODUS_JFFS/addons/exodus/boot.sh\" > /dev/null 2>&1 &" || fail "boot hook install failed"
+	hook_add service-event "[ ! -x \"$EXODUS_JFFS/addons/exodus/boot.sh\" ] || \"$EXODUS_JFFS/addons/exodus/boot.sh\" event \"\$1\" \"\$2\"" || fail "service event hook install failed"
 else
 	echo "warning: /jffs is not available, the rules are restored only by the watcher"
 fi
-[ -f "$home_dir/mixin.yaml" ] || cp -f "$src/asuswrt/opt/etc/exodus/mixin.yaml" "$home_dir/mixin.yaml"
+[ -f "$home_dir/mixin.yaml" ] || cp -f "$src/asuswrt/opt/etc/exodus/mixin.yaml" "$home_dir/mixin.yaml" || fail "mixin install failed"
 # new options get their defaults, the values of the user win, options removed from exodus are dropped
 # renamed options keep their values; no regex in jq, the jq of entware has none
 config_merge='
@@ -534,15 +596,15 @@ config_merge='
 	| $defaults | known($user) | if ($user | has("web")) then .web = $user.web else . end'
 if [ -f "$config" ]; then
 	if jq -s --argjson legacy "$legacy" "$config_merge" "$src/asuswrt/opt/etc/exodus/config.json" "$config" > "$config.new" 2> /dev/null && [ -s "$config.new" ]; then
-		mv -f "$config.new" "$config"
+		mv -f "$config.new" "$config" || fail "config activation failed"
 	else
 		rm -f "$config.new"
-		echo "warning: the config is not valid json, it is kept as is"
+		fail "config migration failed"
 	fi
 else
-	cp -f "$src/asuswrt/opt/etc/exodus/config.json" "$config"
+	cp -f "$src/asuswrt/opt/etc/exodus/config.json" "$config" || fail "config install failed"
 fi
-chmod 600 "$config"
+chmod 600 "$config" || fail "config permissions failed"
 rm -rf "$temp_dir/app"
 
 # yq merges the settings into the profile, it is installed once
@@ -559,23 +621,27 @@ fi
 
 # remember the core and the gh-proxy for the next runs and the update page
 if [ "$save_gh_proxy" = 1 ]; then
-	jq --arg core "$core" --arg proxy "$gh_proxy" '.update.core = $core | .update.gh_proxy = $proxy' "$config" > "$config.new" && mv -f "$config.new" "$config"
+	jq --arg core "$core" --arg proxy "$gh_proxy" '.update.core = $core | .update.gh_proxy = $proxy' "$config" > "$config.new" || fail "update settings save failed"
 else
-	jq --arg core "$core" '.update.core = $core' "$config" > "$config.new" && mv -f "$config.new" "$config"
+	jq --arg core "$core" '.update.core = $core' "$config" > "$config.new" || fail "update settings save failed"
 fi
+mv -f "$config.new" "$config" || fail "update settings activation failed"
 
 # secrets of the core api and the proxy ports, the hwid
-"$share_dir/exodus" init
+"$share_dir/exodus" init || fail "Exodus initialization failed"
 
 # the web ui and the service run the new code
 echo "restart web ui"
 "$share_dir/exodus" web restart || fail "native WebUI registration failed"
-migration_pending=0
-rm -rf "$share_dir.old"
 if [ "$was_running" = 1 ] || [ "$(config_get .config.enabled)" = "true" ]; then
 	echo "restart service"
-	"$share_dir/exodus" restart
+	service_attempted=1
+	"$share_dir/exodus" restart || fail "service activation failed"
+	"$share_dir/exodus" status > /dev/null 2>&1 || fail "service is not running after activation"
 fi
 
-echo "web ui: $("$share_dir/exodus" web url)"
+web_url=$("$share_dir/exodus" web url) && [ -n "$web_url" ] || fail "native WebUI URL unavailable"
+echo "web ui: $web_url"
+migration_pending=0
+rm -rf "$share_dir.old"
 echo "success"

@@ -9,11 +9,13 @@ const out=process.env.WEBUI_SCREENSHOTS||'docs/webui-review';
 await mkdir(out,{recursive:true});
 const errors=[];
 try {
-    for(const lang of ['EN','RU']) for(const width of [760,390]) {
+    for(const lang of ['EN','RU']) for(const width of [760,600,390]) {
         const page=await browser.newPage({viewport:{width:width===390?390:1000,height:1000}});
         page.on('pageerror',error=>errors.push(error.message));
         await page.goto(`http://127.0.0.1:8765/?lang=${lang}&width=${width}`);
         await page.locator('#content h1').waitFor();
+        await page.locator('.shell').evaluate((el,width)=>el.style.width=width+'px',width);
+        assert.ok(await page.locator('.picker-column .field input').evaluate(el=>el.getBoundingClientRect().width>=72),`${lang}/${width} manual address remains usable`);
         assert.equal(await page.locator('#menu a').count(),6);
         for(const route of ['status','profiles','settings','editor','logs','updates']) {
             await page.locator(`#menu a[href="#/${route}"]`).click();
@@ -21,6 +23,10 @@ try {
             assert.ok(await page.locator('#content').innerText(),route);
             const overflow=await page.locator('#exodus-root').evaluate(el=>el.scrollWidth>el.clientWidth+1);
             assert.equal(overflow,false,`${lang}/${width}/${route} overflow`);
+            assert.equal(await page.locator('#content .table th').evaluateAll(els=>els.filter(el=>el.getClientRects().length&&el.textContent.trim()).every(el=>{
+                const range=document.createRange();range.selectNodeContents(el);
+                return new Set([...range.getClientRects()].filter(r=>r.width>0).map(r=>Math.round(r.top))).size<=1;
+            })),true,`${lang}/${width}/${route} readable table headers`);
             if(process.env.WEBUI_CAPTURE!=='0'&&(route==='status'||route==='settings')) await page.screenshot({path:`${out}/${lang}-${width}-${route}.png`,fullPage:true});
             if(route==='settings') {
                 for(const button of await page.locator('#content .tabs-trigger').all()) {
@@ -45,6 +51,7 @@ try {
     assert.equal(await radios.last().getAttribute('aria-checked'),'true');
     assert.equal(await radios.last().evaluate(el=>el===document.activeElement),true);
     await page.getByLabel('Autostart',{exact:true}).check();
+    assert.equal(await page.evaluate(()=>document.getElementById('savebar').getBoundingClientRect().top>=document.getElementById('content').getBoundingClientRect().bottom),true,'draft actions occupy their own space');
     await page.locator('#menu a[href="#/profiles"]').click();
     await page.getByRole('button',{name:'Cancel',exact:true}).click();
     assert.ok(page.url().endsWith('#/status'));
@@ -85,5 +92,5 @@ try {
     assert.equal(await page.getByLabel('Autostart',{exact:true}).isChecked(),false);
     await page.close();
     assert.deepEqual(errors,[]);
-    console.log('PASS: 6 sections, settings tabs, modal Escape/focus, RU/EN, widths 760/390; synthetic data only.');
+    console.log('PASS: 6 sections, settings tabs, modal Escape/focus, RU/EN, widths 760/600/390, address input, table headers, draft bar; synthetic data only.');
 } finally {await browser.close();}

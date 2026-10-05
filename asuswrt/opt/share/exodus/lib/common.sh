@@ -41,7 +41,7 @@ if ! printf '' | md5sum > /dev/null 2>&1; then
 fi
 
 REPOSITORY="prettyleaf/openwrt-exodus"
-BRANCH="asuswrt"
+BRANCH="asuswrt-native"
 
 # code, replaced on update
 SHARE_DIR="$EXODUS_OPT/share/exodus"
@@ -303,7 +303,7 @@ format_filesize() {
 # hash of the code in a source tree (an unpacked archive of the branch), the update check compares it with the installed one:
 # a commit that changes only the readme is not an update; install.sh has the same function
 code_hash() {
-	(cd "$1" && find asuswrt install.sh -type f 2> /dev/null | LC_ALL=C sort | while read -r file; do sha256sum "$file"; done 2> /dev/null) | sha256sum | cut -d ' ' -f 1
+	(cd "$1" && find asuswrt install.sh uninstall.sh -type f 2> /dev/null | LC_ALL=C sort | while read -r file; do sha256sum "$file"; done 2> /dev/null) | sha256sum | cut -d ' ' -f 1
 }
 
 # github writes the commit into the pax header of an archive of a branch; install.sh has the same function

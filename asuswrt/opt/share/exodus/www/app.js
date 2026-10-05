@@ -575,11 +575,11 @@ function switchField(label, description, r, depends) {
     const control = switchControl(r);
     control.id = nextId();
     return dependOn(E('div', { class: 'field-switch' }, [
-        E('div', {}, [
-            E('label', { class: 'label', for: control.id }, label),
+        E('label', { class: 'label', for: control.id }, label),
+        E('div', { class: 'field-control' }, [
+            control,
             description ? E('p', { class: 'description', html: description }) : null
-        ]),
-        control
+        ])
     ]), depends);
 }
 
@@ -680,7 +680,7 @@ function input(r, opts) {
         const reveal = E('button', { class: 'btn btn-ghost btn-icon', type: 'button', title: _('Show or hide'), onclick: () => { el.type = el.type === 'password' ? 'text' : 'password'; } }, icon('eye'));
         return E('div', { class: 'input-group' }, [el, reveal]);
     }
-    return list ? E('div', {}, [el, list.el]) : el;
+    return list ? E('div', { class: 'input-list' }, [el, list.el]) : el;
 }
 
 // a list of short values as removable tags, Enter, space or comma adds what is typed
@@ -1025,8 +1025,8 @@ function devicePicker() {
 
         container.appendChild(group(_('Selected'), selected.length,
             selected.length === 0
-                ? E('p', { class: 'description' }, _('Nothing is selected.'))
-                : E('div', { class: 'chips' }, selected.map((item) => E('span', { class: 'tag plain' }, [
+                ? E('p', { class: 'description picker-summary' }, _('Nothing is selected.'))
+                : E('div', { class: 'chips picker-summary' }, selected.map((item) => E('span', { class: 'tag plain' }, [
                     E('span', { title: itemValue(item) }, describeItem(item)),
                     E('button', { type: 'button', title: _('Delete'), onclick: () => toggle(item, false) }, icon('x'))
                 ]))),
@@ -1118,10 +1118,12 @@ function devicePicker() {
                 addManual();
             }
         });
-        left.appendChild(field(_('Add by address'), E('div', { class: 'row', style: { flexWrap: 'nowrap' } }, [manual, btn(_('Add'), { variant: 'outline', icon: 'plus', onClick: addManual })]), null, null, [
+        const manualField = field(_('Add by address'), E('div', { class: 'row' }, [manual, btn(_('Add'), { variant: 'outline', icon: 'plus', onClick: addManual })]), null, null, [
             _('For a device the router does not list, or a whole network like <code>192.168.1.0/24</code>.'),
             _('The IP address of a device the router knows is saved as its MAC, so the choice follows the device when its address changes.')
-        ]));
+        ]);
+        manualField.classList.add('field-stacked');
+        left.appendChild(manualField);
     };
 
     render();
@@ -1172,7 +1174,7 @@ function pageStatus() {
         action: live(statusBadge, () => [status().running, !!state.status]),
         content: [
             E('div', { class: 'grid-2 service-grid' }, [
-                E('div', { class: 'stack' }, [
+                E('div', { class: 'service-summary' }, [
                     live(() => {
                         const s = status();
                         const core = s.core_version ? `${s.core_version} · ${CORE_TITLES[s.core_type] || s.core_type || 'Mihomo'}` : '—';
@@ -1191,7 +1193,7 @@ function pageStatus() {
                             [_('Proxy'), proxy]
                         ]);
                     }, () => [status().app_version, status().core_version, status().core_type, status().running, status().hijack]),
-                    E('div', { class: 'row' }, live(() => (status().running
+                    E('div', { class: 'row toolbar' }, live(() => (status().running
                         ? [
                             btn(_('Restart'), { icon: 'rotate-cw', onClick: () => serviceOp('restart') }),
                             btn(_('Stop'), { variant: 'outline', icon: 'square', onClick: () => serviceOp('stop') }),
@@ -1200,7 +1202,7 @@ function pageStatus() {
                         : [btn(_('Start'), { icon: 'play', onClick: () => serviceOp('start') })]
                     ), () => [status().running]))
                 ]),
-                E('div', { class: 'stack' }, [
+                E('div', { class: 'service-summary' }, [
                     switchField(_('Autostart'), _('Start the service when the router boots.'), ref('config.enabled')),
                     field(_('Profile'), select(ref('config.profile'), profileChoices(), { optional: true, placeholder: _('Not selected') }), null, null, [
                         _('A subscription or an uploaded file, they are managed on the Profiles page.'),
@@ -1554,7 +1556,7 @@ function rulesEditor() {
             ])));
         }
         // a new rule is empty: a prefilled type or target would hide the other choices of the list
-        container.appendChild(E('div', {}, btn(_('Add rule'), { variant: 'outline', size: 'sm', icon: 'plus', onClick: () => update(rows().concat([
+        container.appendChild(E('div', { class: 'toolbar row' }, btn(_('Add rule'), { variant: 'outline', size: 'sm', icon: 'plus', onClick: () => update(rows().concat([
             { enabled: true, type: '', matcher: '', node: '', no_resolve: false }
         ])) })));
     };
@@ -1797,7 +1799,7 @@ function pageEditor() {
     return [
         pageHeader(_('Editor')),
         card({
-            content: [field(_('File'), choose), text],
+            content: [field(_('File'), choose), E('div', { class: 'text-surface' }, text)],
             footer: E('div', { class: 'row end', style: { width: '100%' } }, [
                 btn(_('Save'), { variant: 'outline', onClick: () => saveFile(false) }),
                 btn(_('Save & Restart'), { onClick: () => saveFile(true) })
@@ -1830,7 +1832,7 @@ function pageLogs() {
         state.timers.push(setInterval(load, 5000));
         return card({
             content: [
-                E('div', { class: 'row end' }, [
+                E('div', { class: 'row end toolbar' }, [
                     btn(_('Scroll to bottom'), { variant: 'ghost', size: 'sm', icon: 'arrow-down', onClick: () => {
                         follow = true;
                         text.scrollTop = text.scrollHeight;
@@ -1840,7 +1842,7 @@ function pageLogs() {
                         text.value = '';
                     } })
                 ]),
-                text
+                E('div', { class: 'text-surface' }, text)
             ]
         });
     };
@@ -1965,7 +1967,7 @@ function pageUpdates() {
 
     return [
         pageHeader(_('Updates')),
-        E('div', { class: 'stack' }, [container, card({ title: _('Update log'), content: logView })])
+        E('div', { class: 'stack' }, [container, card({ title: _('Update log'), content: E('div', { class: 'text-surface' }, logView) })])
     ];
 }
 
@@ -2118,7 +2120,7 @@ async function openAbout() {
             ])) : null,
             E('div', { class: 'build-links' }, [
                 E('a', { class: 'btn btn-outline', href: `${repo}/issues`, target: '_blank', rel: 'noopener' }, [icon('bug'), _('Issues')]),
-                E('a', { class: 'btn btn-outline', href: `${repo}/tree/${info.ref || 'asuswrt'}`, target: '_blank', rel: 'noopener' }, [icon('github'), 'GitHub'])
+                E('a', { class: 'btn btn-outline', href: `${repo}/tree/${info.ref || 'asuswrt-native'}`, target: '_blank', rel: 'noopener' }, [icon('github'), 'GitHub'])
             ])
         ]
     });

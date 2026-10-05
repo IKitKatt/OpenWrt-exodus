@@ -182,7 +182,9 @@ The addon fills the firmware's content slot, with an inset (10px) and no indepen
 
 Desktop form rows use a label track of `minmax(140px, 34%)` and a remaining value track of `minmax(0, 1fr)`. Labels have compact insets (7px 9px); value areas use (5px 8px). Information lists follow the same label/value proportions. Tables span the available content width and use an overflow wrapper when needed. Service status, service actions, the profile selector and device selection stay within this compact row vocabulary.
 
-The responsive boundary is the addon container width (480px), not a replacement firmware viewport layout. Ordinary form fields become one column. Checkbox rows remain compact with a text track and a checkbox track (42px). Picker columns and build tiles become one column; information lists use a smaller label minimum (110px) and a label share (38%). Buttons and local navigation receive a larger minimum height (36px). Long values can wrap without expanding the addon slot.
+The responsive boundary is the addon container width (480px), not a replacement firmware viewport layout. Ordinary fields and checkbox rows become one column. Checkbox descriptions stay beside their controls in the value area, while the label occupies its own row. Picker columns and build tiles become one column; information lists use a smaller label minimum (110px) and a label share (38%). Buttons and local navigation receive a larger minimum height (36px). Long values can wrap without expanding the addon slot.
+
+Form rows span the panel, while free content uses explicit insets: toolbars (8px 10px), text surfaces (8px 10px), and device pickers (10px). Action groups, titles and counts use gaps rather than adjacent inline boxes. The manual address field is stacked even within a desktop picker column. Datalist wrappers fill the value track. Nested tabs use one section gap. Editable rules keep usable columns in a locally scrollable table; table headers and standalone status badges remain on one line.
 
 **The Firmware Boundary Rule.** Scope every Exodus visual selector to its root; preserve firmware-owned header, sidebar, VPN tabs and footer.
 
@@ -191,7 +193,7 @@ The responsive boundary is the addon container width (480px), not a replacement 
 Resting form panels are flat, bounded by dark rules and differentiated by tone. Gradient headers and buttons are native material cues. Elevation is reserved for dialogs and temporary toast feedback; it does not lift ordinary sections.
 
 ### Shadow Vocabulary
-- **Dialog:** `0 8px 24px rgb(0 0 0 / 45%)`, above a dark translucent overlay.
+- **Dialog:** `0 8px 24px rgb(0 0 0 / 45%)`, above the existing viewport overlay (`rgb(0 0 0 / 65%)`). This functional scrim is not a form surface color.
 - **Toast:** `0 4px 12px rgb(0 0 0 / 30%)`, for transient feedback above content.
 
 **The Flat Form Rule.** Keep form sections flat; use elevation for the shipped modal and toast layers.
@@ -224,7 +226,7 @@ Small bordered badges pair text with optional circular status dots. Running uses
 
 ### Draft Save Bar
 
-A sticky, charcoal bar appears when the configuration draft differs from the saved state. It keeps explicit save, apply and discard operations visible and wraps its actions on narrow surfaces. Session-expiry feedback preserves the open draft rather than presenting a separate Exodus login surface.
+A charcoal bar in normal document flow appears after the content when the configuration draft differs from the saved state. Explicit save, apply and discard operations wrap on narrow surfaces. The bar occupies its own space, so its actions do not cover form controls during scrolling. Session-expiry feedback preserves the open draft rather than presenting a separate Exodus login surface.
 
 ## Do's and Don'ts
 

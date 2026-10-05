@@ -5,7 +5,7 @@
 
 # Exodus for Asuswrt-Merlin
 
-Proxy with [Mihomo](https://github.com/MetaCubeX/mihomo) for Asus routers with [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) and Entware. This is the `asuswrt` branch of [Exodus](https://github.com/prettyleaf/openwrt-exodus): the OpenWrt version lives in `main`, the Keenetic one in `keenetic`.
+Proxy with [Mihomo](https://github.com/MetaCubeX/mihomo) for Asus routers with [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) and Entware. This is the `asuswrt-native` branch of [Exodus](https://github.com/prettyleaf/openwrt-exodus): the OpenWrt version lives in `main`, the Keenetic one in `keenetic`.
 
 It borrows ideas from [XKeen](https://github.com/jameszeroX/XKeen).
 
@@ -25,10 +25,12 @@ It borrows ideas from [XKeen](https://github.com/jameszeroX/XKeen).
 
 ## Install & Update
 
+To install the current local implementation, use the [Native bundle and recovery instructions (Russian)](INSTALL-ASUSWRT.RU.md). The bundle includes current application files, checksum verification and a standalone uninstaller. The command below installs the published GitHub version.
+
 In the SSH console of the router:
 
 ```shell
-curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt-native/install.sh | sh
 ```
 
 At the end it prints the Web Admin URL of the allocated `userN.asp` page. Sign in to the router and open **VPN → Exodus**. Exodus uses the router administrator session and its HTTP/HTTPS port; a separate listener on port 9099 and the `PASSWORD` option are no longer used.
@@ -36,7 +38,7 @@ At the end it prints the Web Admin URL of the allocated `userN.asp` page. Sign i
 Options can be passed as environment variables before `sh`:
 
 ```shell
-curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/install.sh | CORE=alpha sh
+curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt-native/install.sh | CORE=alpha sh
 ```
 
 | Variable | Meaning |
@@ -44,11 +46,12 @@ curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/i
 | `CORE` | `meta` (stable Mihomo), `alpha` (Mihomo Alpha) or `prizrak` ([Prizrak-Core](https://github.com/legiz-ru/Prizrak-Core)), asked otherwise |
 | `GH_PROXY` | download from GitHub through [gh-proxy](https://github.com/prettyleaf/gh-proxy): `https://example.com/ghproxy/TOKEN` |
 | `LOW_SPACE=1` | remove the current core before writing the new one |
-| `REF` | another branch or tag |
+| `REF` | another branch or tag; default: `asuswrt-native` |
+| `REPOSITORY` | application fork as `owner/repo`; default: `prettyleaf/openwrt-exodus` |
 
 ### Versions
 
-Exodus has one version for all routers, the version of the [releases](https://github.com/prettyleaf/openwrt-exodus/releases) of the project: it is in `/opt/share/exodus/VERSION`, on the **Updates** page and in the build info. The **Updates** page offers an update when the code of the `asuswrt` branch changes, a change of the readme does not count.
+Exodus has one version for all routers, the version of the [releases](https://github.com/prettyleaf/openwrt-exodus/releases) of the project: it is in `/opt/share/exodus/VERSION`, on the **Updates** page and in the build info. The **Updates** page offers an update when the code of the `asuswrt-native` branch changes, a change of the readme does not count.
 
 ## Migrating from Another Proxy
 
@@ -93,8 +96,16 @@ Automated checks use isolated firmware fixtures and a browser preview. Checks on
 
 ## Uninstall
 
+The installed version includes an uninstaller that requires no download:
+
 ```shell
-curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/uninstall.sh | sh
+KEEP_CONFIG=1 sh /opt/share/exodus/uninstall.sh
+```
+
+If the installed CLI is damaged, use `uninstall.sh` from the saved bundle; see the [recovery instructions](INSTALL-ASUSWRT.RU.md). Omitting `KEEP_CONFIG=1` also deletes Exodus data. Installation and removal share an exclusive lock. Cleanup failures return a nonzero status rather than reporting success.
+
+```shell
+curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt-native/uninstall.sh | sh
 ```
 
 The lines of Exodus are removed from `/jffs/scripts`, the lines of other addons are kept. With `KEEP_CONFIG=1` the settings, profiles and subscriptions in `/opt/etc/exodus` are kept. Entware packages are not removed, other applications may use them.

@@ -395,7 +395,7 @@ latest_code() {
 	dir="$RUN_TMP/latest.$$"
 	rm -rf "$dir"
 	mkdir -p "$dir/src"
-	if curl -s -f -L --connect-timeout 15 -m 60 -o "$dir/app.tar.gz" "$(gh_url "https://github.com/$REPOSITORY/archive/$1.tar.gz")" \
+	if curl -s -f -L --connect-timeout 15 -m 60 -o "$dir/app.tar.gz" "$(gh_url "https://github.com/${2:-$REPOSITORY}/archive/$1.tar.gz")" \
 		&& tar -xzf "$dir/app.tar.gz" -C "$dir/src" 2> /dev/null; then
 		src=$(find "$dir/src" -mindepth 1 -maxdepth 1 -type d | head -n 1)
 		if [ -n "$src" ] && [ -f "$src/asuswrt/opt/share/exodus/VERSION" ]; then
@@ -408,7 +408,7 @@ latest_code() {
 # there is no versioning of the branch: exodus is up to date when its code equals the code of the branch
 # github is asked at most every 6 hours, force asks now; failed checks are not kept
 action_check_update() {
-	local core_type release build ref cache now latest app core_latest free core_size proxy_host
+	local core_type release build repository ref cache now latest app core_latest free core_size proxy_host
 	core_type=$(cfg_get .update.core)
 	case "$core_type" in
 		alpha) release="https://github.com/MetaCubeX/mihomo/releases/download/Prerelease-Alpha" ;;
@@ -417,22 +417,24 @@ action_check_update() {
 	esac
 	build=$(cat "$BUILD_PATH" 2> /dev/null)
 	printf '%s' "$build" | jq -e 'type == "object"' > /dev/null 2>&1 || build='{}'
+	repository=$(printf '%s' "$build" | jq -r '.repository // empty')
+	[ -n "$repository" ] || repository="$REPOSITORY"
 	ref=$(printf '%s' "$build" | jq -r '.ref // empty')
 	[ -n "$ref" ] || ref="$BRANCH"
 	cache="$RUN_TMP/update_check.json"
 	now=$(date +%s)
 	latest=
 	if [ "$(arg force)" != "true" ]; then
-		latest=$(jq -c --arg core "$core_type" --arg ref "$ref" --argjson now "$now" \
-			'select(.core_type == $core and .ref == $ref and ($now - .time) < 21600 and ($now - .time) >= 0)' "$cache" 2> /dev/null)
+		latest=$(jq -c --arg core "$core_type" --arg repository "$repository" --arg ref "$ref" --argjson now "$now" \
+			'select(.core_type == $core and .repository == $repository and .ref == $ref and ($now - .time) < 21600 and ($now - .time) >= 0)' "$cache" 2> /dev/null)
 	fi
 	if [ -z "$latest" ]; then
-		app=$(latest_code "$ref")
+		app=$(latest_code "$ref" "$repository")
 		core_latest=$(curl -s -f -L -m 20 "$(gh_url "$release/version.txt")" 2> /dev/null | head -n 1 | tr -d '\r')
 		echo "$core_latest" | grep -q -E '^[A-Za-z0-9._-]+$' || core_latest=
-		latest=$(printf '%s' "$app" | jq -R -s -c --argjson time "$now" --arg core "$core_type" --arg ref "$ref" --arg core_latest "$core_latest" '
+		latest=$(printf '%s' "$app" | jq -R -s -c --argjson time "$now" --arg core "$core_type" --arg repository "$repository" --arg ref "$ref" --arg core_latest "$core_latest" '
 			split("|") as $a
-			| {time: $time, core_type: $core, ref: $ref, app_latest: ($a[0] // ""), app_latest_commit: ($a[1] // ""), app_latest_code: ($a[2] // ""), core_latest: $core_latest}')
+			| {time: $time, core_type: $core, repository: $repository, ref: $ref, app_latest: ($a[0] // ""), app_latest_commit: ($a[1] // ""), app_latest_code: ($a[2] // ""), core_latest: $core_latest}')
 		if [ -n "$app" ] && [ -n "$core_latest" ]; then
 			printf '%s\n' "$latest" > "$cache"
 		fi
@@ -479,17 +481,22 @@ action_about() {
 		--arg core_type "$(cfg_get .update.core)" \
 		--arg arch "$(entware_arch)" \
 		'{app: $app, ref: ($build.ref // $branch), commit: ($build.commit // ""), installed: ($build.installed // $installed),
-		  repository: $repository, core: $core, core_type: (if $core_type == "" then "meta" else $core_type end),
+		  repository: ($build.repository // $repository), core: $core, core_type: (if $core_type == "" then "meta" else $core_type end),
 		  model: ($router.model // ""), os: ($router.os // ""), firmware: ($router.firmware // ""), arch: $arch}' | ok
 }
 
 action_update() {
-	local low_space
+	local low_space build repository ref
 	low_space=0
 	[ "$(arg low_space)" = "true" ] && low_space=1
+	build=$(cat "$BUILD_PATH" 2> /dev/null)
+	repository=$(printf '%s' "$build" | jq -r '.repository // empty' 2> /dev/null)
+	[ -n "$repository" ] || repository="$REPOSITORY"
+	ref=$(printf '%s' "$build" | jq -r '.ref // empty' 2> /dev/null)
+	[ -n "$ref" ] || ref="$BRANCH"
 	cp -f "$SHARE_DIR/install.sh" "$RUN_TMP/exodus-update.sh" || fail "500 Internal Server Error" "installer not found"
 	: > "$UPDATE_LOG_PATH"
-	export LOW_SPACE="$low_space"
+	export LOW_SPACE="$low_space" REPOSITORY="$repository" REF="$ref"
 	daemonize sh -c "exec sh '$RUN_TMP/exodus-update.sh' >> '$UPDATE_LOG_PATH' 2>&1"
 	echo '{"success": true}' | ok
 }

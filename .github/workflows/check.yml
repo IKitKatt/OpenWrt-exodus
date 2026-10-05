@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - asuswrt
+      - asuswrt-native
   pull_request:
     branches:
       - asuswrt
+      - asuswrt-native
   workflow_dispatch:
 
 jobs:
