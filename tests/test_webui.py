@@ -10,13 +10,22 @@ FIRMWARE_CASES = [
     ('3.0.0.4', '388', '9', True),
     ('3.0.0.4', '388', '12_2', True),
     ('3004', '388', '12_2', True),
+    ('3.0.0.4', '384.14', '99', False),
+    ('3.0.0.4', '384.15', '0', True),
+    ('3.0.0.4', '386.1', '0', True),
+    ('3.0.0.4', '388.12', '2', True),
     ('3.0.0.6', '102', '0', False),
     ('3.0.0.6', '102', '1', True),
     ('3.0.0.6', '102', '1_2', True),
     ('3.0.0.6', '102', '2', True),
     ('3.0.0.6', '103', '0', True),
+    ('3.0.0.6', '102.0', '99', False),
+    ('3.0.0.6', '102.1', '0', True),
+    ('3.0.0.6', '102.2', '1', True),
     ('unknown', '102', '1', False),
     ('3.0.0.4', 'invalid', '15', False),
+    ('3.0.0.4', '388.invalid', '2', False),
+    ('3.0.0.4', '388.12.2', '2', False),
     ('3.0.0.4', '388', '', False),
 ]
 
@@ -63,6 +72,19 @@ class WebuiTests(ShellCase):
         self.nv['rc_support']='am_addons'; self.write_nv()
         (self.root/'helper.sh').unlink()
         self.assertNotEqual(self.web('webui_preflight',False).returncode,0)
+
+    def test_preflight_reports_specific_failure(self):
+        for field, value, reason in [('rc_support', 'other_feature', 'am_addons'),
+                                     ('buildno', 'invalid', 'buildno=invalid'),
+                                     ('extendno', '0', 'unsupported firmware')]:
+            previous = self.nv[field]
+            self.nv[field] = value; self.write_nv()
+            result = self.web('webui_mount', False)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(reason, result.stderr)
+            self.nv[field] = previous; self.write_nv()
+        (self.root/'helper.sh').unlink()
+        self.assertIn('helper.sh', self.web('webui_mount', False).stderr)
 
     def test_384_15_uses_page_slot_from_firmware_helper(self):
         self.nv.update(firmver='3.0.0.4',buildno='384',extendno='15'); self.write_nv()

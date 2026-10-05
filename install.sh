@@ -252,24 +252,39 @@ hook_add() {
 
 # Bootstrap check uses firmware tools only; staged helper checks again before replacement.
 merlin_preflight() {
-	local firm build ext
-	[ -r "$EXODUS_HELPER" ] && have nvram || return 1
-	[ "$(nvram get '3rd-party')" = merlin ] || return 1
-	nvram get rc_support | grep -qw am_addons || return 1
-	[ -d "$EXODUS_JFFS/addons" ] && [ -w "$EXODUS_JFFS/addons" ] || return 1
-	firm=$(nvram get firmver | tr -d '.')
-	build=$(nvram get buildno)
-	ext=$(nvram get extendno | sed 's/[^0-9].*//')
-	case "$firm:$build:$ext" in *[!0-9:]*|:*|*::*|*:) return 1 ;; esac
-	case "$firm" in
+	local firm build ext firm_raw build_raw ext_raw vendor
+	MERLIN_PREFLIGHT_ERROR=
+	have nvram || { MERLIN_PREFLIGHT_ERROR='nvram utility is unavailable'; return 1; }
+	[ -r "$EXODUS_HELPER" ] || { MERLIN_PREFLIGHT_ERROR="firmware helper is unreadable: $EXODUS_HELPER"; return 1; }
+	vendor=$(nvram get '3rd-party')
+	[ "$vendor" = merlin ] || { MERLIN_PREFLIGHT_ERROR="firmware is not Merlin (3rd-party=$vendor)"; return 1; }
+	nvram get rc_support | grep -qw am_addons || { MERLIN_PREFLIGHT_ERROR='Addons API flag am_addons is missing from rc_support'; return 1; }
+	[ -d "$EXODUS_JFFS/addons" ] || { MERLIN_PREFLIGHT_ERROR="JFFS addons directory is missing: $EXODUS_JFFS/addons"; return 1; }
+	[ -w "$EXODUS_JFFS/addons" ] || { MERLIN_PREFLIGHT_ERROR="JFFS addons directory is not writable: $EXODUS_JFFS/addons"; return 1; }
+	firm_raw=$(nvram get firmver)
+	build_raw=$(nvram get buildno)
+	ext_raw=$(nvram get extendno)
+	firm=$(printf '%s' "$firm_raw" | tr -d '.')
+	build=${build_raw%%.*}
+	# Keep both preflights in sync: buildno=388/extendno=12_2 or buildno=388.12/extendno=2.
+	case "$build_raw" in
+		*.*) ext=${build_raw#*.} ;;
+		*) ext=$(printf '%s' "$ext_raw" | sed 's/[^0-9].*//') ;;
+	esac
+	case "$firm:$build:$ext" in
+		*[!0-9:]*|:*|*::*|*:) MERLIN_PREFLIGHT_ERROR="invalid firmware version (firmver=$firm_raw, buildno=$build_raw, extendno=$ext_raw)"; return 1 ;;
+	esac
+	if case "$firm" in
 		3004) [ "$build" -gt 384 ] || { [ "$build" -eq 384 ] && [ "$ext" -ge 15 ]; } ;;
 		3006) [ "$build" -gt 102 ] || { [ "$build" -eq 102 ] && [ "$ext" -ge 1 ]; } ;;
 		*) [ "$firm" -gt 3006 ] ;;
-	esac
+	esac; then return 0; fi
+	MERLIN_PREFLIGHT_ERROR="unsupported firmware (firmver=$firm_raw, buildno=$build_raw, extendno=$ext_raw); Merlin 384.15+ or 3006.102.1+ is required"
+	return 1
 }
 
 # check env
-merlin_preflight || fail "Merlin 384.15+ (3004, including 386/388) or 3006.102.1+ with Addons API and writable JFFS is required"
+merlin_preflight || fail "native WebUI preflight: $MERLIN_PREFLIGHT_ERROR"
 if [ ! -x "$EXODUS_OPT/bin/opkg" ]; then
 	fail "Entware is not installed: install it with amtm on a USB drive first"
 fi
@@ -506,7 +521,7 @@ fi
  # shellcheck source=/dev/null
  . "$src/asuswrt/opt/share/exodus/lib/common.sh"
  . "$src/asuswrt/opt/share/exodus/lib/webui.sh"
- webui_preflight
+ webui_preflight || { printf '%s\n' "$MERLIN_PREFLIGHT_ERROR" >&2; exit 1; }
 ) || fail "downloaded WebUI helper rejected this firmware"
 mkdir -p "$temp_dir/backup" || fail "can not stage migration backup"
 [ -d "$home_dir" ] || touch "$temp_dir/backup/home.absent" || fail "backup failed"

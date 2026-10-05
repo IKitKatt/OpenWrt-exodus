@@ -88,7 +88,7 @@ esac''')
 
     def test_ax86u_3004_388_12_2_installs_native_ui(self):
         self.bundle()
-        self.nv.update(productid='RT-AX86U',firmver='3.0.0.4',buildno='388',extendno='12_2')
+        self.nv.update(productid='RT-AX86U',firmver='3.0.0.4',buildno='388.12',extendno='2')
         self.write_nv()
         result=self.install()
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
@@ -332,6 +332,7 @@ esac''')
         self.assertEqual((self.home/'config.json').read_bytes(),before)
         self.assertFalse((self.jffs/'opkg.calls').exists())
         self.assertTrue((self.share/'exodus').is_file())
+        self.assertIn('unsupported firmware',result.stdout)
 
     def test_installer_and_helper_version_bounds_agree(self):
         self.mock('curl','exit 1')
