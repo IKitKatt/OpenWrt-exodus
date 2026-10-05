@@ -1,9 +1,368 @@
 {
-  "status": {"running":true,"started":true,"app_version":"1.27.4","core_version":"v1.19.15","core_type":"meta","hijack":true,"api":{"listen":"0.0.0.0:9090","secret":"mock-secret","ui_name":"zashboard"}},
-  "hosts": {"router":true,"segments":[{"ifname":"br0","name":"LAN","id":"","address":"192.168.50.1/24"}],"aps":[{"id":"wl0","ssid":"Home Wi-Fi","description":"","state":"up","segment":"br0","guest":false,"band":"2.4 GHz","clients":1}],"hosts":[{"mac":"AA:BB:CC:DD:EE:01","ip":"192.168.50.10","name":"Ноутбук — длинное имя устройства для проверки переноса","hostname":"laptop","active":true,"ap":"wl0","ssid":"Home Wi-Fi","segment":"br0","access":""}]},
-  "interfaces": {"interfaces":["br0","eth0","tun0"]},
-  "proxies": {"groups":["Proxy","Select"],"proxies":["Germany"]},
-  "hwid": {"headers":{"X-HWID":"mock-device"},"generated":"mock-device"},
-  "check_update": {"app":"1.27.4","app_latest":"1.27.4","app_update":false,"core_type":"meta","core":"v1.19.15","core_latest":"v1.19.15","arch":"aarch64","free_space":200000000,"core_size":30000000,"gh_proxy":null},
-  "about": {"app":"1.27.4","ref":"asuswrt","commit":"preview","installed":"2026-10-04","repository":"prettyleaf/openwrt-exodus","core":"v1.19.15","core_type":"meta","model":"MOCK RT-BE88U","os":"Asuswrt-Merlin","firmware":"3006.102.1","arch":"aarch64"}
+  "status": {
+    "running": true,
+    "started": true,
+    "app_version": "1.27.4",
+    "core_version": "v1.19.15",
+    "core_type": "meta",
+    "hijack": true,
+    "api": {
+      "listen": "0.0.0.0:9090",
+      "secret": "mock-secret",
+      "ui_name": "zashboard"
+    }
+  },
+  "hosts": {
+    "router": true,
+    "segments": [
+      {
+        "ifname": "br0",
+        "name": "LAN",
+        "id": "",
+        "address": "192.168.50.1/24"
+      }
+    ],
+    "aps": [
+      {
+        "id": "wl0",
+        "ssid": "Home Wi-Fi",
+        "description": "",
+        "state": "up",
+        "segment": "br0",
+        "guest": false,
+        "band": "2.4 GHz",
+        "clients": 1
+      }
+    ],
+    "hosts": [
+      {
+        "mac": "AA:BB:CC:DD:EE:01",
+        "ip": "192.168.50.10",
+        "name": "Ноутбук — длинное имя устройства для проверки переноса",
+        "hostname": "laptop",
+        "active": true,
+        "ap": "wl0",
+        "ssid": "Home Wi-Fi",
+        "segment": "br0",
+        "access": ""
+      }
+    ]
+  },
+  "interfaces": {
+    "interfaces": [
+      "br0",
+      "eth0",
+      "tun0"
+    ]
+  },
+  "proxies": {
+    "groups": [
+      "Proxy",
+      "Select"
+    ],
+    "proxies": [
+      "Germany"
+    ]
+  },
+  "hwid": {
+    "headers": {
+      "X-HWID": "mock-device"
+    },
+    "generated": "mock-device"
+  },
+  "check_update": {
+    "app": "1.27.4",
+    "app_latest": "1.27.4",
+    "app_update": false,
+    "core_type": "meta",
+    "core": "v1.19.15",
+    "core_latest": "v1.19.15",
+    "arch": "aarch64",
+    "free_space": 200000000,
+    "core_size": 30000000,
+    "gh_proxy": null
+  },
+  "about": {
+    "app": "1.27.4",
+    "ref": "asuswrt",
+    "commit": "preview",
+    "installed": "2026-10-04",
+    "repository": "prettyleaf/openwrt-exodus",
+    "core": "v1.19.15",
+    "core_type": "meta",
+    "model": "MOCK RT-BE88U",
+    "os": "Asuswrt-Merlin",
+    "firmware": "3006.102.1",
+    "arch": "aarch64"
+  },
+  "worst_case": {
+    "description": "Plausible stress data at the same API boundary as normal preview data. Profile filenames stay within the backend ASCII 128-character limit; host/subscription display names are unbounded in the current API.",
+    "config": {
+      "config": {
+        "profile": "file:Corporate-OpenVPN-Office-Berlin-and-Amsterdam-Q4-2026-reviewed-final-revision-12-config.yaml"
+      },
+      "subscriptions": [
+        {
+          "id": "corporate-europe",
+          "name": "Corporate Europe — Aleksandra Wiśniewska-Kowalczyk / Office & Travel",
+          "url": "https://subscriptions.example.test/workspaces/europe-platform-infrastructure/profiles/corporate-office-berlin-amsterdam.yaml?region=europe&revision=12",
+          "info_url": "",
+          "user_agent": "Mihomo/Exodus v{version}",
+          "send_hwid": true,
+          "update_interval": null
+        },
+        {
+          "id": "personal",
+          "name": "Домашняя подписка · 王秀英 · 👩🏽‍💻 — резервный профиль",
+          "url": "https://example.test/personal.yaml",
+          "info_url": "",
+          "user_agent": "Mihomo",
+          "send_hwid": false,
+          "update_interval": 0
+        },
+        {
+          "id": "one",
+          "name": "J",
+          "url": "https://example.test/one.yaml",
+          "info_url": "",
+          "user_agent": "Mihomo",
+          "send_hwid": false,
+          "update_interval": 1
+        }
+      ],
+      "proxy": {
+        "access_mode": "include",
+        "access_items": [
+          "mac:AA:BB:CC:DD:EE:01",
+          "ap:wl1.1",
+          "ip:2001:db8:abcd:1234::/64"
+        ]
+      }
+    },
+    "data": {
+      "status": {
+        "app_version": "1.27.4-rc.12+asuswrt-native",
+        "core_version": "v1.19.32-r1-development-20261005-arm64",
+        "core_type": "prizrak"
+      },
+      "hosts": {
+        "router": true,
+        "segments": [
+          {
+            "ifname": "br0",
+            "name": "Home / Arbeitszimmer / Домашняя сеть",
+            "id": "main",
+            "address": "192.168.50.1/24"
+          },
+          {
+            "ifname": "br1",
+            "name": "Guest network — IoT devices and visitors",
+            "id": "guest",
+            "address": "192.168.101.1/24"
+          }
+        ],
+        "aps": [
+          {
+            "id": "wl0",
+            "ssid": "Office-Aleksandra-Wisniewska-2.4G",
+            "description": "",
+            "state": "up",
+            "segment": "br0",
+            "guest": false,
+            "band": "2.4 GHz",
+            "clients": 1284
+          },
+          {
+            "id": "wl1.1",
+            "ssid": "Дом & 👩🏽‍💻 / гостевая сеть",
+            "description": "Guest network",
+            "state": "down",
+            "segment": "br1",
+            "guest": true,
+            "band": "5 GHz",
+            "clients": 0
+          },
+          {
+            "id": "wl1",
+            "ssid": "J",
+            "description": "",
+            "state": "up",
+            "segment": "br0",
+            "guest": false,
+            "band": "5 GHz",
+            "clients": 1
+          }
+        ],
+        "hosts": [
+          {
+            "mac": "AA:BB:CC:DD:EE:01",
+            "ip": "192.168.50.10",
+            "name": "Aleksandra-Wisniewska-Kowalczyk-MacBook-Pro-Office",
+            "hostname": "aleksandra-macbook-pro",
+            "active": true,
+            "ap": "wl0",
+            "ssid": "Office-Aleksandra-Wisniewska-2.4G",
+            "segment": "br0",
+            "access": ""
+          },
+          {
+            "mac": "AA:BB:CC:DD:EE:02",
+            "ip": "192.168.50.11",
+            "name": "王秀英 · 👩🏽‍💻 · Домашний ноутбук",
+            "hostname": "family-laptop",
+            "active": true,
+            "ap": "wl1.1",
+            "ssid": "Дом & 👩🏽‍💻 / гостевая сеть",
+            "segment": "br1",
+            "access": "schedule"
+          },
+          {
+            "mac": "AA:BB:CC:DD:EE:03",
+            "ip": "192.168.50.12",
+            "name": "J",
+            "hostname": "j",
+            "active": true,
+            "ap": "",
+            "ssid": "",
+            "segment": "br0",
+            "access": "deny"
+          },
+          {
+            "mac": "AA:BB:CC:DD:EE:04",
+            "ip": "192.168.50.13",
+            "name": "",
+            "hostname": "",
+            "active": false,
+            "ap": "",
+            "ssid": "",
+            "segment": "br1",
+            "access": ""
+          },
+          {
+            "mac": "AA:BB:CC:DD:EE:05",
+            "ip": "192.168.50.14",
+            "name": "Office laptop",
+            "hostname": "office-primary",
+            "active": true,
+            "ap": "wl0",
+            "ssid": "Office-Aleksandra-Wisniewska-2.4G",
+            "segment": "br0",
+            "access": ""
+          },
+          {
+            "mac": "AA:BB:CC:DD:EE:06",
+            "ip": "192.168.50.15",
+            "name": "Office laptop",
+            "hostname": "office-backup",
+            "active": false,
+            "ap": "",
+            "ssid": "",
+            "segment": "br0",
+            "access": ""
+          },
+          {
+            "mac": "AA:BB:CC:DD:EE:07",
+            "ip": "192.168.50.16",
+            "name": "Đặng Thị Ngọc Hân — نور الهدى",
+            "hostname": "guest-phone",
+            "active": true,
+            "ap": "wl1",
+            "ssid": "J",
+            "segment": "br0",
+            "access": ""
+          },
+          {
+            "mac": "AA:BB:CC:DD:EE:08",
+            "ip": "192.168.50.17",
+            "name": "Living room <backup> & media player",
+            "hostname": "living-room",
+            "active": true,
+            "ap": "wl1",
+            "ssid": "J",
+            "segment": "br0",
+            "access": ""
+          }
+        ]
+      },
+      "interfaces": {
+        "interfaces": [
+          "br0",
+          "eth0",
+          "tun0",
+          "vlan101",
+          "wg-office"
+        ]
+      },
+      "proxies": {
+        "groups": [
+          "Corporate Europe — Office and Travel",
+          "Домашний интернет · Germany · Backup"
+        ],
+        "proxies": [
+          "Germany / Frankfurt am Main / IPv6 — office primary",
+          "J"
+        ]
+      },
+      "hwid": {
+        "headers": {
+          "X-HWID": "rt-ax86u-office-berlin-amsterdam-corporate-europe-0123456789abcdef",
+          "X-Device-Model": "RT-AX86U"
+        },
+        "generated": "rt-ax86u-office-berlin-amsterdam-corporate-europe-0123456789abcdef"
+      },
+      "check_update": {
+        "app": "1.27.4-rc.12+asuswrt-native",
+        "app_latest": "1.27.5",
+        "app_update": true,
+        "core_type": "prizrak",
+        "core": "v1.19.32-r1-development-20261005-arm64",
+        "core_latest": "v1.19.33-r1",
+        "free_space": 1234567,
+        "core_size": 123456789
+      },
+      "about": {
+        "app": "1.27.4-rc.12+asuswrt-native",
+        "commit": "0123456789abcdef0123456789abcdef01234567",
+        "repository": "IKitKatt/openwrt-exodus",
+        "core": "v1.19.32-r1-development-20261005-arm64",
+        "core_type": "prizrak",
+        "model": "RT-AX86U",
+        "firmware": "3004.388.12_2"
+      }
+    },
+    "profiles": [
+      {
+        "name": "Corporate-OpenVPN-Office-Berlin-and-Amsterdam-Q4-2026-reviewed-final-revision-12-config.yaml",
+        "size": 8388608
+      },
+      {
+        "name": "J.yaml",
+        "size": 1
+      },
+      {
+        "name": "Corporate-OpenVPN-Office-Berlin-and-Amsterdam-Q4-2026-reviewed-final-revision-13-config.yaml",
+        "size": 1284
+      }
+    ],
+    "subscription_states": {
+      "corporate-europe": {
+        "used": "123.456 GiB",
+        "total": "987.654 GiB",
+        "expire": "2027-01-01",
+        "update": "2026-10-05 23:59:59",
+        "checked": 1791223907,
+        "interval": 1,
+        "success": true
+      },
+      "personal": {
+        "used": "0 B",
+        "total": "1 TiB",
+        "expire": "1970-01-01",
+        "update": "2026-10-04 18:14:00",
+        "checked": 1791134040,
+        "interval": 24,
+        "success": false
+      }
+    }
+  }
 }

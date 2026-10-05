@@ -84,6 +84,7 @@ async function checkDelayedUpdate() {
     assert.equal(await page.evaluate(()=>previewCalls.some(c=>c.action==='update')),false,'cancel keeps update unapplied');
     await page.locator('#menu a[href="#/status"]').click();
     await page.getByLabel('Autostart',{exact:true}).check();
+    await page.evaluate(()=>scrollTo(0,0));
     const calls=await page.evaluate(()=>previewCalls.filter(c=>c.action==='check_update').length);
     await page.clock.fastForward(5100);
     assert.equal(await page.evaluate(()=>previewCalls.filter(c=>c.action==='check_update').length),calls,'leaving Updates clears passive polling');
@@ -141,7 +142,8 @@ try {
     assert.equal(await radios.last().getAttribute('aria-checked'),'true');
     assert.equal(await radios.last().evaluate(el=>el===document.activeElement),true);
     await page.getByLabel('Autostart',{exact:true}).check();
-    assert.equal(await page.evaluate(()=>document.getElementById('savebar').getBoundingClientRect().top>=document.getElementById('content').getBoundingClientRect().bottom),true,'draft actions occupy their own space');
+    await page.evaluate(()=>scrollTo(0,0));
+    assert.equal(await page.evaluate(()=>document.getElementById('savebar').getBoundingClientRect().bottom<=document.getElementById('content').getBoundingClientRect().top),true,'draft actions occupy their own space before the content');
     await page.locator('#menu a[href="#/profiles"]').click();
     await page.getByRole('button',{name:'Cancel',exact:true}).click();
     assert.ok(page.url().endsWith('#/status'));
@@ -171,11 +173,12 @@ try {
     await page.locator('#menu a[href="#/logs"]').click();
     await page.waitForTimeout(100);
     await page.getByRole('button',{name:'Clear',exact:true}).first().click();
+    await page.locator('#dialog').getByRole('button',{name:'Clear',exact:true}).click();
     assert.ok(await page.evaluate(()=>previewCalls.some(c=>c.action==='log_clear')));
     await page.locator('#menu a[href="#/status"]').click();
     await page.evaluate(()=>window.previewFailStatus=true);
     await page.waitForTimeout(5200);
-    assert.equal(await page.locator('#content .card-header .badge').first().innerText(),'Unknown');
+    assert.equal(await page.locator('#heading-state .badge').innerText(),'Unknown');
     await page.getByLabel('Autostart',{exact:true}).uncheck();
     await page.evaluate(()=>window.dispatchEvent(new Event('exodus-session-expired')));
     assert.equal(await page.locator('#session-warning').isVisible(),true);

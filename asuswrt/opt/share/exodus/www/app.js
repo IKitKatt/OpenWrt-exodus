@@ -213,7 +213,8 @@ function toast(message, type) {
         E('button', { class: 'btn btn-ghost btn-icon', type: 'button', title: _('Close'), onclick: () => el.remove() }, icon('x'))
     ]);
     document.getElementById('toaster').appendChild(el);
-    setTimeout(() => el.remove(), type === 'error' ? 10000 : 5000);
+    // Errors and messages with links remain available until dismissed.
+    if (type !== 'error' && !el.querySelector('a')) setTimeout(() => el.remove(), 5000);
     return el;
 }
 
@@ -254,10 +255,16 @@ const state = {
     files: {},
     invalid: new Set(),
     timers: [],
+    pagePollers: [],
     statusTimer: null,
     sessionExpired: false,
     editorFile: null
 };
+
+function pollPage(callback) {
+    state.pagePollers.push(callback);
+    state.timers.push(setInterval(callback, 5000));
+}
 
 function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -353,6 +360,8 @@ async function refreshStatus() {
         state.status = null;
     }
     renderAboutButton();
+    const headingState = document.getElementById('heading-state');
+    if (headingState) append(clear(headingState), statusBadge());
     liveViews.forEach((update) => update());
 }
 
@@ -431,11 +440,17 @@ function pageHeader(title, description, actions) {
 }
 
 function loader() {
-    return E('div', { class: 'loader' }, icon('loader', 'spin'));
+    return E('div', { class: 'loader skeleton', role: 'status', 'aria-label': _('Loading…') }, [
+        E('span', { class: 'visually-hidden' }, _('Loading…')),
+        E('div', { class: 'skeleton-line' }), E('div', { class: 'skeleton-line' }), E('div', { class: 'skeleton-line' })
+    ]);
 }
 
-function empty(iconName, text) {
-    return E('div', { class: 'empty' }, [icon(iconName), E('div', {}, text)]);
+function empty(iconName, text, description, actions) {
+    return E('div', { class: 'empty' }, [icon(iconName), E('div', {}, [
+        E('strong', {}, text), description ? E('p', { class: 'empty-description' }, description) : null,
+        actions ? E('div', { class: 'empty-actions' }, actions) : null
+    ])]);
 }
 
 function infoList(rows) {
@@ -519,6 +534,7 @@ function changed() {
         dependent.el.hidden = !dependent.depends();
     }
     updateDirty();
+    liveViews.forEach(update => update());
 }
 
 function markInvalid(el, id, invalid) {
@@ -571,9 +587,16 @@ function labelTarget(control) {
 function field(label, control, description, depends, info) {
     if (control.getAttribute('role') === 'radiogroup') control.setAttribute('aria-label', label);
     const title = label ? E('label', { class: 'label', for: labelTarget(control) }, label) : null;
-    return dependOn(E('div', { class: 'field' }, [
-        info ? E('div', { class: 'label-row' }, [title, infoButton(label, info)]) : title,
-        E('div', { class: 'field-control' }, [control, description ? E('p', { class: 'description', html: description }) : null])
+    const descriptionId = description ? nextId() : null;
+    const targetId = labelTarget(control);
+    if (descriptionId && targetId) {
+        const target = control.id === targetId ? control : control.querySelector('#' + targetId);
+        if (target) target.setAttribute('aria-describedby', descriptionId);
+    }
+    return dependOn(E('div', { class: 'field' }, [title,
+        E('div', { class: 'field-control' }, [control, description ? E('p', { id: descriptionId, class: 'description', html: description }) : null,
+            info ? E('details', { class: 'field-help' }, [E('summary', {}, [icon('info'), _('Details')]),
+                E('div', { class: 'help-content' }, info.map(p => typeof p === 'string' ? E('p', { html: p }) : p))]) : null])
     ]), depends);
 }
 
@@ -864,7 +887,8 @@ function renderSavebar() {
     ]);
 }
 
-function resetDraft() {
+async function resetDraft() {
+    if (!await confirmDialog(_('Discard unsaved changes?'), _('Your saved settings will be restored.'), {confirm: _('Reset'), destructive: true})) return;
     state.draft = clone(state.config);
     state.invalid.clear();
     render();
@@ -873,6 +897,14 @@ function resetDraft() {
 async function save(apply) {
     if (state.invalid.size > 0) {
         toast(_('Some fields are invalid, fix them before saving.'), 'error');
+        const search = document.getElementById('settings-search');
+        if (search && search.value) { search.value = ''; search.dispatchEvent(new Event('input')); }
+        const invalid = document.querySelector('#content .invalid');
+        if (invalid) {
+            const pane = invalid.closest('[role="tabpanel"]');
+            if (pane?.hidden) document.getElementById(pane.getAttribute('aria-labelledby'))?.click();
+            invalid.focus();
+        }
         return;
     }
     await run(api('config_set', { config: state.draft, apply: apply }), apply === 'restart' ? _('Settings are saved, the service is restarting.') : _('Settings are saved.'));
@@ -1007,6 +1039,7 @@ async function loadHosts() {
 
 function devicePicker() {
     const container = E('div', { class: 'picker' });
+    let choices = [], refreshSelected = () => {}, searchBox = null;
     const items = () => {
         if (!Array.isArray(state.draft.proxy.access_items)) {
             state.draft.proxy.access_items = [];
@@ -1019,7 +1052,13 @@ function devicePicker() {
             list.push(item);
         }
         state.draft.proxy.access_items = list;
-        render();
+        choices.forEach(({item: key, box, row}) => {
+            box.checked = items().includes(key);
+            row.classList.toggle('selected', box.checked);
+        });
+        const focused = document.activeElement;
+        refreshSelected();
+        if (focused && !focused.isConnected && searchBox) searchBox.focus();
         changed();
     };
     let filter = '';
@@ -1027,9 +1066,10 @@ function devicePicker() {
     const option = (item, iconName, title, meta, extra) => {
         const checked = items().includes(item);
         const box = E('input', { type: 'checkbox', class: 'checkbox' });
+        box.dataset.item = item;
         box.checked = checked;
         box.addEventListener('change', () => toggle(item, box.checked));
-        return E('label', { class: `picker-item${checked ? ' selected' : ''}${extra && extra.inactive ? ' inactive' : ''}` }, [
+        const row = E('label', { class: `picker-item${checked ? ' selected' : ''}${extra && extra.inactive ? ' inactive' : ''}` }, [
             box,
             icon(iconName),
             E('div', { class: 'picker-text' }, [
@@ -1037,6 +1077,8 @@ function devicePicker() {
                 meta ? E('div', { class: 'picker-meta' }, meta) : null
             ])
         ]);
+        choices.push({item, box, row});
+        return row;
     };
 
     const group = (title, count, content, action) => E('div', { class: 'picker-group' }, [
@@ -1046,20 +1088,36 @@ function devicePicker() {
 
     const render = () => {
         clear(container);
-        const hosts = state.hosts;
+        choices = [];
+        const hosts = state.hosts ? {...state.hosts,
+            segments: state.hosts.segments || [], aps: state.hosts.aps || [], hosts: state.hosts.hosts || []} : null;
         const selected = items();
 
-        container.appendChild(group(_('Selected'), selected.length,
-            selected.length === 0
-                ? E('p', { class: 'description picker-summary' }, _('Nothing is selected.'))
-                : E('div', { class: 'chips picker-summary' }, selected.map((item) => E('span', { class: 'tag plain' }, [
-                    E('span', { title: itemValue(item) }, describeItem(item)),
-                    E('button', { type: 'button', title: _('Delete'), onclick: () => toggle(item, false) }, icon('x'))
-                ]))),
-            btn(_('Refresh'), { variant: 'outline', size: 'sm', icon: 'refresh-cw', onClick: async () => {
+        const summary = E('div', { class: 'picker-summary' });
+        const clearSelection = btn(_('Clear selection'), {variant: 'ghost', size: 'sm', onClick: async () => {
+            if (!await confirmDialog(_('Clear selection?'), _('Remove all selected devices and networks from the draft?'), {confirm: _('Clear selection')})) return;
+            state.draft.proxy.access_items = [];
+            choices.forEach(({box, row}) => { box.checked = false; row.classList.remove('selected'); });
+            refreshSelected(); changed();
+        }});
+        const selectedGroup = group(_('Selected'), selected.length, summary,
+            E('div', {class: 'row'}, [clearSelection, btn(_('Refresh'), { variant: 'outline', size: 'sm', icon: 'refresh-cw', onClick: async () => {
                 await loadHosts();
                 render();
-            } })));
+            } })]));
+        refreshSelected = () => {
+            const selection = items();
+            selectedGroup.querySelector('.badge').textContent = String(selection.length);
+            clearSelection.disabled = selection.length === 0;
+            append(clear(summary), selection.length === 0
+                ? E('p', { class: 'description' }, _('Select devices below or add an address.'))
+                : E('div', { class: 'chips' }, selection.map(item => E('span', { class: 'tag plain' }, [
+                    E('span', { title: itemValue(item) }, describeItem(item)),
+                    E('button', { type: 'button', title: _('Remove %s', describeItem(item)), 'aria-label': _('Remove %s', describeItem(item)), onclick: () => toggle(item, false) }, icon('x'))
+                ]))));
+        };
+        refreshSelected();
+        container.appendChild(selectedGroup);
 
         if (!hosts) {
             container.appendChild(loader());
@@ -1073,7 +1131,7 @@ function devicePicker() {
         // segments, wi-fi points and the manual address on the left, devices on the right
         const left = E('div', { class: 'picker-column' });
         const right = E('div', { class: 'picker-column' });
-        container.appendChild(E('div', { class: 'picker-columns' }, [left, right]));
+        container.appendChild(E('div', { class: 'picker-columns' }, [right, left]));
 
         if (hosts.segments.length > 0) {
             left.appendChild(group(_('Network segments'), null, E('div', { class: 'picker-list scroll short' }, hosts.segments.map((s) =>
@@ -1087,8 +1145,12 @@ function devicePicker() {
                     { inactive: ap.state === 'down', tags: [ap.guest ? badge(_('guest'), 'secondary') : null, ap.state === 'down' ? badge(_('off'), 'outline') : null] })))));
         }
 
-        const search = E('input', { class: 'input', type: 'search', placeholder: _('Search by name, MAC or IP'), value: filter });
+        const search = E('input', { class: 'input', type: 'search', 'aria-label': _('Search by name, MAC or IP'), placeholder: _('Name, MAC or IP address'), value: filter });
+        searchBox = search;
         const list = E('div', { class: 'picker-list scroll' });
+        const resultCount = E('p', { class: 'description', role: 'status' });
+        let hostLimit = 50;
+        const more = btn(_('Show more'), {variant: 'outline', onClick: () => {hostLimit += 50; renderHosts();}});
         const segmentNames = {};
         for (const s of hosts.segments) {
             if (s.id) {
@@ -1097,6 +1159,7 @@ function devicePicker() {
             segmentNames[s.ifname] = s.name || s.ifname;
         }
         const renderHosts = () => {
+            choices = choices.filter(choice => !list.contains(choice.row));
             clear(list);
             const needle = filter.toLowerCase();
             const shown = hosts.hosts
@@ -1105,7 +1168,9 @@ function devicePicker() {
             if (shown.length === 0) {
                 list.appendChild(E('div', { class: 'picker-empty' }, needle ? _('Nothing found') : _('No devices')));
             }
-            for (const h of shown) {
+            resultCount.textContent = _('Showing %s of %s devices', Math.min(shown.length, hostLimit), shown.length);
+            more.hidden = shown.length <= hostLimit;
+            for (const h of shown.slice(0, hostLimit)) {
                 const tagList = [];
                 if (!h.active) {
                     tagList.push(badge(_('offline'), 'outline'));
@@ -1123,19 +1188,29 @@ function devicePicker() {
         };
         search.addEventListener('input', () => {
             filter = search.value;
+            hostLimit = 50;
             renderHosts();
         });
         renderHosts();
-        right.appendChild(group(_('Devices'), hosts.hosts.length, [E('div', { class: 'search' }, [icon('search'), search]), list]));
+        right.appendChild(group(_('Devices'), hosts.hosts.length, [E('label', { class: 'search' }, [
+            E('span', {class: 'visually-hidden'}, _('Search by name, MAC or IP')), icon('search'), search]), resultCount, list, more]));
 
         const manual = E('input', { class: 'input', type: 'text', placeholder: _('MAC, IPv4 or IPv6 address or network'), spellcheck: 'false' });
+        const manualError = E('p', {class: 'description', role: 'status', hidden: true});
+        manualError.id = nextId(); manual.setAttribute('aria-describedby', manualError.id);
         const addManual = () => {
             const item = parseItem(manual.value);
             if (!item) {
                 manual.classList.add('invalid');
+                manual.setAttribute('aria-invalid', 'true');
+                manualError.textContent = _('Enter a valid MAC, IP address or network.');
+                manualError.hidden = false;
+                manual.focus();
                 return;
             }
             toggle(item, true);
+            manual.value = ''; manual.removeAttribute('aria-invalid'); manualError.hidden = true;
+            manual.focus();
         };
         manual.addEventListener('keydown', (ev) => {
             manual.classList.remove('invalid');
@@ -1144,7 +1219,7 @@ function devicePicker() {
                 addManual();
             }
         });
-        const manualField = field(_('Add by address'), E('div', { class: 'row' }, [manual, btn(_('Add'), { variant: 'outline', icon: 'plus', onClick: addManual })]), null, null, [
+        const manualField = field(_('Add by address'), E('div', {class: 'manual-address'}, [E('div', { class: 'row' }, [manual, btn(_('Add'), { variant: 'outline', icon: 'plus', onClick: addManual })]), manualError]), null, null, [
             _('For a device the router does not list, or a whole network like <code>192.168.1.0/24</code>.'),
             _('The IP address of a device the router knows is saved as its MAC, so the choice follows the device when its address changes.')
         ]);
@@ -1199,7 +1274,7 @@ function pageStatus() {
         title: _('Service'),
         action: live(statusBadge, () => [status().running, !!state.status]),
         content: [
-            E('div', { class: 'grid-2 service-grid' }, [
+            E('div', { class: 'service-workbench service-grid' }, [
                 E('div', { class: 'service-summary' }, [
                     live(() => {
                         const s = status();
@@ -1218,7 +1293,7 @@ function pageStatus() {
                             [_('Profile'), profileTitle(state.config.config.profile) || '—'],
                             [_('Proxy'), proxy]
                         ]);
-                    }, () => [status().app_version, status().core_version, status().core_type, status().running, status().hijack]),
+                    }, () => [status().app_version, status().core_version, status().core_type, status().running, status().hijack, state.config.config.profile, state.config.proxy.enabled]),
                     E('div', { class: 'row toolbar' }, live(() => (status().running
                         ? [
                             btn(_('Restart'), { icon: 'rotate-cw', onClick: () => serviceOp('restart') }),
@@ -1242,7 +1317,7 @@ function pageStatus() {
 
     const modeInfo = (key, text) => E('p', {}, [E('strong', {}, key), E('br'), text]);
     const devices = card({
-        title: _('Devices'),
+        title: _('Device routing'),
         content: [
             d.proxy.enabled !== true ? alertBox('warning', null, _('The proxy is turned off in Settings, the selection has no effect.')) : null,
             field(_('Mode'), segmented(ref('proxy.access_mode'), [['exclude', _('All except selected')], ['include', _('Only selected')]]), null, null, [
@@ -1250,13 +1325,18 @@ function pageStatus() {
                 modeInfo(_('Only selected'), _('Only the selected devices go through the proxy, the others go directly.')),
                 _('A segment matches all its devices, a Wi-Fi network matches the devices connected to it on this router, not on AiMesh nodes (synced every 30 seconds), a device is matched by its MAC with IPv4 and IPv6. DNS follows the choice: proxied devices ask the core, the others ask the router.')
             ]),
+            live(() => E('p', {class: 'picker-mode description'},
+                d.proxy.access_mode === 'include'
+                    ? _('Only the selected devices use the proxy. Every other device connects directly.')
+                    : _('Selected devices connect directly. Every other device uses the proxy.')),
+                () => d.proxy.access_mode),
             devicePicker()
         ]
     });
 
     return [
-        pageHeader(_('Status')),
-        E('div', { class: 'stack' }, [providerCard(), service, devices])
+        pageHeader(_('Devices'), _('Choose who uses the proxy. Changes take effect after Save & Apply.')),
+        E('div', { class: 'stack' }, [devices, service, providerCard()])
     ];
 }
 
@@ -1309,7 +1389,13 @@ function subscriptionDialog(subscription, onSave) {
 }
 
 function pageProfiles() {
-    const active = state.draft.config.profile;
+    const profileBadge = value => state.config.config.profile === value ? badge(_('Active'), 'default')
+        : state.draft.config.profile === value ? badge(_('Selected · unsaved'), 'default') : null;
+    const useProfile = value => btn(_('Use profile'), {variant: 'outline', size: 'sm', disabled: state.draft.config.profile === value, onClick: () => {
+        state.draft.config.profile = value;
+        renderSubscriptions(); renderFiles(); changed();
+        toast(_('Profile selected. Save & Apply to use it.'), 'info');
+    }});
 
     // subscriptions are a part of the config, they are saved with the save bar
     const subsContainer = E('div', { class: 'contents' });
@@ -1320,7 +1406,7 @@ function pageProfiles() {
             subsContainer.appendChild(empty('link', _('No subscriptions yet.')));
             return;
         }
-        const tbody = E('tbody');
+        const entries = E('div', {class: 'profile-list'});
         subscriptions.forEach((sub, index) => {
             const st = state.subscriptionStates[sub.id] || {};
             let host = '';
@@ -1329,18 +1415,19 @@ function pageProfiles() {
             } catch (e) {
                 host = '';
             }
-            tbody.appendChild(E('tr', {}, [
-                E('td', {}, [
-                    E('div', { class: 'cell-title' }, [providerLogo(st.logo, 'sub-logo'), sub.name, active === `subscription:${sub.id}` ? badge(_('Active'), 'default') : null]),
+            entries.appendChild(E('article', {class: 'profile-entry'}, [
+                E('div', {class: 'profile-entry-name'}, [
+                    E('div', { class: 'cell-title' }, [providerLogo(st.logo, 'sub-logo'), sub.name, profileBadge(`subscription:${sub.id}`)]),
                     host ? E('div', { class: 'description mono' }, host) : null
                 ]),
-                E('td', { class: 'nowrap' }, st.used || st.total ? `${st.used || '—'} / ${st.total || '∞'}` : '—'),
-                E('td', { class: 'nowrap' }, expireText(st)),
-                E('td', { class: 'nowrap' }, [
-                    st.success === false ? badge(_('Failed'), 'destructive') : (st.update || '—'),
-                    E('div', { class: 'description' }, intervalText(sub))
+                E('dl', {class: 'profile-meta'}, [
+                    E('div', {}, [E('dt', {}, _('Traffic')), E('dd', {}, st.used || st.total ? `${st.used || '—'} / ${st.total || '∞'}` : '—')]),
+                    E('div', {}, [E('dt', {}, _('Expires')), E('dd', {}, expireText(st))]),
+                    E('div', {}, [E('dt', {}, _('Updated')), E('dd', {}, [st.success === false ? badge(_('Failed'), 'destructive') : (st.update || '—'),
+                        E('span', {class: 'description'}, intervalText(sub))])])
                 ]),
-                E('td', { class: 'actions' }, E('div', { class: 'row' }, [
+                E('div', { class: 'row profile-actions' }, [
+                    useProfile(`subscription:${sub.id}`),
                     btn(null, { variant: 'ghost', size: 'sm', icon: 'refresh-cw', title: _('Update'), onClick: async () => {
                         if (JSON.stringify((state.config.subscriptions || []).find((s) => s.id === sub.id)) !== JSON.stringify(sub)) {
                             toast(_('Save the subscription first.'), 'warning');
@@ -1383,13 +1470,10 @@ function pageProfiles() {
                         renderSubscriptions();
                         changed();
                     } })
-                ]))
+                ])
             ]));
         });
-        subsContainer.appendChild(E('div', { class: 'table-wrap' }, E('table', { class: 'table' }, [
-            E('thead', {}, E('tr', {}, [E('th', {}, _('Name')), E('th', {}, _('Traffic')), E('th', {}, _('Expires')), E('th', {}, _('Updated')), E('th')])),
-            tbody
-        ])));
+        subsContainer.appendChild(entries);
     };
     renderSubscriptions();
 
@@ -1412,12 +1496,11 @@ function pageProfiles() {
             filesContainer.appendChild(empty('file-text', _('No files uploaded.')));
             return;
         }
-        filesContainer.appendChild(E('div', { class: 'table-wrap' }, E('table', { class: 'table' }, [
-            E('thead', {}, E('tr', {}, [E('th', {}, _('Name')), E('th', {}, _('Size')), E('th')])),
-            E('tbody', {}, state.profiles.map((p) => E('tr', {}, [
-                E('td', {}, E('div', { class: 'cell-title' }, [E('span', { class: 'mono' }, p.name), active === `file:${p.name}` ? badge(_('Active'), 'default') : null])),
-                E('td', { class: 'nowrap' }, formatSize(p.size)),
-                E('td', { class: 'actions' }, E('div', { class: 'row' }, [
+        filesContainer.appendChild(E('div', {class: 'profile-list'}, state.profiles.map(p => E('article', {class: 'profile-entry'}, [
+                E('div', { class: 'cell-title profile-entry-name' }, [E('span', { class: 'mono' }, p.name), profileBadge(`file:${p.name}`)]),
+                E('p', {class: 'description'}, `${_('Size')}: ${formatSize(p.size)}`),
+                E('div', { class: 'row profile-actions' }, [
+                    useProfile(`file:${p.name}`),
                     btn(null, { variant: 'ghost', size: 'sm', icon: 'download', title: _('Download'), onClick: async () => {
                         const data = await run(api('file_read', { path: `${state.dirs.profiles}/${p.name}` }));
                         download(p.name, data.content, 'application/yaml');
@@ -1430,9 +1513,8 @@ function pageProfiles() {
                         state.profiles = state.profiles.filter((x) => x.name !== p.name);
                         renderFiles();
                     } })
-                ]))
-            ])))
-        ])));
+                ])
+            ]))));
     };
     renderFiles();
 
@@ -1487,7 +1569,7 @@ function pageProfiles() {
     });
 
     return [
-        pageHeader(_('Profiles')),
+        pageHeader(_('Profiles'), _('Add a subscription or upload a configuration, then select the profile to use.')),
         E('div', { class: 'stack' }, [subscriptionsCard, filesCard, hardUpdateCard])
     ];
 }
@@ -1626,6 +1708,51 @@ function hwidCard() {
     });
 }
 
+function searchableSettings(list) {
+    const tabset = tabs('settings', list);
+    const tablist = tabset.querySelector('[role="tablist"]');
+    const panels = Array.from(tabset.querySelectorAll('[role="tabpanel"]'));
+    const search = E('input', {id: 'settings-search', type: 'search', class: 'input', placeholder: _('Search by setting or description'), 'aria-label': _('Search settings')});
+    const summary = E('p', {class: 'settings-search-summary description', role: 'status', hidden: true});
+    const noResults = empty('search', _('Nothing found'), _('Try another keyword or clear the search.'));
+    noResults.hidden = true;
+    const groups = panels.map((panel, index) => {
+        const heading = E('h2', {class: 'search-result-group', hidden: true}, list[index][1]);
+        panel.prepend(heading);
+        return {panel, heading, cards: Array.from(panel.querySelectorAll('.card')), key: list[index][0]};
+    });
+    const clearSearch = btn(_('Clear search'), {variant: 'ghost', size: 'sm', icon: 'x', onClick: () => {search.value = ''; filter(); search.focus();}});
+    clearSearch.hidden = true;
+    const filter = () => {
+        const query = search.value.trim().toLocaleLowerCase(lang === 'ru' ? 'ru-RU' : 'en-US');
+        const selected = tabChoice.settings || list[0][0];
+        let found = 0;
+        tablist.hidden = !!query; summary.hidden = !query; clearSearch.hidden = !query;
+        for (const {panel, heading, cards, key} of groups) {
+            let groupMatches = 0;
+            heading.hidden = !query;
+            panel.setAttribute('role', query ? 'region' : 'tabpanel');
+            for (const section of cards) {
+                const categoryMatch = !!query && `${heading.textContent} ${section.querySelector('.card-header')?.textContent || ''}`.toLocaleLowerCase().includes(query);
+                const matches = !query || categoryMatch || section.textContent.toLocaleLowerCase().includes(query);
+                section.classList.toggle('search-filtered', !matches);
+                if (matches) groupMatches++;
+                for (const item of section.querySelectorAll('.field, .field-switch')) {
+                    item.classList.toggle('search-filtered', !!query && !categoryMatch && !item.textContent.toLocaleLowerCase().includes(query));
+                }
+            }
+            panel.hidden = query ? groupMatches === 0 : key !== selected;
+            found += groupMatches;
+        }
+        summary.textContent = _('Matching groups: %s', found);
+        noResults.hidden = !query || found > 0;
+    };
+    search.addEventListener('input', filter);
+    return E('div', {class: 'stack'}, [E('div', {class: 'settings-search'}, [
+        E('label', {class: 'label', for: search.id}, _('Search settings')),
+        E('div', {class: 'row'}, [search, clearSearch]), summary]), noResults, tabset]);
+}
+
 function pageSettings() {
     const d = () => state.draft;
     const proxyOn = () => d().proxy.enabled === true;
@@ -1636,7 +1763,7 @@ function pageSettings() {
         card({
             title: _('General'),
             content: [
-                switchField(_('Enable'), _('Intercept the traffic of the devices chosen on the Status page. When off, only the core runs: its proxy port and the dashboard.'), ref('proxy.enabled')),
+                switchField(_('Enable'), _('Intercept the traffic of the devices chosen on the Devices page. When off, only the core runs: its proxy port and the dashboard.'), ref('proxy.enabled')),
                 dependOn(E('div', { class: 'grid-2' }, [
                     field('TCP', select(ref('proxy.tcp_mode'), [['redirect', 'Redirect'], ['tproxy', 'TPROXY']], { optional: true, placeholder: _('Off'), empty: '' }),
                         _('Redirect works everywhere and is recommended. TPROXY for TCP needs the TPROXY module of the firmware, without it TCP is redirected.')),
@@ -1778,8 +1905,8 @@ function pageSettings() {
     ];
 
     return [
-        pageHeader(_('Settings')),
-        tabs('settings', [
+        pageHeader(_('Settings'), _('Find an option or explore the categories. Your changes remain a draft until you save.')),
+        searchableSettings([
             ['proxy', _('Proxy'), proxyTab],
             ['dscp', 'DSCP', dscpTab],
             ['core', 'Mihomo', coreTab],
@@ -1787,6 +1914,10 @@ function pageSettings() {
             ['service', _('Service'), serviceTab]
         ])
     ];
+}
+
+function hasEditorChanges() {
+    return Object.values(state.editorBuffers || {}).some(buffer => buffer.content !== buffer.saved);
 }
 
 function pageEditor() {
@@ -1813,84 +1944,213 @@ function pageEditor() {
     group(_('Rule providers'), files.rule_providers, dirs.rule_providers);
     group(_('Proxy providers'), files.proxy_providers, dirs.proxy_providers);
 
-    const text = E('textarea', { class: 'textarea log', wrap: 'off', spellcheck: 'false', placeholder: _('Choose a file to edit.') });
-    const load = async () => {
-        text.value = '';
-        if (choose.value) {
-            text.value = (await run(api('file_read', { path: choose.value }))).content;
+    const buffers = state.editorBuffers || (state.editorBuffers = Object.create(null));
+    const pageToken = renderToken;
+    const text = E('textarea', { class: 'textarea log', wrap: 'off', spellcheck: 'false', disabled: true, placeholder: _('Choose a file to edit.') });
+    const status = E('p', { class: 'editor-status', role: 'status', id: nextId() }, _('Choose a file to edit.'));
+    text.setAttribute('aria-describedby', status.id);
+    let loadedPath = '', requestToken = 0, loading = false, saving = false, fileError = '';
+    const isCurrent = () => pageToken === renderToken;
+    const sync = () => {
+        const buffer = buffers[loadedPath];
+        text.disabled = !buffer || loading;
+        text.setAttribute('aria-busy', String(loading));
+        saveButton.disabled = restartButton.disabled = !buffer || loading || saving;
+        reloadButton.disabled = !choose.value || loading || saving;
+        downloadButton.disabled = !buffer || loading;
+        if (fileError) status.textContent = fileError;
+        else if (!loading && !saving && buffer) status.textContent = buffer.content !== buffer.saved ? _('Unsaved changes. This draft stays here while you navigate.') : _('Saved to the router.');
+    };
+    const load = async (reload = false) => {
+        const path = choose.value;
+        const token = ++requestToken;
+        fileError = '';
+        state.editorSelected = path;
+        if (!path) {
+            loadedPath = '';
+            text.value = '';
+            loading = false;
+            status.textContent = _('Choose a file to edit.');
+            sync();
+            return;
+        }
+        if (buffers[path] && !reload) {
+            loadedPath = path;
+            text.value = buffers[path].content;
+            loading = false;
+            sync();
+            return;
+        }
+        loading = true;
+        status.textContent = _('Loading file…');
+        sync();
+        try {
+            const result = await api('file_read', { path });
+            // A late response never replaces the currently selected file or a retained draft.
+            if (token !== requestToken || !isCurrent()) return;
+            buffers[path] = { content: result.content, saved: result.content };
+            loadedPath = path;
+            text.value = result.content;
+        } catch (error) {
+            if (token !== requestToken || !isCurrent()) return;
+            choose.value = loadedPath;
+            state.editorSelected = loadedPath;
+            fileError = _('Could not load the file. Your previous draft is intact. %s', error.message);
+            toast(error.message, 'error');
+        } finally {
+            if (token === requestToken && isCurrent()) {
+                loading = false;
+                sync();
+            }
         }
     };
-    choose.addEventListener('change', load);
+    choose.addEventListener('change', () => load());
+    text.addEventListener('input', () => {
+        if (buffers[loadedPath]) buffers[loadedPath].content = text.value;
+        fileError = '';
+        sync();
+    });
+    const saveFile = async (restart) => {
+        if (!loadedPath || !buffers[loadedPath] || loading || saving) return;
+        const path = loadedPath, content = buffers[path].content;
+        saving = true;
+        fileError = '';
+        status.textContent = _('Saving file…');
+        sync();
+        try {
+            await api('file_write', { path, content });
+            buffers[path].saved = content;
+            toast(_('The file is saved.'));
+            if (restart) await serviceOp('restart');
+        } catch (error) {
+            if (isCurrent()) fileError = _('Could not save the file. Your draft is intact. %s', error.message);
+            toast(error.message, 'error');
+        } finally {
+            saving = false;
+            if (isCurrent()) {
+                sync();
+                // The shared button wrapper settles after this callback.
+                setTimeout(sync, 0);
+            }
+        }
+    };
+    const saveButton = btn(_('Save'), { variant: 'outline', disabled: true, onClick: () => saveFile(false) });
+    state.saveEditor = () => saveFile(false);
+    const restartButton = btn(_('Save & Restart'), { disabled: true, onClick: () => saveFile(true) });
+    const reloadButton = btn(_('Reload'), { variant: 'outline', icon: 'refresh-cw', disabled: true, onClick: async () => {
+        const buffer = buffers[choose.value];
+        if (buffer && buffer.content !== buffer.saved && !await confirmDialog(_('Discard this file draft?'), _('Reloading replaces your unsaved edits with the file on the router.'), { confirm: _('Reload'), destructive: true })) return;
+        await load(true);
+        setTimeout(sync, 0);
+    } });
+    const downloadButton = btn(_('Download'), { variant: 'ghost', icon: 'download', disabled: true, onClick: () => download(loadedPath.split('/').pop(), text.value) });
+    const wrap = E('input', { type: 'checkbox', class: 'checkbox' });
+    wrap.addEventListener('change', () => { text.wrap = wrap.checked ? 'soft' : 'off'; });
     if (state.editorFile === 'mixin' && files.mixin) {
         choose.value = files.mixin;
+        load();
+    } else if (state.editorSelected && Array.from(choose.options).some(option => option.value === state.editorSelected)) {
+        choose.value = state.editorSelected;
         load();
     }
     state.editorFile = null;
 
-    const saveFile = async (restart) => {
-        if (!choose.value) {
-            toast(_('Choose a file first.'), 'warning');
-            return;
-        }
-        await run(api('file_write', { path: choose.value, content: text.value }), _('The file is saved.'));
-        if (restart) {
-            await serviceOp('restart');
-        }
-    };
-
     return [
-        pageHeader(_('Editor')),
+        pageHeader(_('Editor'), _('Edit configuration files. File drafts stay in this tab until you reload the page.')),
         card({
-            content: [field(_('File'), choose), E('div', { class: 'text-surface' }, text)],
+            content: [field(_('File'), choose), E('div', { class: 'editor-toolbar row wrap' }, [reloadButton, downloadButton, E('label', { class: 'checkbox-label' }, [wrap, _('Wrap lines')])]), status,
+                field(_('File contents'), E('div', { class: 'text-surface' }, text))],
             footer: E('div', { class: 'row end', style: { width: '100%' } }, [
-                btn(_('Save'), { variant: 'outline', onClick: () => saveFile(false) }),
-                btn(_('Save & Restart'), { onClick: () => saveFile(true) })
+                saveButton, restartButton
             ])
         })
     ];
 }
 
 function pageLogs() {
+    const retained = state.logBuffers || (state.logBuffers = Object.create(null));
     const logView = (name) => {
-        const text = E('textarea', { class: 'textarea log', wrap: 'off', readonly: true, spellcheck: 'false' });
+        const title = { app: _('Exodus'), core: _('Core'), web: _('Integration') }[name];
+        const text = E('textarea', { class: 'textarea log', wrap: 'off', readonly: true, spellcheck: 'false', 'aria-label': _('%s log', title) });
+        text.value = retained[name] || '';
+        const status = E('p', { class: 'log-status', role: 'status', id: nextId() });
+        text.setAttribute('aria-describedby', status.id);
+        let paused = false, pending = false, clearing = false, generation = 0;
         let follow = true;
-        const load = async () => {
+        const followButton = btn(_('Follow latest'), { variant: 'ghost', size: 'sm', icon: 'arrow-down', onClick: () => {
+            follow = !follow;
+            followButton.setAttribute('aria-pressed', String(follow));
+            if (follow) text.scrollTop = text.scrollHeight;
+        } });
+        followButton.setAttribute('aria-pressed', 'true');
+        const load = async (manual = false) => {
+            if (pending || clearing || (!manual && (paused || !text.isConnected || !text.getClientRects().length))) return;
+            const token = generation;
+            pending = true;
+            text.setAttribute('aria-busy', 'true');
+            status.textContent = _('Refreshing log…');
             try {
                 const data = await api('log_read', { name: name });
+                if (token !== generation || !text.isConnected) return;
+                retained[name] = data.content;
                 if (text.value !== data.content) {
                     text.value = data.content;
                     if (follow) {
                         text.scrollTop = text.scrollHeight;
                     }
                 }
+                status.textContent = paused ? _('Refresh paused') : _('Updated at %s', new Date().toLocaleTimeString(lang === 'ru' ? 'ru-RU' : 'en-US'));
             } catch (e) {
-                /* the next poll tries again */
+                if (token === generation && text.isConnected) status.textContent = _('Could not refresh. Previous log is retained. %s', e.message);
+            } finally {
+                pending = false;
+                text.setAttribute('aria-busy', 'false');
             }
         };
         text.addEventListener('scroll', () => {
             follow = text.scrollTop + text.clientHeight >= text.scrollHeight - 20;
+            followButton.setAttribute('aria-pressed', String(follow));
         });
-        load();
-        state.timers.push(setInterval(load, 5000));
+        const pauseButton = btn(_('Pause refresh'), { variant: 'outline', size: 'sm', onClick: () => {
+            paused = !paused;
+            pauseButton.querySelector('span').textContent = paused ? _('Resume refresh') : _('Pause refresh');
+            pauseButton.setAttribute('aria-pressed', String(paused));
+            status.textContent = paused ? _('Refresh paused') : _('Refreshing log…');
+            if (!paused) load(true);
+        } });
+        pauseButton.setAttribute('aria-pressed', 'false');
+        // Render first, then poll only the visible pane. Hidden panes start when selected.
+        setTimeout(load, 0);
+        pollPage(load);
         return card({
             content: [
-                E('div', { class: 'row end toolbar' }, [
-                    btn(_('Scroll to bottom'), { variant: 'ghost', size: 'sm', icon: 'arrow-down', onClick: () => {
-                        follow = true;
-                        text.scrollTop = text.scrollHeight;
-                    } }),
+                E('div', { class: 'row wrap toolbar log-toolbar' }, [
+                    btn(_('Refresh'), { variant: 'outline', size: 'sm', icon: 'refresh-cw', onClick: () => load(true) }), pauseButton, followButton,
+                    btn(_('Download'), { variant: 'ghost', size: 'sm', icon: 'download', onClick: () => download(`exodus-${name}.log`, text.value) }),
                     btn(_('Clear'), { variant: 'outline', size: 'sm', icon: 'trash', onClick: async () => {
-                        await run(api('log_clear', { name: name }));
-                        text.value = '';
+                        if (!await confirmDialog(_('Clear %s log?', title), _('This removes the log from the router. Download a copy first if you need it.'), { confirm: _('Clear'), destructive: true })) return;
+                        generation++;
+                        clearing = true;
+                        try {
+                            await api('log_clear', { name: name });
+                            retained[name] = text.value = '';
+                            status.textContent = _('Log cleared.');
+                        } catch (error) {
+                            status.textContent = _('Could not clear the log. %s', error.message);
+                            toast(error.message, 'error');
+                        } finally {
+                            clearing = false;
+                        }
                     } })
                 ]),
+                status,
                 E('div', { class: 'text-surface' }, text)
             ]
         });
     };
 
     return [
-        pageHeader(_('Logs'), null, [
+        pageHeader(_('Logs'), _('Inspect the latest events, pause refresh or download a copy for diagnosis.'), [
             btn(_('Debug report'), { variant: 'outline', icon: 'bug', onClick: async () => {
                 const data = await run(api('debug'));
                 download('exodus-debug.md', data.content, 'text/markdown');
@@ -1909,7 +2169,7 @@ function pageUpdates() {
     const pageToken = renderToken;
     const container = E('div', { class: 'contents' });
     const lowSpace = { value: null };
-    const logView = E('textarea', { class: 'textarea', rows: 10, wrap: 'off', readonly: true, spellcheck: 'false' });
+    const logView = E('textarea', { class: 'textarea', 'aria-label': _('Update log'), rows: 10, wrap: 'off', readonly: true, spellcheck: 'false' });
     const pollLog = async () => {
         const data = await api('log_read', { name: 'update' });
         logView.value = data.content;
@@ -2015,10 +2275,10 @@ function pageUpdates() {
     };
     // Read the RAM result when the background GitHub check finishes; never force a check here.
     refreshVersions();
-    state.timers.push(setInterval(refreshVersions, 5000));
+    pollPage(refreshVersions);
 
     return [
-        pageHeader(_('Updates')),
+        pageHeader(_('Updates'), _('Check available versions and update Exodus or the core. Profiles and settings are kept.')),
         E('div', { class: 'stack' }, [container, card({ title: _('Update log'), content: E('div', { class: 'text-surface' }, logView) })])
     ];
 }
@@ -2181,7 +2441,7 @@ async function openAbout() {
 // ---------- router ----------
 
 const pages = [
-    ['status', _('Status'), pageStatus, async () => {
+    ['status', _('Devices'), pageStatus, async () => {
         await Promise.all([reloadStates(), refreshStatus()]);
     }],
     ['profiles', _('Profiles'), pageProfiles, async () => {
@@ -2229,8 +2489,10 @@ async function render() {
     const token = ++renderToken;
     state.timers.forEach((t) => clearInterval(t));
     state.timers = [];
+    state.pagePollers = [];
     dependents = [];
     liveViews = [];
+    state.saveEditor = null;
     const content = clear(document.getElementById('content'));
     content.appendChild(loader());
     renderMenu();
@@ -2244,7 +2506,10 @@ async function render() {
         }
     } catch (e) {
         if (token === renderToken && e.message !== _('Login required')) {
-            clear(content).appendChild(alertBox('destructive', _('Failed to load the page'), e.message));
+            clear(content).appendChild(alertBox('destructive', _('Failed to load the page'), [
+                E('p', {}, e.message), E('p', {}, _('Check the connection to the router and try again.')),
+                btn(_('Try again'), {variant: 'outline', icon: 'refresh-cw', onClick: render})
+            ]));
         }
         return;
     }
@@ -2278,7 +2543,7 @@ window.addEventListener('hashchange', async () => {
 });
 
 window.addEventListener('beforeunload', (ev) => {
-    if (isDirty()) {
+    if (isDirty() || hasEditorChanges()) {
         ev.preventDefault();
         ev.returnValue = '';
     }
@@ -2302,6 +2567,10 @@ async function start() {
 // ---------- init ----------
 
 renderSavebar();
+const brandMark = document.getElementById('brand-mark');
+if (brandMark) brandMark.appendChild(logo());
+const workspaceLabel = document.getElementById('workspace-label');
+if (workspaceLabel) workspaceLabel.textContent = _('Device routing workspace');
 document.getElementById('about').addEventListener('click', openAbout);
 setInterval(() => {
     if (!state.sessionExpired) {
@@ -2315,6 +2584,11 @@ document.getElementById('dialog').addEventListener('mousedown', (ev) => {
 });
 document.addEventListener('keydown', (ev) => {
     const overlay = document.getElementById('dialog');
+    if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's' && overlay.hidden && !state.sessionExpired && exodusRoot.contains(document.activeElement)) {
+        ev.preventDefault();
+        const operation = currentPage()[0] === 'editor' ? state.saveEditor : isDirty() ? () => save('none') : null;
+        if (operation) Promise.resolve(operation()).catch(() => {});
+    }
     if (ev.key === 'Tab' && !overlay.hidden) {
         const nodes = Array.from(overlay.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href]')).filter(el => el.getClientRects().length);
         const first = nodes[0], last = nodes[nodes.length - 1];
@@ -2329,6 +2603,7 @@ document.addEventListener('keydown', (ev) => {
 window.addEventListener('exodus-session-expired', () => {
     state.sessionExpired = true;
     state.timers.forEach(clearInterval);
+    state.timers = [];
     clearInterval(state.statusTimer);
     state.statusTimer = null;
     const banner = document.getElementById('session-warning');
@@ -2339,6 +2614,10 @@ window.addEventListener('exodus-session-expired', () => {
         btn(_('Continue after signing in'), {onClick: () => {
             window.ExodusMerlin.resume(); state.sessionExpired = false; banner.hidden = true;
             state.statusTimer = setInterval(refreshStatus, 5000); refreshStatus();
+            for (const poll of state.pagePollers) {
+                state.timers.push(setInterval(poll, 5000));
+                poll();
+            }
         }})
     ]);
 });

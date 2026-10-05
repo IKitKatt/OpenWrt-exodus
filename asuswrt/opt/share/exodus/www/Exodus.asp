@@ -27,10 +27,10 @@
 <td width="17" valign="top"></td><td width="202" valign="top"><div id="mainMenu"></div><div id="subMenu"></div></td>
 <td valign="top"><div id="tabMenu" class="submenuBlock"></div>
 <main id="exodus-root" class="FormTitle">
-<div class="exodus-heading"><strong>Exodus</strong><button id="about" class="version-chip" type="button">About</button></div>
+<div class="exodus-heading"><div class="brand"><span id="brand-mark" class="brand-mark" aria-hidden="true"></span><div class="brand-copy"><strong>Exodus</strong><span id="workspace-label"></span></div></div><div class="row"><div id="heading-state" class="heading-state"></div><button id="about" class="version-chip" type="button">About</button></div></div>
 <div id="session-warning" class="alert alert-warning" role="alert" hidden></div>
-<nav id="menu" class="nav" aria-label="Exodus"></nav><div id="content"></div>
-<div id="savebar" class="savebar" hidden></div><div id="toaster" class="toaster" aria-live="polite"></div>
+<nav id="menu" class="nav" aria-label="Exodus"></nav><div id="savebar" class="savebar" hidden></div><div id="content" tabindex="-1"></div>
+<div id="toaster" class="toaster" aria-live="polite"></div>
 <div id="dialog" class="dialog-overlay" hidden></div>
 </main></td><td width="10"></td></tr></table><div id="footer"></div>
 <script src="/ext/exodus/i18n.js"></script><script src="/ext/exodus/merlin.js"></script><script src="/ext/exodus/app.js"></script>

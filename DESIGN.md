@@ -1,246 +1,292 @@
 ---
 name: Exodus for Asuswrt-Merlin
-description: Native router administration within the Merlin VPN interface.
+description: A dark Dracula-inspired workspace for choosing proxy devices and managing router configuration.
 colors:
-  surface: "#4d595d"
-  label-surface: "#303b3f"
-  control: "#576f77"
-  line: "#253337"
-  text: "#fff"
-  muted: "#e0e8ea"
-  accent: "#ffd941"
-  focus: "#b9e4f6"
-  link: "#c3e8ff"
-  navigation: "#303f45"
-  navigation-active: "#62777e"
-  panel: "#475c63"
-  header-light: "#879ba3"
-  header-dark: "#55696f"
-  section: "#35494f"
-  button-light: "#374c53"
-  button-dark: "#14242b"
-  button-border: "#15252c"
-  button-secondary: "#3a4f57"
-  hover: "#506a75"
-  destructive: "#7d2e33"
-  control-border: "#98acb3"
-  invalid: "#ffb2b2"
-  tag: "#2f434a"
-  success: "#075f08"
-  success-border: "#a1d6a3"
-  warning-text: "#fff2ac"
-  selected: "#2d617a"
+  surface: "#282a36"
+  surface-raised: "#30323f"
+  surface-subtle: "#383b4d"
+  text: "#f8f8f2"
+  muted: "#b3b1c4"
+  line: "#44475a"
+  control-line: "#8588a2"
+  accent: "#bd93f9"
+  accent-hover: "#caa7fc"
+  accent-soft: "#3c344f"
+  success: "#50fa7b"
+  success-soft: "#243c32"
+  warning: "#ffb86c"
+  warning-soft: "#433a31"
+  danger: "#ff7979"
+  danger-soft: "#462f38"
+  surface-input: "#242631"
+  on-accent: "#282a36"
+  accent-line: "#9c82bd"
+  link: "#8be9fd"
+  code: "#ff79c6"
 typography:
-  title:
-    fontFamily: "Arial, Helvetica, sans-serif"
-    fontSize: "18px"
+  headline:
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "24px"
+    fontWeight: 700
+    lineHeight: 1.25
+    letterSpacing: "-.025em"
+  identity:
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "20px"
     fontWeight: 700
     lineHeight: 1.5
-  headline:
-    fontFamily: "Arial, Helvetica, sans-serif"
-    fontSize: "16px"
-    fontWeight: 700
-    lineHeight: 1.3
+    letterSpacing: "-.02em"
+  title:
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "18px"
+    fontWeight: 650
+    lineHeight: 1.35
+    letterSpacing: "-.015em"
   body:
-    fontFamily: "Arial, Helvetica, sans-serif"
-    fontSize: "12px"
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "14px"
     fontWeight: 400
     lineHeight: 1.5
   label:
-    fontFamily: "Arial, Helvetica, sans-serif"
-    fontSize: "12px"
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "14px"
+    fontWeight: 600
+    lineHeight: 1.5
+  action:
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "14px"
+    fontWeight: 600
+    lineHeight: 1.4
+  description:
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "13px"
     fontWeight: 400
     lineHeight: 1.5
-  description:
-    fontFamily: "Arial, Helvetica, sans-serif"
-    fontSize: "11px"
+  metadata:
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontSize: "12px"
     fontWeight: 400
     lineHeight: 1.5
   code:
-    fontFamily: "Consolas, 'Courier New', monospace"
-    fontSize: "12px"
+    fontFamily: 'ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace'
+    fontSize: "13px"
     fontWeight: 400
-    lineHeight: 1.5
+    lineHeight: 1.65
 rounded:
-  square: "0"
-  badge: "2px"
-  button: "4px"
-  dialog: "5px"
+  badge: "5px"
+  navigation: "6px"
+  control: "8px"
+  panel: "12px"
 spacing:
   tight: "4px"
-  compact: "6px"
-  row: "8px"
-  inset: "10px"
-  text: "12px"
-  section: "14px"
-  dialog-inset: "18px"
+  compact: "8px"
+  item: "12px"
+  group: "16px"
+  inset: "20px"
+  section: "24px"
 components:
   button-primary:
-    textColor: "{colors.text}"
-    typography: "{typography.body}"
-    rounded: "{rounded.button}"
-    padding: "4px 10px"
+    backgroundColor: "{colors.accent}"
+    textColor: "{colors.on-accent}"
+    typography: "{typography.action}"
+    rounded: "{rounded.control}"
+    padding: "8px 14px"
+  button-primary-hover:
+    backgroundColor: "{colors.accent-hover}"
   button-secondary:
-    backgroundColor: "{colors.button-secondary}"
+    backgroundColor: "{colors.surface-raised}"
     textColor: "{colors.text}"
-    typography: "{typography.body}"
-    rounded: "{rounded.button}"
-    padding: "4px 10px"
+    typography: "{typography.action}"
+    rounded: "{rounded.control}"
+    padding: "8px 14px"
   button-destructive:
-    backgroundColor: "{colors.destructive}"
-    textColor: "{colors.text}"
-    typography: "{typography.body}"
-    rounded: "{rounded.button}"
-    padding: "4px 10px"
+    backgroundColor: "{colors.danger}"
+    textColor: "{colors.on-accent}"
+    typography: "{typography.action}"
+    rounded: "{rounded.control}"
+    padding: "8px 14px"
   input:
-    backgroundColor: "{colors.control}"
+    backgroundColor: "{colors.surface-raised}"
     textColor: "{colors.text}"
     typography: "{typography.body}"
-    rounded: "{rounded.square}"
-    padding: "3px 6px"
-  navigation:
-    backgroundColor: "{colors.navigation}"
-    textColor: "{colors.text}"
-    typography: "{typography.body}"
-    padding: "5px 12px"
+    rounded: "{rounded.control}"
+    padding: "8px 12px"
+  navigation-active:
+    backgroundColor: "{colors.accent-soft}"
+    textColor: "{colors.accent-hover}"
+    typography: "{typography.label}"
+    rounded: "{rounded.navigation}"
+    padding: "8px 12px"
   panel:
-    backgroundColor: "{colors.panel}"
+    backgroundColor: "{colors.surface-raised}"
     textColor: "{colors.text}"
-    rounded: "{rounded.square}"
+    rounded: "{rounded.panel}"
   badge-success:
-    backgroundColor: "{colors.success}"
-    textColor: "{colors.text}"
-    typography: "{typography.description}"
+    backgroundColor: "{colors.success-soft}"
+    textColor: "{colors.success}"
     rounded: "{rounded.badge}"
-    padding: "1px 5px"
+    padding: "3px 8px"
+  tag:
+    backgroundColor: "{colors.accent-soft}"
+    textColor: "{colors.accent-hover}"
+    typography: "{typography.description}"
+    rounded: "{rounded.navigation}"
+    padding: "2px 8px"
+  device-selected:
+    backgroundColor: "{colors.accent-soft}"
+    textColor: "{colors.text}"
+    typography: "{typography.body}"
+    padding: "12px"
+  draft-toolbar:
+    backgroundColor: "{colors.accent-soft}"
+    textColor: "{colors.accent-hover}"
+    typography: "{typography.label}"
+    rounded: "{rounded.control}"
+    padding: "12px 16px"
 ---
 
 # Design System: Exodus for Asuswrt-Merlin
 
 ## Overview
 
-**Creative North Star: "Native Merlin Administration"**
+**Creative North Star: "Operations Runbook Workspace"**
 
-Exodus belongs inside the router administrator's existing Merlin session. The visual authority is the user-supplied ASUSWRT-Merlin admin screenshot: dense gray-blue forms, compact controls and restrained gradient section headers. The firmware owns the ASUS header, sidebar, VPN tabs and footer; Exodus styles only its own content region.
+Exodus gives router administrators a clear workspace for device selection and configuration. A charcoal canvas, dark task surfaces, ivory text and violet actions organize everyday network work. The firmware still owns the ASUS header, sidebar, VPN navigation and footer; the addon owns the visual system inside its content region.
 
-The shipped system favors readable labels, predictable table rows and explicit state over ornamental space. Primary content uses flat, square panels. Small rounded buttons and gradient headers follow the native firmware vocabulary. Arial is the native interface face here; it is an established integration choice, not a display-font recommendation for unrelated products.
+The shipped interface uses flat task panels, stacked labeled fields and restrained state feedback. Useful descriptions and contextual help support dense configuration without adding decorative metrics. Explicit draft actions keep selection, saving and applying understandable.
 
 **Key Characteristics:**
-- Dense gray-blue administration forms.
-- Compact Arial type with white foregrounds.
-- Square panel and field geometry with rounded action buttons.
+
+- Charcoal canvas and flat dark task surfaces.
+- Dracula-purple actions and readable ivory text.
+- System UI utility typography and monospace configuration.
+- Stacked fields, discoverable lists and wrapping action groups.
 - Firmware-owned chrome and addon-scoped styling.
-- Explicit drafts, save controls and service feedback.
+- Explicit drafts, observed service state and recoverable errors.
 
 ## Colors
 
-The palette uses cool gray-blue surfaces, pale readable foregrounds and state-specific warning, success and destructive colors.
+Dracula-inspired dark surfaces carry the content; violet identifies actions and selection, cyan marks links and pink marks inline code. The palette follows the [Dracula reference](https://draculatheme.com/contribute); secondary text and red states are lightened for small-label contrast.
 
 ### Primary
-- **Warning Yellow** (`accent`): warning borders and attention states, rather than a general action fill.
-- **Pale Ice** (`focus`): keyboard focus outlines and the active navigation lower edge.
-- **Link Ice** (`link`): text links and link-style controls.
+
+- **Dracula Purple** (`accent`): primary buttons, links, checkbox accents and keyboard focus.
+- **Lavender Hover** (`accent-hover`): primary hover fills and text on selected dark-violet surfaces.
+- **Violet Selection** (`accent-soft`): active navigation, selected devices, tags and the draft toolbar.
+- **Cyan** (`link`): text links.
+- **Pink** (`code`): inline configuration identifiers.
+- **Dark Ink** (`on-accent`): labels on filled primary and destructive actions.
 
 ### Neutral
-- **Merlin Gray** (`surface`): the addon canvas and dialogs.
-- **Label Charcoal** (`label-surface`): table labels, table headings, toast surfaces and the save bar.
-- **Control Blue Gray** (`control`): editable fields and tag-input containers.
-- **Panel Blue Gray** (`panel`): form panels, picker rows and select options.
-- **Deep Divider** (`line`): thin form-row, panel and navigation boundaries.
-- **White** (`text`) and **Muted Ice Gray** (`muted`): primary content and supporting descriptions.
-- **Header Light / Header Dark**: the compact native section-header gradient.
-- **Navigation / Navigation Active**: separate the current local section from adjacent sections.
-- **Button Light / Button Dark**, **Button Secondary** and **Hover**: action fills, with a dark button outline.
-- **Control Border**: readable control and feedback boundaries.
-- **Section**, **Tag** and **Selected**: secondary grouping, removable values and chosen picker rows.
 
-Success uses a green fill and pale green border. Destructive states use muted red with a pale red boundary; warning text uses pale yellow. These are semantic state colors, not extra brand accents.
+- **Charcoal** (`surface`): the addon canvas, including short, loading and error routes.
+- **Raised Charcoal** (`surface-raised`): task panels, fields, device rows and dialogs.
+- **Smoky Slate** (`surface-subtle`): disabled controls, neutral badges and loading skeletons.
+- **Ivory** (`text`): body content, labels and ordinary field values.
+- **Light Lilac Gray** (`muted`): descriptions, metadata and secondary navigation.
+- **Soft Divider** (`line`): thin structural boundaries between groups and rows.
+- **Control Lilac** (`control-line`): visible input and secondary-action boundaries.
 
-**The State Color Rule.** Preserve text labels alongside status color; the running badge, warnings and errors communicate their meaning in words.
+Success, warning and danger pair dark semantic foregrounds with their corresponding dark tinted surfaces. They describe service, validation and destructive states rather than branding.
+
+**The State Color Rule.** Pair status color with readable text; selected, running, warning and error states must remain understandable without color.
 
 ## Typography
 
-**Body Font:** Arial, with Helvetica and sans-serif fallbacks.
-**Code Font:** Consolas, with Courier New and monospace fallbacks.
+**Body Font:** System UI, with the platform fallbacks recorded in the frontmatter.
+**Code Font:** UI monospace, with SFMono-Regular, Consolas and Liberation Mono fallbacks.
 
-**Character:** Compact native administration typography. Size changes identify the addon, page and descriptive text without introducing a marketing hierarchy.
+**Character:** Readable administration typography. Headings identify tasks; labels and descriptions explain controls. This is a utility hierarchy, with no separate display-font role.
 
 ### Hierarchy
-- **Title:** the Exodus identity in the addon heading.
-- **Headline:** page headings; dialog titles also use the headline size, with their inherited native weight.
-- **Body / Label:** ordinary form values, labels, navigation and controls; labels retain normal weight.
-- **Description:** compact supporting text and status badges; field descriptions are capped at 70ch.
-- **Code:** editable configuration, logs, technical identifiers and inline code.
 
-Bold body-size section titles and cell titles mark local groups. Numeric text uses tabular figures. At the narrow container breakpoint, editable controls use a larger size (16px) for readable mobile input.
+- **Headline:** page task heading; reduces to (22px) in the narrow container.
+- **Identity:** the compact Exodus name. Dialog titles share the size with weight (650) and line-height (1.3).
+- **Title:** task-panel heading and settings result-group title.
+- **Body / Label:** ordinary content and controls, with stronger labels and actions.
+- **Description:** supporting field help, search summaries and editor/log status.
+- **Metadata:** addresses, profile details and compact status badges; badges use weight (600).
+- **Code:** configuration and log textareas. Inline identifiers use the monospace family while retaining their contextual size.
 
-**The Native Type Rule.** Keep the compact Arial hierarchy inside Exodus and let the firmware retain its own typography outside the addon.
+Descriptions are capped at (70ch); empty-state descriptions at (65ch). Numeric content uses tabular figures. Inputs, selects and textareas grow to (16px) below the narrow container boundary. Headings balance their wrapping, while body paragraphs use pretty wrapping where supported.
+
+**The Utility Type Rule.** Keep task headings, labels and metadata in a readable utility hierarchy; reserve monospace for configuration, paths and technical identifiers.
 
 ## Layout
 
-The addon fills the firmware's content slot, with an inset (10px) and no independent page-width framework. Rows and action groups wrap; vertical sections use the section spacing token. Former multi-column summary grids render as stacked native form groups.
+The addon fills the firmware content slot and synchronizes its minimum canvas height with the sidebar and available viewport. Long routes grow naturally. Native form controls and scrollbars use a dark color scheme scoped to Exodus. Its inset uses `clamp(12px, 4%, 24px)`, with (16px) viewport padding on small screens. Styling does not reshape the firmware layout.
 
-Desktop form rows use a label track of `minmax(140px, 34%)` and a remaining value track of `minmax(0, 1fr)`. Labels have compact insets (7px 9px); value areas use (5px 8px). Information lists follow the same label/value proportions. Tables span the available content width and use an overflow wrapper when needed. Service status, service actions, the profile selector and device selection stay within this compact row vocabulary.
+Fields stack their labels above controls. Task surfaces have header insets (20px 20px 16px), content insets (0 20px 20px), and recurring vertical section spacing. Titles, navigation and action groups wrap; all flexible tracks permit a zero minimum width. Long host names, paths and URLs wrap within their assigned space.
 
-The responsive boundary is the addon container width (480px), not a replacement firmware viewport layout. Ordinary fields and checkbox rows become one column. Checkbox descriptions stay beside their controls in the value area, while the label occupies its own row. Picker columns and build tiles become one column; information lists use a smaller label minimum (110px) and a label share (38%). Buttons and local navigation receive a larger minimum height (36px). Long values can wrap without expanding the addon slot.
+The layout responds to the addon container. At a minimum width of (640px), summary, service, picker and build groups use two equal columns. At a maximum width of (480px), surface insets reduce to (16px), controls and navigation reach a minimum height of (44px), and draft actions wrap across their available width. Navigation changes its wrapping again at (380px). Dialog and toast placement also respond to a viewport boundary (600px).
 
-The gray addon canvas has a minimum height aligned to the firmware sidebar (Merlin's 15px bottom gap) and available viewport above the footer. Short routes, loading and errors retain that canvas; taller content expands it. Height synchronization changes only the addon root and follows firmware menu and viewport resizing. The language follows Merlin `preferred_lang`: `RU` selects Russian, every other value defaults to English. Saved addon and browser language preferences do not apply, and the heading has no language switch.
-
-Form rows span the panel, while free content uses explicit insets: toolbars (8px 10px), text surfaces (8px 10px), and device pickers (10px). Action groups, titles and counts use gaps rather than adjacent inline boxes. The manual address field is stacked even within a desktop picker column. Datalist wrappers fill the value track. Nested tabs use one section gap. Editable rules keep usable columns in a locally scrollable table; table headers and standalone status badges remain on one line.
+Editable rule tables retain usable columns in their own horizontal scroll region; the rules table has a minimum width of (720px). Device lists have bounded local scrolling (360px), with a shorter list variant (220px). List sections remain flat inside the task panel. The sticky draft toolbar occupies normal document space above the route content and stays near the top (8px) while scrolling.
 
 **The Firmware Boundary Rule.** Scope every Exodus visual selector to its root; preserve firmware-owned header, sidebar, VPN tabs and footer.
 
 ## Elevation & Depth
 
-Resting form panels are flat, bounded by dark rules and differentiated by tone. Gradient headers and buttons are native material cues. Elevation is reserved for dialogs and temporary toast feedback; it does not lift ordinary sections.
+Resting task surfaces are flat dark panels separated from the charcoal canvas by tone and thin borders. Device list sections use headers, row dividers and selected tint inside their task surface. Dialogs and temporary feedback carry elevation; the draft toolbar has only a slight shadow to mark its sticky position.
 
 ### Shadow Vocabulary
-- **Dialog:** `0 8px 24px rgb(0 0 0 / 45%)`, above the existing viewport overlay (`rgb(0 0 0 / 65%)`). This functional scrim is not a form surface color.
-- **Toast:** `0 4px 12px rgb(0 0 0 / 30%)`, for transient feedback above content.
 
-**The Flat Form Rule.** Keep form sections flat; use elevation for the shipped modal and toast layers.
+- **Dialog:** `0 16px 56px rgb(0 0 0 / 36%)`, above a functional viewport scrim (`rgb(0 0 0 / 64%)`).
+- **Toast:** `0 6px 24px rgb(0 0 0 / 34%)`, above route content and firmware layers.
+- **Sticky Draft:** `0 4px 12px rgb(0 0 0 / 20%)`, for the sticky toolbar only.
+
+**The Flat Work Surface Rule.** Keep ordinary task panels flat and list sections open; reserve shadows for overlays, feedback and the sticky draft toolbar.
 
 ## Shapes
 
-Panel, input and navigation boundaries are square. Action buttons use a modest curve, badges a smaller curve and dialogs a slightly larger curve, as defined in the frontmatter. Circular status dots and native checkbox geometry are purposeful state details. Borders are thin (1px) and stay visible against the gray-blue surfaces.
+Task panels and dialogs use the panel radius. Fields, actions and the draft toolbar use the control radius. Navigation and removable tags use the smaller navigation radius; badges use the badge radius. Thin boundaries (1px), inline SVG icons and circular status dots provide structure and state without ornaments. Device rows remain rectangular within open list sections.
 
 ## Components
 
 ### Buttons
 
-Compact native actions. Primary actions use a dark vertical gradient, a thin dark border and the button radius. Secondary actions use the solid secondary fill; destructive actions use the destructive fill. Hover uses the shared hover tone only on devices that support hover. Keyboard focus uses the pale ice outline (2px) with an offset (2px). Disabled controls use reduced opacity (.55). Icon-only actions retain accessible labels and inline SVG icons.
+Clear, comfortably sized actions. Primary actions use violet with dark text; secondary and outline actions use a dark surface with a visible boundary. Destructive actions use danger color. Controls have a desktop minimum size (40px), a stronger label weight and centered text that can wrap. Hover styling applies only to hover-capable devices. Keyboard focus uses a violet outline (3px) with offset (3px). Disabled states use muted text and the subtle surface rather than reduced opacity.
+
+Button color transitions last (140ms) with `ease-out` when reduced motion is not requested. The same preference gates loading-spinner rotation (`exodus-spin 1s linear infinite`). Icon-only actions retain an accessible name and inline SVG.
 
 ### Inputs / Fields
 
-Square, visibly bounded fields. Inputs, selects and textareas share the control surface, control border and compact padding. Their desktop minimum height is (28px). Invalid fields use the pale red border and an additional thin outline. Editor and log textareas use the code face and resize vertically. Tag inputs share the field container; removable values use a darker tag surface with explicit remove actions.
+Dark inset fields with a control-lilac boundary, violet caret and the control radius. Shared field padding and the body role come from the frontmatter. Descriptions and expandable help sit next to the relevant setting. Invalid fields use the danger boundary with an extra thin outline. Configuration and log textareas resize vertically, retain local overflow and have minimum heights (220px) and (380px) respectively. Read-only textareas use the inset surface (`#242631`). Native checkboxes retain visible checked state.
 
 ### Cards / Containers
 
-Native table-form sections. Panels use square boundaries without shadows; section headers use the two-tone native gradient and compact insets (5px 9px). Row dividers organize labels and controls. Footers use a divider and compact action spacing.
+One flat dark surface groups a task. Header and body spacing establish the hierarchy; footers use a thin divider. Field groups and list sections remain open within that surface. Loading skeletons use the same dark surface and subtle-tone lines.
 
 ### Navigation
 
-Exodus owns six local section choices: status, profiles, settings, editor, logs and updates. They use compact rectangular tabs, wrapped when necessary. The current section uses the active tone and pale lower edge. Secondary tab groups retain the same vocabulary. Firmware VPN navigation remains outside this system's ownership.
+Six local choices wrap across the available width. The current choice uses lavender text on a dark-violet surface and `aria-current="page"`. Settings tabs use the same type and selected treatment, with an additional selected boundary. Hover and focus remain visible. The firmware VPN navigation stays outside the addon system.
 
-### Status / Feedback
+### Chips / Status
 
-Small bordered badges pair text with optional circular status dots. Running uses the success state; errors and warnings have explicit boundaries. Alerts span their content area. Dialogs use contained scrolling, a titled header and trailing actions. Temporary toasts occupy the lower trailing corner.
+Removable selections use dark-violet tags with explicit remove actions. Small status badges pair text with an optional circular state dot. Success, warning and destructive variants use their semantic foreground/surface pair. Alerts include a title and useful explanation; modal dialogs retain contained scrolling, a visible close action and trailing action groups.
 
-### Draft Save Bar
+### Device List
 
-A charcoal bar in normal document flow appears after the content when the configuration draft differs from the saved state. Explicit save, apply and discard operations wrap on narrow surfaces. The bar occupies its own space, so its actions do not cover form controls during scrolling. Session-expiry feedback preserves the open draft rather than presenting a separate Exodus login surface.
+Flat, searchable sections keep available devices and chosen values legible. Rows have a minimum height (56px), a checkbox, a strong device name and smaller metadata. Selected rows use dark violet. Search fields and headers belong to the same open section; bounded lists prevent large inventories from extending the whole page. Manual addresses and removable chosen values remain visible beside the discovered devices when the container permits two columns.
+
+### Draft Toolbar
+
+A dark-violet toolbar appears only when the draft differs from saved configuration. Save, Save & Apply and discard actions stay explicit and wrap on narrow screens. Its sticky top position reserves space in the document. Choosing devices or a profile changes the draft; it does not imply saving. Session-expiry feedback keeps the open-tab draft recoverable.
 
 ## Do's and Don'ts
 
 ### Do:
+
 - **Do** keep addon styling scoped to the Exodus root and preserve firmware-owned chrome.
-- **Do** use compact label/value form rows, with 34% desktop label tracks and one-column narrow fields.
-- **Do** retain readable state labels, keyboard focus outlines and explicit draft save controls.
-- **Do** use the shipped Arial and monospace roles with the existing gray-blue surface hierarchy.
+- **Do** use flat dark task surfaces, stacked fields and open list sections.
+- **Do** preserve wrapping, bounded device scrolling and local overflow for editable tables.
+- **Do** retain readable state labels, visible keyboard focus and explicit draft actions.
+- **Do** use monospace for configuration and technical identifiers within the utility type hierarchy.
 - **Do** distinguish a service command being accepted from the observed service state.
 
 ### Don't:
-- **Don't** add a standalone header, sidebar, hero or login shell inside the native Merlin page.
-- **Don't** turn ordinary form sections into lifted dashboard cards.
-- **Don't** use state colors without readable text or remove the pale keyboard focus treatment.
-- **Don't** treat simulated browser captures as evidence of firmware authentication or live router behavior.
+
+- **Don't** add a separate addon login, sidebar or standalone page shell inside the firmware page.
+- **Don't** restore gray-blue gradient headers or compact native form-table styling inside Exodus.
+- **Don't** nest bordered cards around ordinary device list sections or elevate resting task panels.
+- **Don't** replace status text with color alone or remove the keyboard focus treatment.
+- **Don't** treat simulated browser captures as evidence of physical router behavior or firmware authentication.
