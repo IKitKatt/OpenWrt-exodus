@@ -54,10 +54,14 @@ webui_accept() (
 	[ "$seq" -lt 12428 ] 2> /dev/null || exit 1
 	umask 077
 	mkdir -p "$WEBUI_DIR/responses" "$WEBUI_DIR/requests"
-	[ "$count" -le 12428 ] && [ "$seq" -lt "$count" ] || { webui_error "$id" "$seq" 413 'request is too large'; exit 1; }
+	if ! { [ "$count" -le 12428 ] && [ "$seq" -lt "$count" ]; }; then
+		webui_error "$id" "$seq" 413 'request is too large'; exit 1
+	fi
 	data=$(jq -r .data "$packet")
 	case "$data" in ''|*[!A-Za-z0-9+/=]*) webui_error "$id" "$seq" 400 'invalid base64'; exit 1 ;; esac
-	[ "${#data}" -le 1800 ] && [ "$((${#data} % 4))" -eq 0 ] || { webui_error "$id" "$seq" 413 'invalid chunk size'; exit 1; }
+	if ! { [ "${#data}" -le 1800 ] && [ "$((${#data} % 4))" -eq 0 ]; }; then
+		webui_error "$id" "$seq" 413 'invalid chunk size'; exit 1
+	fi
 	if [ "$seq" -lt "$((count - 1))" ]; then
 		case "$data" in *=*) webui_error "$id" "$seq" 400 'padding before final chunk'; exit 1 ;; esac
 	fi
@@ -95,7 +99,9 @@ webui_accept() (
 		date +%s > "$dir/touched"
 	fi
 	next=$(cat "$dir/next")
-	[ "$seq" -eq "$next" ] && [ "$count" = "$(cat "$dir/count")" ] || { webui_error "$id" "$seq" 409 'out of order chunk'; exit 1; }
+	if ! { [ "$seq" -eq "$next" ] && [ "$count" = "$(cat "$dir/count")" ]; }; then
+		webui_error "$id" "$seq" 409 'out of order chunk'; exit 1
+	fi
 	printf '%s' "$data" > "$dir/chunk"
 	base64 -d "$dir/chunk" > "$dir/decoded" 2> /dev/null || { webui_error "$id" "$seq" 400 'invalid base64'; exit 1; }
 	total=$(( $(wc -c < "$dir/decoded") + $(wc -c < "$dir/request" 2> /dev/null || echo 0) ))

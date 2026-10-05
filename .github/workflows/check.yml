@@ -19,6 +19,7 @@ jobs:
 
       - name: Shellcheck
         run: |
+          shellcheck --version
           shellcheck -s sh -e SC3043,SC2154,SC1091,SC2016,SC3045,SC2034,SC2119,SC2120,SC2153 \
             install.sh uninstall.sh \
             asuswrt/opt/share/exodus/exodus \

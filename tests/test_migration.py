@@ -126,6 +126,21 @@ esac''')
         self.assertTrue(result.stdout.strip().splitlines()[-1].startswith('error:'))
         self.web('webui_status')
 
+    def test_web_url_failure_or_empty_output_rolls_back(self):
+        self.bundle()
+        cli=self.root/'source/repo/asuswrt/opt/share/exodus/exodus'
+        original=cli.read_text()
+        before=(self.home/'config.json').read_bytes()
+        for status in (0,1):
+            with self.subTest(url_exit_status=status):
+                cli.write_text(original.replace('#!/bin/sh\n',f'#!/bin/sh\n[ "$1 $2" != "web url" ] || exit {status}\n',1))
+                self.repack()
+                result=self.install()
+                self.assertNotEqual(result.returncode,0,result.stdout+result.stderr)
+                self.assertEqual((self.home/'config.json').read_bytes(),before)
+                self.assertEqual(json.loads((self.share/'BUILD').read_text())['code'],'fixture')
+                self.assertEqual(result.stdout.strip().splitlines()[-1],'error: native WebUI URL unavailable')
+
     def test_term_during_initialization_rolls_back(self):
         self.bundle()
         cli=self.root/'source/repo/asuswrt/opt/share/exodus/exodus'

@@ -498,6 +498,8 @@ fi
 
 # Validate the downloaded registration helper, independently of the installed version.
 (
+ # The staged library is isolated in this child shell and checked separately by CI.
+ # shellcheck source=/dev/null
  . "$src/asuswrt/opt/share/exodus/lib/common.sh"
  . "$src/asuswrt/opt/share/exodus/lib/webui.sh"
  webui_preflight
@@ -528,6 +530,8 @@ migration_pending=1
 touch "$temp_dir/recovery-required" || fail "can not mark migration recovery backup"
 # Never trust a stale PID file to stop another addon's server.
 (
+ # Keep the staged library's variables out of the parent installer.
+ # shellcheck source=/dev/null
  . "$src/asuswrt/opt/share/exodus/lib/common.sh"
  . "$src/asuswrt/opt/share/exodus/lib/webui.sh"
  if webui_status; then touch "$temp_dir/backup/web-active"; webui_cache_stop || exit 1; fi
@@ -640,7 +644,8 @@ if [ "$was_running" = 1 ] || [ "$(config_get .config.enabled)" = "true" ]; then
 	"$share_dir/exodus" status > /dev/null 2>&1 || fail "service is not running after activation"
 fi
 
-web_url=$("$share_dir/exodus" web url) && [ -n "$web_url" ] || fail "native WebUI URL unavailable"
+web_url=$("$share_dir/exodus" web url) || fail "native WebUI URL unavailable"
+[ -n "$web_url" ] || fail "native WebUI URL unavailable"
 echo "web ui: $web_url"
 migration_pending=0
 rm -rf "$share_dir.old"

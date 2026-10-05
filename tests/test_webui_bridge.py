@@ -77,6 +77,20 @@ class BridgeTests(ShellCase):
         self.assertEqual(self.accept(packet)['status'], 413)
         self.assertFalse((self.ram / 'run/webui/requests' / packet['id']).exists())
 
+    def test_huge_count_is_rejected_before_mutation(self):
+        packet = self.packets(dict(action='load'))[0]
+        packet['count'] = 10 ** 30
+        self.assertEqual(self.accept(packet)['status'], 413)
+        self.assertFalse((self.ram / 'run/webui/requests' / packet['id']).exists())
+
+    def test_invalid_sequence_state_is_rejected(self):
+        packets = self.packets(dict(action='load', padding='x' * 3000))
+        self.accept(packets[0])
+        state = self.ram / 'run/webui/requests' / packets[0]['id'] / 'next'
+        state.write_text('invalid')
+        self.assertEqual(self.accept(packets[1])['status'], 409)
+        self.assertEqual(state.read_text(), 'invalid')
+
     def test_rejected_first_chunk_does_not_block_next_request(self):
         packet=self.packets(dict(action='load'))[0]; packet['data']='===='
         self.assertEqual(self.accept(packet)['status'],400)
