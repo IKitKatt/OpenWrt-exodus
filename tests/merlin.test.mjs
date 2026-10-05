@@ -32,13 +32,16 @@ function fixture(options={}) {
 }
 test('unicode codec', ()=>assert.equal(decode(encode('Привет 😀 <% x %>')), 'Привет 😀 <% x %>'));
 test('packet limit and fresh foreign settings before each post', async()=>{
-    const f=fixture(); await f.transport.request('file_write',{path:'/opt/etc/exodus/profiles/demo.yaml',content:'Привет 😀'.repeat(400)});
+    const f=fixture(), progress=[]; await f.transport.request('file_write',{path:'/opt/etc/exodus/profiles/demo.yaml',content:'Привет 😀'.repeat(400),onProgress:part=>progress.push(part)});
     assert.ok(f.calls.length>1);
     for(let i=0;i<f.calls.length;i++) {
         assert.ok(JSON.parse(f.calls[i].exodus_packet).data.length<=1800);
         assert.ok(Buffer.byteLength(JSON.stringify(f.calls[i]))<=7680);
         assert.equal(f.calls[i].other, i===0?'initial':'new-'+(i-1));
     }
+    assert.equal(progress.length,f.calls.length);
+    assert.equal(progress.at(-1).completed,progress.at(-1).total);
+    assert.ok(progress.every((part,index)=>part.completed===index+1));
 });
 test('8 MiB upload keeps progressing beyond five minutes', async()=>{
     const f=fixture();
@@ -47,17 +50,27 @@ test('8 MiB upload keeps progressing beyond five minutes', async()=>{
 });
 test('response id and seq mismatch is not success', async()=>{
     const f=fixture({fetch:async url=>url.includes('appGet')?json({get_custom_settings:{}}):json({v:1,id:'f'.repeat(32),seq:7,phase:'complete',status:200,body:encode('{}')})});
-    await assert.rejects(f.transport.request('load'), /unknown|timed out/i);
+    await assert.rejects(f.transport.request('service',{op:'start'}), /unknown|timed out/i);
 });
 test('failed request does not poison queue', async()=>{
     const f=fixture({failFirst:true});
-    await assert.rejects(f.transport.request('load'));
-    assert.equal((await f.transport.request('load')).success,true);
+    await assert.rejects(f.transport.request('service',{op:'start'}));
+    assert.equal((await f.transport.request('service',{op:'start'})).success,true);
     f.transport.dispose();
 });
 test('frequent reads never post and coalesce during upload', async()=>{
     const f=fixture(); const results=await Promise.all(Array.from({length:100},()=>f.transport.request('status')));
     assert.equal(f.calls.length,0); assert.ok(results.every(x=>x.running));
+});
+test('navigation and passive update checks use RAM without apply posts', async()=>{
+    let posts=0, clock=Date.now();
+    const f=createTransport({now:()=>clock,submit:async()=>{posts++;throw Error('unexpected apply event');},
+        fetch:async url=>{
+            const key=url.split('/').at(-1).replace('.json','');
+            return json(key==='heartbeat'?{v:1,generated:clock/1000}:{v:1,key,generated:clock/1000,status:200,body:encode('{"success":true}')});
+        }});
+    for(const action of ['load','files','hosts','interfaces','proxies','hwid','about','check_update']) assert.equal((await f.request(action)).success,true);
+    assert.equal(posts,0);
 });
 test('stale cache is not running', async()=>{
     const f=fixture({fetch:async()=>json({v:1,key:'status',generated:1,status:200,body:encode('{"running":true}')})});
@@ -85,7 +98,7 @@ test('firmware HTML 404 while pending does not expire session', async()=>{
             if(++polls===1) return {ok:false,status:404,text:async()=>'<html><body>404 Not Found</body></html>'};
             return json({v:1,id:packet?.id || '1'.repeat(32),seq:0,phase:'complete',status:200,body:encode(snapshot?'{}':'{"success":true}')});
         }});
-    await f.request('load'); await f.request('load'); assert.equal(expired,0);
+    await f.request('service',{op:'start'}); await f.request('service',{op:'start'}); assert.equal(expired,0);
 });
 function settingsFixture(foreign, missing=false) {
     let packet, snapshotId, clock=0, serial=0, submissions=[];
@@ -103,11 +116,11 @@ function settingsFixture(foreign, missing=false) {
 }
 test('complete foreign settings including spaces and empty values are preserved', async()=>{
     const foreign={addon_title:'Cool Addon 1.0',empty:'',literal:'"Привет 😀" <% test %>',spaced:'  keep  ',error:'ordinary foreign setting'};
-    const f=settingsFixture(foreign); await f.transport.request('load');
+    const f=settingsFixture(foreign); await f.transport.request('service',{op:'start'});
     for(const [key,value] of Object.entries(foreign)) assert.equal(f.submissions[0][key],value);
 });
 test('missing shared settings starts from empty object without firmware eval', async()=>{
-    const f=settingsFixture({},true); assert.equal((await f.transport.request('load')).success,true);
+    const f=settingsFixture({},true); assert.equal((await f.transport.request('service',{op:'start'})).success,true);
     assert.deepEqual(Object.keys(f.submissions[0]),['exodus_packet']);
 });
 test('native snapshot form omits amng_custom and packet form restores it', async()=>{
@@ -123,7 +136,7 @@ test('native snapshot form omits amng_custom and packet form restores it', async
                 const id=snapshot?current.action_script.slice('restart_exodus_ui_settings_'.length):JSON.parse(current.amng_custom).exodus_packet;
                 return json({v:1,id:snapshot?id:JSON.parse(id).id,seq:0,phase:'complete',status:200,body:encode(snapshot?'{"other":"Cool Addon 1.0"}':'{"success":true}')});
             }});
-        assert.equal((await f.request('load')).success,true);
+        assert.equal((await f.request('service',{op:'start'})).success,true);
         assert.equal(posts.length,2);
         assert.ok(posts.every(post=>post.flag==='background'), 'native requests must not redirect or show firmware Loading');
         assert.ok(!('amng_custom' in posts[0]));

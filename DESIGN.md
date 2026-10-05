@@ -184,6 +184,8 @@ Desktop form rows use a label track of `minmax(140px, 34%)` and a remaining valu
 
 The responsive boundary is the addon container width (480px), not a replacement firmware viewport layout. Ordinary fields and checkbox rows become one column. Checkbox descriptions stay beside their controls in the value area, while the label occupies its own row. Picker columns and build tiles become one column; information lists use a smaller label minimum (110px) and a label share (38%). Buttons and local navigation receive a larger minimum height (36px). Long values can wrap without expanding the addon slot.
 
+The gray addon canvas has a minimum height aligned to the firmware sidebar (Merlin's 15px bottom gap) and available viewport above the footer. Short routes, loading and errors retain that canvas; taller content expands it. Height synchronization changes only the addon root and follows firmware menu and viewport resizing. The language follows Merlin `preferred_lang`: `RU` selects Russian, every other value defaults to English. Saved addon and browser language preferences do not apply, and the heading has no language switch.
+
 Form rows span the panel, while free content uses explicit insets: toolbars (8px 10px), text surfaces (8px 10px), and device pickers (10px). Action groups, titles and counts use gaps rather than adjacent inline boxes. The manual address field is stacked even within a desktop picker column. Datalist wrappers fill the value track. Nested tabs use one section gap. Editable rules keep usable columns in a locally scrollable table; table headers and standalone status badges remain on one line.
 
 **The Firmware Boundary Rule.** Scope every Exodus visual selector to its root; preserve firmware-owned header, sidebar, VPN tabs and footer.

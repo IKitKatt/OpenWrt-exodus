@@ -3,6 +3,13 @@ from shell_support import ShellCase
 
 
 class ApiTests(ShellCase):
+    def test_passive_update_read_never_contacts_network(self):
+        self.mock('curl','echo called >> "$EXODUS_JFFS/network.calls"; exit 1')
+        info=self.api('check_update',cached=True)
+        self.assertEqual(info['status'],200)
+        self.assertIsNone(info['data']['app_latest'])
+        self.assertFalse((self.jffs/'network.calls').exists())
+
     def test_about_reports_installed_fork(self):
         (self.share/'BUILD').write_text(json.dumps({'repository':'router-owner/Exodus-fork','ref':'asuswrt-native'}))
         info=self.api('about')['data']

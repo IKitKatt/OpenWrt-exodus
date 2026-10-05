@@ -303,6 +303,7 @@ window.I18N_RU = {
     "Updated": "Обновлено",
     "Updates": "Обновления",
     "Upload": "Загрузить",
+    "Uploading %s…": "Загрузка %s…",
     "URL": "URL",
     "Used when IPv6 is on in the profile and the router has an IPv6 address.": "Используются, если IPv6 включён в профиле и у роутера есть IPv6-адрес.",
     "User agent": "User-Agent",

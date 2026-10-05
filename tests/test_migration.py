@@ -438,6 +438,46 @@ esac''')
         result=self.sh(f'"{self.share}/exodus" web start && "{self.share}/exodus" web restart && sleep 6; pid_alive "$WEBUI_DIR/cache.pid"',check=False)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
+    def test_web_stop_stops_owned_update_check_without_cache_pid(self):
+        child=subprocess.Popen(['sh','-c','trap \'rm -f "$EXODUS_TMP/run/webui/update.pid"; exit 0\' TERM; while :; do sleep 1; done',str(self.share/'exodus'),'web','updates'],env=self.env)
+        def cleanup():
+            if child.poll() is None: child.terminate(); child.wait(timeout=5)
+        self.addCleanup(cleanup)
+        (self.ram/'run/webui').mkdir(parents=True,exist_ok=True)
+        (self.ram/'run/webui/update.pid').write_text(str(child.pid))
+        self.web('webui_cache_stop')
+        self.assertIsNotNone(child.poll(),'background update still runs after stopping native WebUI')
+
+    def test_web_stop_cancels_real_update_worker_before_cache_publication(self):
+        import time
+        import threading
+        (self.ram/'run/webui').mkdir(parents=True,exist_ok=True)
+        self.mock('curl', '''touch "$EXODUS_JFFS/curl-running"
+sleep 3
+printf 'v9.9.9\\n'
+touch "$EXODUS_JFFS/curl-finished"''')
+        child=subprocess.Popen([str(self.share/'exodus'),'web','updates'],env=self.env,
+                               stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        reaper=threading.Thread(target=child.wait,daemon=True)
+        reaper.start()  # Emulate init reaping the detached CLI, including on TERM.
+        def cleanup():
+            if child.poll() is None:
+                child.kill()
+            reaper.join(timeout=5)
+        self.addCleanup(cleanup)
+        deadline=time.monotonic()+5
+        while not (self.jffs/'curl-running').exists() and time.monotonic()<deadline:
+            time.sleep(.05)
+        self.assertTrue((self.jffs/'curl-running').exists(),'real update check did not start')
+        self.web('msleep() { sleep 0.1; }; webui_cache_stop')
+        reaper.join(timeout=5)
+        self.assertFalse((self.ram/'run/webui/update.pid').exists())
+        self.assertFalse(list((self.ram/'run').glob('latest.*')),'interrupted archive left files in RAM')
+        time.sleep(3.5)
+        self.assertFalse((self.jffs/'curl-finished').exists(),'network child survived WebUI stop')
+        self.assertFalse((self.ram/'run/webui/cache/check_update.json').exists(),
+                         'stopped update check published a late cache response')
+
     def test_uninstall_broken_cli_removes_only_owned_registration(self):
         self.web('webui_mount')
         target=self.www/'require/modules/menuTree.js'

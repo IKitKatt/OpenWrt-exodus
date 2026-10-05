@@ -5,20 +5,46 @@
 
 (function () {
 
-// ---------- storage and i18n ----------
-
-function storageGet(key) {
-    try { return localStorage.getItem(key); } catch (e) { return null; }
-}
-
-function storageSet(key, value) {
-    try { localStorage.setItem(key, value); } catch (e) { /* private mode */ }
-}
+// ---------- native language and canvas ----------
 
 const firmwareLang = ((window.ExodusBootstrap || {}).lang || '').toLowerCase();
-const savedLang = storageGet('exodus.lang');
-const lang = ['ru', 'en'].includes(savedLang) ? savedLang : (['ru', 'en'].includes(firmwareLang) ? firmwareLang : ((navigator.language || '').toLowerCase().startsWith('ru') ? 'ru' : 'en'));
-document.getElementById('exodus-root').lang = lang;
+const lang = firmwareLang === 'ru' ? 'ru' : 'en';
+const exodusRoot = document.getElementById('exodus-root');
+exodusRoot.lang = lang;
+
+function syncCanvasHeight() {
+    const top = exodusRoot.getBoundingClientRect().top + window.scrollY;
+    const footer = document.getElementById('footer');
+    let height = Math.max(0, window.innerHeight - top - (footer ? footer.offsetHeight : 0) - 20);
+    // Merlin state.js sizes native FormTitle from the menu, minus a 15px footer gap.
+    for (const id of ['mainMenu', 'subMenu']) {
+        const menu = document.getElementById(id);
+        if (menu) height = Math.max(height, menu.getBoundingClientRect().bottom + window.scrollY - top - 15);
+    }
+    exodusRoot.style.setProperty('--exodus-canvas-min-height', Math.ceil(height) + 'px');
+}
+
+let canvasFrame = null;
+function scheduleCanvasHeight() {
+    if (canvasFrame !== null) return;
+    canvasFrame = requestAnimationFrame(() => { canvasFrame = null; syncCanvasHeight(); });
+}
+window.addEventListener('load', scheduleCanvasHeight);
+window.addEventListener('resize', scheduleCanvasHeight);
+if (typeof ResizeObserver !== 'undefined') {
+    const canvasObserver = new ResizeObserver(scheduleCanvasHeight);
+    const firmwareIds = ['TopBanner', 'mainMenu', 'subMenu', 'tabMenu', 'footer'];
+    function observeFirmware() {
+        for (const id of firmwareIds) {
+            const element = document.getElementById(id);
+            if (element) canvasObserver.observe(element);
+        }
+    }
+    observeFirmware();
+    window.addEventListener('pagehide', () => canvasObserver.disconnect());
+    window.addEventListener('pageshow', () => { observeFirmware(); scheduleCanvasHeight(); });
+}
+syncCanvasHeight();
 
 function _(text) {
     let result = (lang === 'ru' && window.I18N_RU && window.I18N_RU[text]) || text;
@@ -1411,24 +1437,40 @@ function pageProfiles() {
     renderFiles();
 
     const fileInput = E('input', { type: 'file', accept: '.yaml,.yml,.json,.txt', hidden: true });
+    const uploadProgress = E('span', { class: 'muted', role: 'status', 'aria-live': 'polite', hidden: true });
+    const uploadButton = btn(_('Upload'), { variant: 'outline', size: 'sm', icon: 'upload', onClick: () => fileInput.click() });
     fileInput.addEventListener('change', async () => {
         const file = fileInput.files[0];
         if (!file) {
             return;
         }
         const name = file.name.replace(/[^A-Za-z0-9._ -]/g, '_').replace(/^[._ -]+/, '') || 'profile.yaml';
-        if (file.size > 8388608) { toast(_('File exceeds 8 MiB.'), 'error'); return; }
-        const content = await file.text();
+        if (file.size > 8388608) { toast(_('File exceeds 8 MiB.'), 'error'); fileInput.value = ''; return; }
         fileInput.value = '';
-        await run(api('profile_upload', { name: name, content: content }), _('%s is uploaded.', name));
-        const data = await api('load');
-        state.profiles = data.profiles || [];
-        renderFiles();
+        uploadButton.disabled = true;
+        uploadProgress.hidden = false;
+        uploadProgress.textContent = _('Uploading %s…', name);
+        try {
+            const content = await file.text();
+            await api('profile_upload', { name, content, onProgress: ({completed,total}) => {
+                uploadProgress.textContent = _('Uploading %s…', name) + ' ' + Math.floor(completed/total*100) + '%';
+            } });
+            const data = await api('load');
+            state.profiles = data.profiles || [];
+            renderFiles();
+            toast(_('%s is uploaded.', name));
+        } catch (e) {
+            // Async DOM listeners have no caller to catch a rejected upload.
+            toast(e.message, 'error');
+        } finally {
+            uploadButton.disabled = false;
+            uploadProgress.hidden = true;
+        }
     });
 
     const filesCard = card({
         title: _('Profile files'),
-        action: [fileInput, btn(_('Upload'), { variant: 'outline', size: 'sm', icon: 'upload', onClick: () => fileInput.click() })],
+        action: [fileInput, uploadProgress, uploadButton],
         content: filesContainer
     });
 
@@ -1864,7 +1906,9 @@ function pageLogs() {
 }
 
 function pageUpdates() {
+    const pageToken = renderToken;
     const container = E('div', { class: 'contents' });
+    const lowSpace = { value: null };
     const logView = E('textarea', { class: 'textarea', rows: 10, wrap: 'off', readonly: true, spellcheck: 'false' });
     const pollLog = async () => {
         const data = await api('log_read', { name: 'update' });
@@ -1902,7 +1946,9 @@ function pageUpdates() {
                 E('td', {}, E('div', { class: 'cell-title' }, name)), E('td', { class: 'mono' }, current || '—'), E('td', { class: 'mono' }, next || '—'), E('td', {}, badgeEl)
             ])))
         ]));
-        const lowSpace = { value: info.free_space != null && info.core_size != null && info.free_space < info.core_size * 1.2 };
+        if (lowSpace.value === null) {
+            lowSpace.value = info.free_space != null && info.core_size != null && info.free_space < info.core_size * 1.2;
+        }
         const updateButton = btn(_('Update'), { icon: 'download', disabled: !available, onClick: async () => {
             const message = lowSpace.value
                 ? _('The current core is removed before the new one is installed. If the update fails, the proxy does not work until the update is done again.')
@@ -1954,16 +2000,22 @@ function pageUpdates() {
     } else {
         container.appendChild(loader());
     }
-    fetchUpdate().then((info) => {
-        if (JSON.stringify(info) !== shown) {
-            renderVersions(info);
-        }
-    }).catch((e) => {
-        if (!shown) {
-            clear(container);
-            container.appendChild(alertBox('destructive', _('Failed to check for updates'), e.message));
-        }
-    });
+    const refreshVersions = () => {
+        if (pageToken !== renderToken || state.sessionExpired) return;
+        return fetchUpdate().then((info) => {
+            if (pageToken === renderToken && !state.sessionExpired && JSON.stringify(info) !== shown) {
+                renderVersions(info);
+            }
+        }).catch((e) => {
+            if (pageToken === renderToken && !state.sessionExpired && !shown) {
+                clear(container);
+                container.appendChild(alertBox('destructive', _('Failed to check for updates'), e.message));
+            }
+        });
+    };
+    // Read the RAM result when the background GitHub check finishes; never force a check here.
+    refreshVersions();
+    state.timers.push(setInterval(refreshVersions, 5000));
 
     return [
         pageHeader(_('Updates')),
@@ -2248,14 +2300,6 @@ async function start() {
 }
 
 // ---------- init ----------
-
-const langButton = document.getElementById('lang');
-langButton.textContent = lang === 'ru' ? 'EN' : 'RU';
-langButton.title = lang === 'ru' ? 'English' : 'Русский';
-langButton.addEventListener('click', () => {
-    storageSet('exodus.lang', lang === 'ru' ? 'en' : 'ru');
-    location.reload();
-});
 
 renderSavebar();
 document.getElementById('about').addEventListener('click', openAbout);

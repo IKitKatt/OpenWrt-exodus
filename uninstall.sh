@@ -61,6 +61,7 @@ stop_owned() {
  rm -f "$file" || fail "can not clear $role PID"
 }
 stop_owned "$EXODUS_TMP/run/webui/cache.pid" cache
+stop_owned "$EXODUS_TMP/run/webui/update.pid" updates
 stop_owned "$EXODUS_TMP/run/watch.pid" watch
 stop_owned "$EXODUS_TMP/run/core.pid" core
 stop_owned "$EXODUS_TMP/run/supervisor.pid" supervise

@@ -74,10 +74,46 @@ class BridgeTests(ShellCase):
         self.assertEqual(self.accept(packet)['status'], 409)
 
     def test_two_ids_never_mix(self):
-        first = self.packets(dict(action='load', padding='x'*3000))[0]
-        self.accept(first)
-        second = self.packets(dict(action='load'), 'b'*32)[0]
-        self.assertEqual(self.accept(second)['status'], 503)
+        left = self.home/'profiles/left.yaml'; right = self.home/'profiles/right.yaml'
+        first = self.packets(dict(action='profile_upload',name=left.name,content='left '*600))
+        second = self.packets(dict(action='profile_upload',name=right.name,content='right '*600),'b'*32)
+        self.assertEqual(self.accept(first[0])['phase'],'accepted')
+        for packet in second: result=self.accept(packet)
+        self.assertEqual(result['phase'],'complete')
+        for packet in first[1:]: result=self.accept(packet)
+        self.assertEqual(result['phase'],'complete')
+        self.assertEqual(left.read_text(),'left '*600)
+        self.assertEqual(right.read_text(),'right '*600)
+
+    def test_unfinished_legacy_snapshot_does_not_block_upload(self):
+        snapshot=self.ram/('run/webui/requests/'+('c'*32))
+        snapshot.mkdir(parents=True)
+        (snapshot/'touched').write_text(str(int(time.time())))
+        content='mode: rule\n# Привет 😀 <% file %>\n'*120
+        for packet in self.packets(dict(action='profile_upload',name='local.yaml',content=content)):
+            self.assertEqual(self.accept(packet)['status'],200)
+        self.assertEqual((self.home/'profiles/local.yaml').read_text(),content)
+
+    def test_incomplete_transfers_are_bounded(self):
+        for ident in 'abcd':
+            packet=self.packets(dict(action='load',padding='x'*3000),ident*32)[0]
+            self.assertEqual(self.accept(packet)['phase'],'accepted')
+        packet=self.packets(dict(action='load',padding='x'*3000),'e'*32)[0]
+        self.assertEqual(self.accept(packet)['status'],503)
+
+    def test_navigation_cache_has_no_jffs_writes_and_tracks_saved_profiles(self):
+        self.sh('webui_cache_refresh',('api','webui-api'))
+        cache=self.ram/'run/webui/cache'
+        for key in ('load','files','interfaces','proxies','hwid','about'):
+            envelope=json.loads((cache/f'{key}.json').read_text())
+            self.assertEqual(envelope['key'],key)
+            self.assertEqual(envelope['status'],200)
+            self.assertIsInstance(json.loads(base64.b64decode(envelope['body'])),dict)
+        content='mode: rule\n'
+        for packet in self.packets(dict(action='profile_upload',name='local.yaml',content=content)):
+            self.assertEqual(self.accept(packet)['phase'],'complete')
+        load=json.loads(base64.b64decode(json.loads((cache/'load.json').read_text())['body']))
+        self.assertIn('local.yaml',[profile['name'] for profile in load['profiles']])
 
     def test_final_retry_does_not_repeat_action(self):
         target = self.home / 'profiles/test.yaml'

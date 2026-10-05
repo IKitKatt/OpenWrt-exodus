@@ -384,6 +384,7 @@ web() {
         status) if webui_status; then echo "registered: $(webui_url)"; else echo 'not registered'; return 1; fi ;;
         url) webui_url ;;
         event) . "$LIB_DIR/webui-api.sh"; webui_event "$2" "$3" ;;
+        updates) . "$LIB_DIR/api.sh"; . "$LIB_DIR/webui-api.sh"; webui_updates_refresh ;;
         cache)
             lock_acquire webui-cache-loop 10 || return 1
             echo "$$" > "$WEBUI_DIR/cache.pid"

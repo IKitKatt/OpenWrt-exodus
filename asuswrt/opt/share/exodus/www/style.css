@@ -11,6 +11,8 @@
     container-type: inline-size;
     width: 100%;
     min-width: 0;
+    /* Short/loading/error routes keep Merlin's gray canvas; long pages grow. */
+    min-height: var(--exodus-canvas-min-height, calc(100vh - 180px));
     margin: 0;
     padding: 10px;
     color: var(--text);

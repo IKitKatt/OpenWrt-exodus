@@ -35,11 +35,11 @@ webui_error() {
 
 webui_gc() (
 	local dir touched now age
-	[ -d "$WEBUI_DIR/requests" ] || exit 0
+	[ -d "$WEBUI_DIR/requests" ] || [ -d "$WEBUI_DIR/snapshots" ] || exit 0
 	lock_acquire webui-transfer 2 || exit 0
 	trap 'lock_release webui-transfer' EXIT
 	now=$(date +%s)
-	for dir in "$WEBUI_DIR"/requests/*; do
+	for dir in "$WEBUI_DIR"/requests/* "$WEBUI_DIR"/snapshots/*; do
 		[ -d "$dir" ] || continue
 		touched=$(cat "$dir/touched" 2> /dev/null)
 		case "$touched" in ''|*[!0-9]*) continue ;; esac
@@ -53,7 +53,7 @@ webui_gc() (
 )
 
 webui_accept() (
-	local packet id seq count data dir next digest previous other free total status new=0
+	local packet id seq count data dir next digest previous other free total status action pending new=0
 	packet="$1"
 	[ -f "$packet" ] && [ "$(wc -c < "$packet")" -le 2999 ] || exit 1
 	jq -e 'type == "object" and .v == 1 and (.id|type == "string") and
@@ -100,9 +100,14 @@ webui_accept() (
 	fi
 	if [ ! -d "$dir" ]; then
 		[ "$seq" -eq 0 ] || { webui_error "$id" "$seq" 409 'out of order chunk'; exit 1; }
+		# Request IDs have independent buffers. An abandoned upload or a legacy
+		# settings snapshot must not prevent a new request from completing.
+		pending=0
 		for other in "$WEBUI_DIR"/requests/*; do
-			[ ! -d "$other" ] || [ -f "$other/complete" ] || { webui_error "$id" "$seq" 503 'another transfer is active'; exit 1; }
+			if [ ! -f "$other/count" ] || [ -f "$other/complete" ]; then continue; fi
+			pending=$((pending + 1))
 		done
+		[ "$pending" -lt 4 ] || { webui_error "$id" "$seq" 503 'too many unfinished uploads; retry after they expire'; exit 1; }
 		mkdir "$dir" || exit 1
 		new=1
 		printf '%s\n' "$count" > "$dir/count"
@@ -126,7 +131,8 @@ webui_accept() (
 	if [ "$((seq + 1))" -lt "$count" ]; then webui_emit "$id" "$seq" accepted 200 "$dir/ack"; exit 0; fi
 	jq -e 'type == "object" and (.action|type == "string")' "$dir/request" > /dev/null 2>&1 || { webui_error "$id" "$seq" 400 'invalid request'; touch "$dir/complete"; exit 1; }
 	# JSON stores Unicode code points; encoded UTF-8 bytes are the actual file limit.
-	case "$(jq -r .action "$dir/request")" in
+	action=$(jq -r .action "$dir/request")
+	case "$action" in
 		file_write|profile_upload)
 			jq -j '.content // ""' "$dir/request" > "$dir/content"
 			[ "$(wc -c < "$dir/content")" -le 8388608 ] || { webui_error "$id" "$seq" 413 'file exceeds 8 MiB'; touch "$dir/complete"; exit 1; }
@@ -137,12 +143,28 @@ webui_accept() (
 	webui_emit "$id" "$seq" running 200 "$dir/ack"
 	lock_release webui-transfer
 	trap '' EXIT
+	# Receiving files is independent; serialize operations that change router state.
+	case "$action" in
+		load|status|hosts|interfaces|proxies|files|file_read|log_read|debug|hwid|about|check_update) ;;
+		*)
+			if ! lock_acquire webui-operation 60; then
+				webui_error "$id" "$seq" 503 'router operation is busy; retry later'
+				cp "$WEBUI_DIR/responses/$id.json" "$dir/result.json"
+				touch "$dir/complete"; rm -f "$dir/running"; exit 1
+			fi
+			trap 'lock_release webui-operation' EXIT ;;
+	esac
 	# All library functions are already loaded into this stable worker process.
 	if ! api_run "$dir/request" "$dir/api-result"; then
 		webui_error "$id" "$seq" 500 'operation failed internally'
 	else
 		status=$(jq -r .status "$dir/api-result")
 		jq -c .data "$dir/api-result" > "$dir/body"
+		case "$action" in
+			load|status|hosts|interfaces|proxies|files|file_read|log_read|debug|hwid|about) ;;
+			check_update) webui_cache_write check_update "$dir/api-result" || : ;;
+			*) webui_cache_views_refresh || : ;;
+		esac
 		webui_emit "$id" "$seq" complete "$status" "$dir/body"
 	fi
 	cp "$WEBUI_DIR/responses/$id.json" "$dir/result.json"
@@ -157,10 +179,10 @@ webui_settings_snapshot() (
 	case "$id" in ''|*[!0-9a-f]*) exit 1 ;; esac
 	[ "${#id}" -eq 32 ] || exit 1
 	umask 077
-	mkdir -p "$WEBUI_DIR/requests" "$WEBUI_DIR/responses"
+	mkdir -p "$WEBUI_DIR/snapshots" "$WEBUI_DIR/responses"
 	lock_acquire webui-transfer 10 || exit 1
 	trap 'lock_release webui-transfer' EXIT
-	dir="$WEBUI_DIR/requests/$id"
+	dir="$WEBUI_DIR/snapshots/$id"
 	if [ -d "$dir" ]; then
 		[ -f "$dir/settings-snapshot" ] && [ -f "$dir/result.json" ] || exit 1
 		cp "$dir/result.json" "$WEBUI_DIR/responses/$id.json.tmp" && mv -f "$WEBUI_DIR/responses/$id.json.tmp" "$WEBUI_DIR/responses/$id.json"
@@ -221,6 +243,77 @@ WORKER
 	daemonize /bin/sh "$worker/run.sh" "$mode" "$id"
 )
 
+webui_cache_write() (
+	local key result target body now
+	key="$1"; result="$2"; target="$WEBUI_DIR/cache/$key.json"
+	body="$target.body.$$"; now=$(date +%s)
+	trap 'rm -f "$body" "$body.base64" "$target.tmp.$$"' EXIT
+	mkdir -p "$WEBUI_DIR/cache" || exit 1
+	jq -c .data "$result" > "$body" || exit 1
+	webui_encode "$body" > "$body.base64" || exit 1
+	jq -cn --arg key "$key" --argjson now "$now" --argjson status "$(jq -r .status "$result")" --rawfile body "$body.base64" \
+		'{v:1,key:$key,generated:$now,status:$status,body:$body}' > "$target.tmp.$$" && mv -f "$target.tmp.$$" "$target"
+)
+
+# Local navigation reads do not need an apply event or a JFFS write.
+# Refresh on startup, after mutations, and periodically for changes made by CLI.
+webui_cache_views_refresh() (
+	local key req result
+	lock_acquire webui-views 30 || exit 1
+	req="$WEBUI_DIR/views-request.$$"; result="$WEBUI_DIR/views-result.$$"
+	trap 'rm -f "$req" "$result"; lock_release webui-views' EXIT
+	for key in load files hosts interfaces proxies hwid about check_update; do
+		jq -cn --arg action "$key" '{action:$action,cached:true}' > "$req" || exit 1
+		api_run "$req" "$result" && webui_cache_write "$key" "$result" || exit 1
+	done
+)
+
+# Cancel only the API worker we spawned and its descendants. Freeze each parent
+# before discovering children so it cannot create another network process.
+webui_updates_cancel() {
+	local pid child
+	pid="$1"
+	[ -n "$pid" ] || return 0
+	kill -STOP "$pid" 2>/dev/null || return 0
+	awk -v parent="$pid" '$1 == "Pid:" { pid=$2 } $1 == "PPid:" && $2 == parent { print pid }' "$EXODUS_PROC"/[0-9]*/status 2>/dev/null |
+	while read -r child; do
+		webui_updates_cancel "$child"
+	done
+	kill -KILL "$pid" 2>/dev/null || :
+}
+
+# This function runs in the owning CLI, so $$ is the actual registered PID.
+# Keep wait interruptible and cancel network descendants before releasing it.
+webui_updates_refresh() {
+	local req result update_child
+	lock_acquire webui-updates 2 || return 0
+	req="$WEBUI_DIR/update-request.$$"; result="$WEBUI_DIR/update-result.$$"
+	update_child=
+	echo "$$" > "$WEBUI_DIR/update.pid"
+	trap 'webui_updates_cancel "$update_child"; wait "$update_child" 2>/dev/null; rm -f "$req" "$result" "$result.tmp" "$WEBUI_DIR/update.pid" "$WEBUI_DIR/cache/check_update.json.body.$$" "$WEBUI_DIR/cache/check_update.json.body.$$.base64" "$WEBUI_DIR/cache/check_update.json.tmp.$$"; rm -rf "$RUN_TMP/latest.$$"; lock_release webui-updates' EXIT
+	trap 'exit 0' TERM INT HUP
+	date +%s > "$WEBUI_DIR/update-checked"
+	printf '{"action":"check_update"}\n' > "$req"
+	api_run "$req" "$result" &
+	update_child=$!
+	if wait "$update_child"; then
+		webui_cache_write check_update "$result" &
+		update_child=$!
+		wait "$update_child"
+		exit $?
+	fi
+	exit 1
+}
+
+webui_updates_start() {
+	local last now
+	pid_alive "$WEBUI_DIR/update.pid" && return 0
+	last=$(cat "$WEBUI_DIR/update-checked" 2>/dev/null); now=$(date +%s)
+	case "$last" in ''|*[!0-9]*) last=0 ;; esac
+	[ "$((now - last))" -lt 300 ] && [ "$now" -ge "$last" ] && return 0
+	daemonize "$EXODUS" web updates
+}
+
 webui_cache_refresh() (
 	local name key req result target fingerprint previous now body
 	umask 077
@@ -251,6 +344,7 @@ webui_cache_refresh() (
 		[ "$name" = status ] || printf '%s\n' "$fingerprint" > "$target.fingerprint"
 		rm -f "$req" "$result" "$result.body" "$body"
 	done
+	[ -f "$WEBUI_DIR/cache/load.json" ] || webui_cache_views_refresh || exit 1
 	jq -cn --argjson now "$(date +%s)" '{v:1,generated:$now}' > "$WEBUI_DIR/cache/heartbeat.json.tmp" && mv -f "$WEBUI_DIR/cache/heartbeat.json.tmp" "$WEBUI_DIR/cache/heartbeat.json"
 )
 
@@ -260,6 +354,8 @@ webui_cache_loop() {
 	local tick=0
 	while :; do
 		webui_cache_refresh; webui_gc
+		if [ "$tick" -gt 0 ] && [ "$((tick % 6))" -eq 0 ]; then webui_cache_views_refresh; fi
+		webui_updates_start
 		# Firmware menu rebuilds need recovery, even while the proxy is stopped.
 		if [ "$tick" -ge 12 ]; then webui_status || webui_mount; tick=0; fi
 		tick=$((tick + 1)); sleep 5

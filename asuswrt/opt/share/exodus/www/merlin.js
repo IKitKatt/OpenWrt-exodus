@@ -47,7 +47,7 @@
         async function cache(action, params) {
             const name = params.name;
             if (action === 'log_read' && !['app','core','update','web','debug'].includes(name)) throw Error('Unknown log');
-            const key = action === 'status' ? 'status' : 'log-' + name;
+            const key = action === 'log_read' ? 'log-' + name : action;
             const envelope = await get('/ext/exodus/cache/' + key + '.json');
             if (envelope.v !== 1 || envelope.key !== key) throw Error('Invalid cache response');
             const live = action === 'status' ? envelope : await get('/ext/exodus/cache/heartbeat.json');
@@ -73,9 +73,9 @@
             const id = makeId(), script = 'restart_exodus_ui_settings_' + id;
             const deadline = now() + 30000;
             await submit(null, script);
-            let sent = now(), retries = 0;
+            let sent = now(), retries = 0, polls = 0;
             while (now() < deadline) {
-                check(); await sleep(500);
+                check(); await sleep(Math.min(500,100+100*polls++));
                 let result;
                 try { result = await get('/ext/exodus/responses/' + id + '.json'); }
                 catch (error) { check(); if (!/HTTP 404|Failed to fetch|network/i.test(error.message)) throw error; }
@@ -99,24 +99,31 @@
             check();
             await submit(settings);
         }
-        async function perform(raw) {
+        async function perform(raw, progress) {
             const id = makeId(), payload = encode(raw), count = Math.ceil(payload.length/1800);
             for (let seq=0; seq<count; seq++) {
                 // Each accepted part advances the transfer; final execution has its own deadline.
                 const deadline = now() + 300000;
                 const packet = {v:1,id,seq,count,data:payload.slice(seq*1800,(seq+1)*1800)};
-                let retries = 0, sent = 0, acknowledged = false;
+                let retries = 0, sent = 0, acknowledged = false, polls = 0;
                 await sendPacket(packet); sent = now();
                 while (now() < deadline) {
                     check();
-                    await sleep(500);
+                    await sleep(Math.min(500,100+100*polls++));
                     let result;
                     try { result = await get('/ext/exodus/responses/' + id + '.json'); }
                     catch (error) { check(); if (!/HTTP 404|Failed to fetch|network/i.test(error.message)) throw error; }
                     if (result && result.v === 1 && result.id === id && result.seq === seq) {
                         if (result.phase === 'error') return unpack(result);
-                        if (result.phase === 'complete' && seq === count-1) return unpack(result);
-                        if (result.phase === 'accepted' && seq < count-1) { acknowledged = true; break; }
+                        if (result.phase === 'complete' && seq === count-1) {
+                            const body = unpack(result);
+                            if (progress) progress({completed:count,total:count});
+                            return body;
+                        }
+                        if (result.phase === 'accepted' && seq < count-1) {
+                            if (progress) progress({completed:seq+1,total:count});
+                            acknowledged = true; break;
+                        }
                         if (result.phase === 'running') { sent = now(); continue; }
                     }
                     if (now() - sent >= 10000) {
@@ -134,7 +141,7 @@
             active = true;
             while (queue.length) {
                 const item = queue.shift();
-                try { check(); item.resolve(await perform(item.raw)); }
+                try { check(); item.resolve(await perform(item.raw,item.progress)); }
                 catch (error) { item.reject(error); }
             }
             active = false;
@@ -143,7 +150,7 @@
             try {
                 check();
                 if ((action === 'file_write' || action === 'profile_upload') && bytes(params.content || '').length > 8388608) throw Error('File exceeds 8 MiB');
-                if (action === 'status' || action === 'log_read') {
+                if (['status','log_read','load','files','hosts','interfaces','proxies','hwid','about'].includes(action) || (action === 'check_update' && params.force !== true)) {
                     const key = action + ':' + (params.name || '');
                     if (!reads.has(key)) reads.set(key, cache(action,params).finally(()=>reads.delete(key)));
                     return reads.get(key);
@@ -151,7 +158,7 @@
                 const raw = JSON.stringify({...params,action});
                 if (bytes(raw).length > 16777216) throw Error('Request exceeds 16 MiB');
                 return new Promise((resolve,reject) => {
-                    const item = {raw,resolve,reject};
+                    const item = {raw,resolve,reject,progress:typeof params.onProgress==='function'?params.onProgress:null};
                     if (action === 'check_update' && params.force !== true) queue.push(item);
                     else queue.splice(queue.findIndex(x=>JSON.parse(x.raw).action==='check_update') < 0 ? queue.length : queue.findIndex(x=>JSON.parse(x.raw).action==='check_update'),0,item);
                     drain();

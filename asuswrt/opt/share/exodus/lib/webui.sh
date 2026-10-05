@@ -165,6 +165,8 @@ webui_cache_start() (
 	pid_alive "$WEBUI_DIR/cache.pid" && exit 0
 	. "$LIB_DIR/api.sh"
 	. "$LIB_DIR/webui-api.sh"
+	# Refresh local state after installation/update even if old RAM caches remain.
+	webui_cache_views_refresh || exit 1
 	webui_cache_refresh || exit 1
 	# A separate CLI process owns this loop, independently of proxy stop.
 	daemonize "$EXODUS" web cache
@@ -178,15 +180,19 @@ webui_cache_start() (
 )
 
 webui_cache_stop() {
-	local pid i=0
-	pid=$(cat "$WEBUI_DIR/cache.pid" 2> /dev/null)
-	case "$pid" in ''|*[!0-9]*) return 0 ;; esac
-	if [ -r "$EXODUS_PROC/$pid/cmdline" ] && tr '\000' '\n' < "$EXODUS_PROC/$pid/cmdline" | grep -Fxq "$EXODUS"; then
-		kill "$pid" 2> /dev/null || :
-		while kill -0 "$pid" 2> /dev/null && [ "$(cat "$WEBUI_DIR/cache.pid" 2>/dev/null)" = "$pid" ]; do
-			[ "$i" -lt 60 ] || return 1
-			i=$((i + 1)); msleep 100
-		done
-	fi
-	rm -f "$WEBUI_DIR/cache.pid"
+	local pid file role i
+	for role in cache updates; do
+		if [ "$role" = cache ]; then file="$WEBUI_DIR/cache.pid"; else file="$WEBUI_DIR/update.pid"; fi
+		pid=$(cat "$file" 2> /dev/null); i=0
+		case "$pid" in ''|*[!0-9]*) continue ;; esac
+		if [ -r "$EXODUS_PROC/$pid/cmdline" ] && tr '\000' '\n' < "$EXODUS_PROC/$pid/cmdline" | grep -Fxq "$EXODUS" &&
+			tr '\000' '\n' < "$EXODUS_PROC/$pid/cmdline" | grep -Fxq "$role"; then
+			kill "$pid" 2> /dev/null || :
+			while kill -0 "$pid" 2> /dev/null && [ "$(cat "$file" 2>/dev/null)" = "$pid" ]; do
+				[ "$i" -lt 60 ] || return 1
+				i=$((i + 1)); msleep 100
+			done
+		fi
+		rm -f "$file"
+	done
 }

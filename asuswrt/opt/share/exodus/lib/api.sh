@@ -428,7 +428,7 @@ action_check_update() {
 		latest=$(jq -c --arg core "$core_type" --arg repository "$repository" --arg ref "$ref" --argjson now "$now" \
 			'select(.core_type == $core and .repository == $repository and .ref == $ref and ($now - .time) < 21600 and ($now - .time) >= 0)' "$cache" 2> /dev/null)
 	fi
-	if [ -z "$latest" ]; then
+	if [ -z "$latest" ] && [ "$(arg cached)" != "true" ]; then
 		app=$(latest_code "$ref" "$repository")
 		core_latest=$(curl -s -f -L -m 20 "$(gh_url "$release/version.txt")" 2> /dev/null | head -n 1 | tr -d '\r')
 		echo "$core_latest" | grep -q -E '^[A-Za-z0-9._-]+$' || core_latest=
@@ -439,6 +439,7 @@ action_check_update() {
 			printf '%s\n' "$latest" > "$cache"
 		fi
 	fi
+	[ -n "$latest" ] || latest='{}'
 	free=$(df -k "$EXODUS_OPT" 2> /dev/null | tail -n 1 | awk '{ print $(NF - 2) }')
 	core_size=$(wc -c < "$PROG" 2> /dev/null)
 	proxy_host=$(cfg_get .update.gh_proxy | sed -n 's|^[a-z]*://\([^/]*\).*|\1|p')
