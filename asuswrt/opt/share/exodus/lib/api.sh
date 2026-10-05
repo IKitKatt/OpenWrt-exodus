@@ -509,4 +509,3 @@ action_update_dashboard() {
 	printf 'header = "Authorization: Bearer %s"\n' "$secret" | curl -s -k -m 120 -X POST -K - "$url" > /dev/null 2>&1
 	echo '{"success": true}' | ok
 }
-

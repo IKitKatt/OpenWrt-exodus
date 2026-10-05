@@ -77,6 +77,40 @@ class BridgeTests(ShellCase):
         self.assertEqual(self.accept(packet)['status'], 413)
         self.assertFalse((self.ram / 'run/webui/requests' / packet['id']).exists())
 
+    def test_rejected_first_chunk_does_not_block_next_request(self):
+        packet=self.packets(dict(action='load'))[0]; packet['data']='===='
+        self.assertEqual(self.accept(packet)['status'],400)
+        self.sh('webui_gc',('webui-api',))
+        self.assertEqual(self.accept(self.packets(dict(action='load'),'b'*32)[0])['phase'],'complete')
+
+    def test_settings_snapshot_preserves_complete_values_without_writing_jffs(self):
+        settings=self.jffs/'addons/custom_settings.txt'
+        original='addon_title Cool Addon 1.0\nempty \nliteral "Привет 😀" <% test %>\nspaced   keep  \n'
+        settings.write_text(original)
+        self.sh('webui_settings_snapshot "'+('c'*32)+'"',('webui-api',))
+        result=json.loads((self.ram/('run/webui/responses/'+('c'*32)+'.json')).read_text())
+        self.assertEqual(json.loads(base64.b64decode(result['body'])),dict(addon_title='Cool Addon 1.0',empty='',literal='"Привет 😀" <% test %>',spaced='  keep  '))
+        self.assertEqual(settings.read_text(),original)
+        self.assertNotIn('<%',json.dumps(result))
+
+    def test_settings_snapshot_handles_absent_shared_file(self):
+        self.sh('webui_settings_snapshot "'+('c'*32)+'"',('webui-api',))
+        result=json.loads((self.ram/('run/webui/responses/'+('c'*32)+'.json')).read_text())
+        self.assertEqual(json.loads(base64.b64decode(result['body'])),{})
+        self.assertFalse((self.jffs/'addons/custom_settings.txt').exists())
+
+    def test_native_settings_event_handles_missing_file_and_uses_ram_only(self):
+        ident='c'*32
+        self.sh(f'webui_event restart exodus_ui_settings_{ident}',('webui-api',))
+        response=self.ram/f'run/webui/responses/{ident}.json'
+        deadline=time.time()+5
+        while not response.exists() and time.time()<deadline: time.sleep(.1)
+        self.assertTrue(response.exists())
+        self.assertEqual(json.loads(base64.b64decode(json.loads(response.read_text())['body'])),{})
+        self.assertFalse((self.jffs/'addons/custom_settings.txt').exists())
+        # Snapshot records are complete and do not block a subsequent operation.
+        self.assertEqual(self.accept(self.packets(dict(action='load'),'b'*32)[0])['phase'],'complete')
+
     def test_foreign_setting_preserved_and_unrelated_event_ignored(self):
         settings = self.jffs / 'addons/custom_settings.txt'
         settings.write_text('other_addon untouched\n')

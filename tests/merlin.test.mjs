@@ -5,15 +5,20 @@ const require = createRequire(import.meta.url);
 const {createTransport, encode, decode} = require('../asuswrt/opt/share/exodus/www/merlin.js');
 const json = value => ({ok:true,status:200,headers:{get:()=> 'application/json'},text:async()=>JSON.stringify(value)});
 function fixture(options={}) {
-    let packet, calls=[], counter=0, settings={other:'initial'}, clock=100000;
+    let packet, snapshot, calls=[], counter=0, settings={other:'initial'}, clock=100000;
     const transport = createTransport({
         now:()=>clock, sleep:async ms=>{clock+=ms;}, id:()=> (++counter).toString(16).padStart(32,'0'),
-        submit:async value=>{calls.push(value); packet=JSON.parse(value.exodus_packet); settings.other='new-'+packet.seq;},
+        submit:async(value,script)=>{
+            if(value==null) {snapshot=script.slice('restart_exodus_ui_settings_'.length); return;}
+            calls.push(value); packet=JSON.parse(value.exodus_packet); settings.other='new-'+packet.seq;
+        },
         fetch:async url=>{
             if(url.includes('appGet')) return json({get_custom_settings:{...settings}});
+            if(url.includes(snapshot+'.json')) return json({v:1,id:snapshot,seq:0,phase:'complete',status:200,body:encode(JSON.stringify(settings))});
             if(url.includes('cache')) return json(url.includes('heartbeat') ? {v:1,generated:clock/1000} :
                 {v:1,key:url.includes('status')?'status':'log-app',generated:clock/1000,status:200,body:encode(JSON.stringify({running:true}))});
-            return json({v:1,id:packet.id,seq:packet.seq,phase:packet.seq===packet.count-1?'complete':'accepted',status:options.failFirst && counter===1?400:200,body:encode(options.failFirst && counter===1?'{"error":"rejected"}':'{"success":true}')});
+            const first=packet.id==='1'.padStart(32,'0');
+            return json({v:1,id:packet.id,seq:packet.seq,phase:packet.seq===packet.count-1?'complete':'accepted',status:options.failFirst && first?400:200,body:encode(options.failFirst && first?'{"error":"rejected"}':'{"success":true}')});
         }, ...options
     });
     return {transport,calls};
@@ -63,4 +68,59 @@ test('html login response stops queue', async()=>{
 });
 test('dispose stops requests', async()=>{
     const f=fixture(); f.transport.dispose(); await assert.rejects(f.transport.request('load'),/closed/i);
+});
+test('firmware HTML 404 while pending does not expire session', async()=>{
+    let packet, polls=0, clock=0, expired=0, snapshot=false;
+    const f=createTransport({now:()=>clock,sleep:async ms=>{clock+=ms;},id:()=> '1'.repeat(32),
+        onLogin:()=>expired++, submit:async settings=>{snapshot=settings==null;if(settings) packet=JSON.parse(settings.exodus_packet);},
+        fetch:async url=>{
+            if(url.includes('appGet')) return json({get_custom_settings:{}});
+            if(++polls===1) return {ok:false,status:404,text:async()=>'<html><body>404 Not Found</body></html>'};
+            return json({v:1,id:packet?.id || '1'.repeat(32),seq:0,phase:'complete',status:200,body:encode(snapshot?'{}':'{"success":true}')});
+        }});
+    await f.request('load'); await f.request('load'); assert.equal(expired,0);
+});
+function settingsFixture(foreign, missing=false) {
+    let packet, snapshotId, clock=0, serial=0, submissions=[];
+    const f=createTransport({now:()=>clock,sleep:async ms=>{clock+=ms;},id:()=> (++serial).toString(16).padStart(32,'0'),
+        submit:async(settings,script)=>{
+            if(!settings) snapshotId=script.slice('restart_exodus_ui_settings_'.length);
+            else {submissions.push(settings); packet=JSON.parse(settings.exodus_packet);}
+        }, fetch:async url=>{
+            // Actual minimum firmware getter loses spaces/empty values or returns invalid JSON.
+            if(url.includes('appGet')) return missing ? {ok:true,status:200,text:async()=>'{"get_custom_settings": new Object()}'} : json({get_custom_settings:{addon_title:'Cool'}});
+            const id=url.match(/([0-9a-f]{32})\.json/)[1];
+            return json({v:1,id,seq:0,phase:'complete',status:200,body:encode(JSON.stringify(id===snapshotId?foreign:{success:true}))});
+        }});
+    return {transport:f,submissions};
+}
+test('complete foreign settings including spaces and empty values are preserved', async()=>{
+    const foreign={addon_title:'Cool Addon 1.0',empty:'',literal:'"Привет 😀" <% test %>',spaced:'  keep  ',error:'ordinary foreign setting'};
+    const f=settingsFixture(foreign); await f.transport.request('load');
+    for(const [key,value] of Object.entries(foreign)) assert.equal(f.submissions[0][key],value);
+});
+test('missing shared settings starts from empty object without firmware eval', async()=>{
+    const f=settingsFixture({},true); assert.equal((await f.transport.request('load')).success,true);
+    assert.deepEqual(Object.keys(f.submissions[0]),['exodus_packet']);
+});
+test('native snapshot form omits amng_custom and packet form restores it', async()=>{
+    const previousDocument=globalThis.document, previousLocation=globalThis.location;
+    let clock=0, serial=0;
+    const posts=[], fields=Object.fromEntries(['current_page','next_page','action_script','amng_custom'].map(key=>[key,{value:'',disabled:false}]));
+    const form={elements:fields,submit(){posts.push(Object.fromEntries(Object.entries(fields).filter(([,field])=>!field.disabled).map(([name,field])=>[name,field.value])));}};
+    globalThis.document={getElementById:()=>form}; globalThis.location={pathname:'/user3.asp'};
+    try {
+        const f=createTransport({now:()=>clock,sleep:async ms=>{clock+=ms;},id:()=> (++serial).toString(16).padStart(32,'0'),
+            fetch:async url=>{
+                const current=posts.at(-1), snapshot=!('amng_custom' in current);
+                const id=snapshot?current.action_script.slice('restart_exodus_ui_settings_'.length):JSON.parse(current.amng_custom).exodus_packet;
+                return json({v:1,id:snapshot?id:JSON.parse(id).id,seq:0,phase:'complete',status:200,body:encode(snapshot?'{"other":"Cool Addon 1.0"}':'{"success":true}')});
+            }});
+        assert.equal((await f.request('load')).success,true);
+        assert.equal(posts.length,2);
+        assert.ok(!('amng_custom' in posts[0]));
+        assert.equal(posts[1].action_script,'restart_exodus_ui');
+        assert.equal(JSON.parse(posts[1].amng_custom).other,'Cool Addon 1.0');
+        assert.equal(posts[1].current_page,'user3.asp');
+    } finally {globalThis.document=previousDocument;globalThis.location=previousLocation;}
 });

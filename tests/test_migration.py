@@ -150,6 +150,9 @@ esac''')
 
     def test_uninstall_broken_cli_removes_only_owned_registration(self):
         self.web('webui_mount')
+        target=self.www/'require/modules/menuTree.js'
+        visible=target.read_text()+'\n// latest foreign menu entry\n'
+        target.unlink(); target.write_text(visible)
         (self.share/'exodus').write_text('#!/bin/sh\nexit 1\n')
         script=self.root/'uninstall.sh'; script.write_text((ROOT/'uninstall.sh').read_text())
         result=subprocess.run(['sh',str(script)],env=self.env,capture_output=True,text=True,timeout=20)
@@ -157,6 +160,7 @@ esac''')
         self.assertFalse(self.home.exists())
         self.assertFalse((self.www/'user/user1.asp').exists())
         self.assertIn('Other addon',(self.root/'tmp/menuTree.js').read_text())
+        self.assertIn('latest foreign menu entry',target.read_text())
         self.assertEqual((self.www/'user/user20.asp').read_text(),'foreign page')
 
     def test_registration_failure_has_no_success(self):
@@ -168,6 +172,37 @@ esac''')
         self.assertNotIn('\nsuccess\n',result.stdout)
         self.assertEqual((self.home/'config.json').read_bytes(),before)
         self.assertTrue((self.share/'BUILD').read_text().startswith('{"code":"fixture"}'))
+
+    def test_staging_failure_keeps_previous_webui_running(self):
+        self.bundle(); self.sh(f'"{self.share}/exodus" web start')
+        before=(self.home/'config.json').read_bytes()
+        self.mock('cp','case "$1" in -R) exit 1 ;; esac\nexec /bin/cp "$@"')
+        result=self.install()
+        self.assertNotEqual(result.returncode,0)
+        self.assertEqual((self.home/'config.json').read_bytes(),before)
+        self.sh('pid_alive "$WEBUI_DIR/cache.pid"')
+        self.web('webui_status')
+
+    def test_broken_cli_uninstall_stops_live_owned_cache(self):
+        self.sh(f'"{self.share}/exodus" web start')
+        pid=int((self.ram/'run/webui/cache.pid').read_text())
+        def cleanup():
+            from pathlib import Path
+            cmd=Path('/proc')/str(pid)/'cmdline'
+            if cmd.exists() and str(self.share/'exodus').encode() in cmd.read_bytes().split(b'\0'):
+                try: os.kill(pid,9)
+                except ProcessLookupError: pass
+        self.addCleanup(cleanup)
+        (self.share/'exodus').write_text('#!/bin/sh\nexit 1\n')
+        script=self.root/'uninstall.sh'; script.write_text((ROOT/'uninstall.sh').read_text())
+        result=subprocess.run(['sh',str(script)],env=self.env,capture_output=True,text=True,timeout=20)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        import time
+        time.sleep(6)
+        self.assertFalse(self.ram.exists())
+        # Zombies are stopped processes, not executing cache daemons.
+        state=(__import__('pathlib').Path('/proc')/str(pid)/'status')
+        self.assertTrue(not state.exists() or 'State:\tZ' in state.read_text())
 
     def test_passwd_does_not_read_or_replace_legacy_auth(self):
         auth=(self.home/'web.auth').read_bytes()

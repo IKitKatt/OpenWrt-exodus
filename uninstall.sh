@@ -11,6 +11,26 @@ EXODUS_TMP="${EXODUS_TMP:-/tmp/exodus}"
 EXODUS_MENU="${EXODUS_MENU:-/tmp/menuTree.js}"
 export PATH="$EXODUS_OPT/bin:$EXODUS_OPT/sbin:/sbin:/bin:/usr/sbin:/usr/bin"
 
+# The CLI may be damaged; a live cache owns already-loaded functions.
+cache_pid=$(cat "$EXODUS_TMP/run/webui/cache.pid" 2> /dev/null)
+proc_root="${EXODUS_PROC:-/proc}"
+case "$cache_pid" in
+	''|*[!0-9]*) ;;
+	*)
+		cache_cmd=$(tr '\000' '\n' < "$proc_root/$cache_pid/cmdline" 2> /dev/null)
+		cache_owner=$(awk '/^Uid:/ {print $2}' "$proc_root/$cache_pid/status" 2> /dev/null)
+		if [ "$cache_owner" = "$(id -u)" ] &&
+			printf '%s\n' "$cache_cmd" | grep -Fxq "$EXODUS_OPT/share/exodus/exodus" &&
+			printf '%s\n' "$cache_cmd" | grep -Fxq cache; then
+			kill "$cache_pid" 2> /dev/null || :
+			attempt=0
+			while [ -r "$proc_root/$cache_pid/cmdline" ] && tr '\000' '\n' < "$proc_root/$cache_pid/cmdline" | grep -Fxq "$EXODUS_OPT/share/exodus/exodus"; do
+				if [ "$attempt" -ge 12 ]; then echo 'error: cache did not stop; installation kept'; exit 1; fi
+				attempt=$((attempt + 1)); sleep 1
+			done
+		fi ;;
+esac
+
 # stop the proxy first, it removes the rules and the routes
 if [ -x "$EXODUS_OPT/share/exodus/exodus" ]; then
 	"$EXODUS_OPT/share/exodus/exodus" stop
@@ -22,8 +42,9 @@ for page in "$EXODUS_WWW"/user/user*.asp; do
 	if [ ! -f "$page" ] || ! grep -q 'page:exodus' "$page"; then continue; fi
 	rm -f "$page" "${page%.asp}.title"
 done
-if [ -f "$EXODUS_MENU" ] && grep -q 'exodus:menu' "$EXODUS_MENU"; then
-	grep -v 'exodus:menu' "$EXODUS_MENU" > "$EXODUS_MENU.exodus"
+menu_target="$EXODUS_WWW/require/modules/menuTree.js"
+if [ -f "$menu_target" ] && grep -q 'exodus:menu' "$menu_target"; then
+	grep -v 'exodus:menu' "$menu_target" > "$EXODUS_MENU.exodus"
 	mv -f "$EXODUS_MENU.exodus" "$EXODUS_MENU"
 	umount "$EXODUS_WWW/require/modules/menuTree.js" 2> /dev/null || :
 	mount -o bind "$EXODUS_MENU" "$EXODUS_WWW/require/modules/menuTree.js"

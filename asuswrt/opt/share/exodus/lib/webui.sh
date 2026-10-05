@@ -26,7 +26,7 @@ webui_menu() {
 	local page target
 	page="$1"
 	target="$EXODUS_WWW/require/modules/menuTree.js"
-	[ -f "$EXODUS_MENU" ] || cp "$target" "$EXODUS_MENU" || return 1
+	[ -r "$target" ] || return 1
 	awk -v page="$page" '
 		/exodus:menu/ { next }
 		/index:[[:space:]]*"menu_VPN"/ { vpn=1 }
@@ -36,7 +36,7 @@ webui_menu() {
 		}
 		{ print }
 		END { if(page != "" && !added) exit 1 }
-	' "$EXODUS_MENU" > "$EXODUS_MENU.exodus" || { rm -f "$EXODUS_MENU.exodus"; return 1; }
+	' "$target" > "$EXODUS_MENU.exodus" || { rm -f "$EXODUS_MENU.exodus"; return 1; }
 	mv -f "$EXODUS_MENU.exodus" "$EXODUS_MENU" || return 1
 	umount "$target" 2> /dev/null || :
 	mount -o bind "$EXODUS_MENU" "$target"
@@ -101,7 +101,7 @@ webui_unmount() (
 	trap 'lock_release webui' EXIT
 	page=$(webui_owned_page)
 	if [ -n "$page" ]; then rm -f "$EXODUS_WWW/user/$page" "$EXODUS_WWW/user/${page%.asp}.title"; fi
-	[ ! -f "$EXODUS_MENU" ] || webui_menu '' || exit 1
+	[ ! -f "$EXODUS_WWW/require/modules/menuTree.js" ] || webui_menu '' || exit 1
 	rm -f "$WEBUI_DIR/page"
 	rm -rf "$WEBUI_PUBLIC"
 )
@@ -109,7 +109,7 @@ webui_unmount() (
 webui_status() {
 	local page
 	page=$(cat "$WEBUI_DIR/page" 2> /dev/null)
-	[ -n "$page" ] && [ -r "$EXODUS_WWW/user/$page" ] && grep -q 'page:exodus' "$EXODUS_WWW/user/$page" && grep -q 'exodus:menu' "$EXODUS_MENU"
+	[ -n "$page" ] && [ -r "$EXODUS_WWW/user/$page" ] && grep -q 'page:exodus' "$EXODUS_WWW/user/$page" && grep -q 'exodus:menu' "$EXODUS_WWW/require/modules/menuTree.js"
 }
 
 webui_url() {

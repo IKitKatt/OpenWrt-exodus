@@ -31,8 +31,9 @@
             check();
             const result = await fetcher(url, {credentials:'same-origin', cache:'no-store', signal:controller.signal});
             const text = await result.text();
-            if (result.status === 401 || result.status === 403 || /^\s*</.test(text)) expire();
+            if (result.status === 401 || result.status === 403) expire();
             if (!result.ok) throw Error('Router HTTP ' + result.status);
+            if (/^\s*</.test(text)) expire();
             let data;
             try { data = JSON.parse(text); } catch (_) { throw Error('Invalid router response'); }
             check();
@@ -54,23 +55,43 @@
             if (live.v !== 1 || !Number.isFinite(age) || age < -5 || age > 15) throw Error('Router cache is stale');
             return unpack(envelope);
         }
-        const submit = options.submit || (async settings => {
+        const submit = options.submit || (async (settings, script = 'restart_exodus_ui') => {
             check();
             const form = root.document.getElementById('exodus_apply');
             if (!form) throw Error('Native apply form is missing');
             form.elements.current_page.value = root.location.pathname.replace(/^\//, '');
             form.elements.next_page.value = form.elements.current_page.value;
-            form.elements.amng_custom.value = JSON.stringify(settings);
+            form.elements.action_script.value = script;
+            // A snapshot event must not invoke firmware's replacement writer.
+            form.elements.amng_custom.disabled = settings == null;
+            form.elements.amng_custom.value = settings == null ? '' : JSON.stringify(settings);
             form.submit();
         });
+        async function settingsSnapshot() {
+            const id = makeId(), script = 'restart_exodus_ui_settings_' + id;
+            const deadline = now() + 30000;
+            await submit(null, script);
+            let sent = now(), retries = 0;
+            while (now() < deadline) {
+                check(); await sleep(500);
+                let result;
+                try { result = await get('/ext/exodus/responses/' + id + '.json'); }
+                catch (error) { check(); if (!/HTTP 404|Failed to fetch|network/i.test(error.message)) throw error; }
+                if (result && result.v === 1 && result.id === id && result.seq === 0) {
+                    if (result.phase === 'error' || result.status !== 200) return unpack(result);
+                    if (result.phase === 'complete') return JSON.parse(decode(result.body));
+                }
+                if (now() - sent >= 10000 && retries < 2) { retries++; await submit(null,script); sent=now(); }
+            }
+            throw Error('Addon settings snapshot timed out; no packet was submitted.');
+        }
         async function sendPacket(packet) {
-            const response = await get('/appGet.cgi?hook=get_custom_settings()');
-            // write_custom_settings replaces the file. Fetch again for EVERY part.
-            const foreign = response.get_custom_settings || response;
+            // Firmware's getter truncates spaces/empty values; use a fresh encoded snapshot.
+            const foreign = await settingsSnapshot();
             if (!foreign || typeof foreign !== 'object' || Array.isArray(foreign)) throw Error('Invalid addon settings');
             const settings = {...foreign, exodus_packet: JSON.stringify(packet)};
             for (const [key, value] of Object.entries(settings)) {
-                if (key.length > 29 || typeof value !== 'string' || bytes(value).length > 2999) throw Error('Addon setting exceeds firmware limit');
+                if (bytes(key).length > 29 || typeof value !== 'string' || bytes(value).length > 2999) throw Error('Addon setting exceeds firmware limit');
             }
             if (bytes(JSON.stringify(settings)).length > 7680) throw Error('Addon settings storage is full');
             check();

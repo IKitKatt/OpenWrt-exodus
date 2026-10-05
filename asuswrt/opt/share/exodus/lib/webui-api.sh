@@ -1,5 +1,6 @@
 #!/bin/sh
-# shellcheck shell=sh disable=SC2034
+# shellcheck shell=sh disable=SC2034,SC2030,SC2031
+# Each function scopes its runtime directory locally; EXIT traps use that scope.
 # Native Addons API transport. All user content stays in RAM files.
 webui_emit() {
 	local id seq phase status body target
@@ -41,7 +42,7 @@ webui_gc() (
 )
 
 webui_accept() (
-	local packet id seq count data dir next digest previous other free total status
+	local packet id seq count data dir next digest previous other free total status new=0
 	packet="$1"
 	[ -f "$packet" ] && [ "$(wc -c < "$packet")" -le 2999 ] || exit 1
 	jq -e 'type == "object" and .v == 1 and (.id|type == "string") and
@@ -63,7 +64,7 @@ webui_accept() (
 	free=$(awk '/MemAvailable:/ { print $2; found=1 } END { if(!found) print 0 }' /proc/meminfo)
 	[ "$free" -ge 16384 ] || { webui_error "$id" "$seq" 503 'not enough free RAM'; exit 1; }
 	lock_acquire webui-transfer 10 || { webui_error "$id" "$seq" 503 'transfer is busy'; exit 1; }
-	trap 'lock_release webui-transfer' EXIT
+	trap 'if [ "$new" = 1 ] && [ "$(cat "$dir/next" 2>/dev/null)" = 0 ]; then rm -rf "$dir"; fi; lock_release webui-transfer' EXIT
 	dir="$WEBUI_DIR/requests/$id"
 	digest=$(printf '%s' "$data" | sha256sum | cut -d ' ' -f 1)
 	if [ -f "$dir/$seq.digest" ]; then
@@ -88,8 +89,10 @@ webui_accept() (
 			[ ! -d "$other" ] || [ -f "$other/complete" ] || { webui_error "$id" "$seq" 503 'another transfer is active'; exit 1; }
 		done
 		mkdir "$dir" || exit 1
+		new=1
 		printf '%s\n' "$count" > "$dir/count"
 		echo 0 > "$dir/next"
+		date +%s > "$dir/touched"
 	fi
 	next=$(cat "$dir/next")
 	[ "$seq" -eq "$next" ] && [ "$count" = "$(cat "$dir/count")" ] || { webui_error "$id" "$seq" 409 'out of order chunk'; exit 1; }
@@ -131,9 +134,50 @@ webui_accept() (
 	date +%s > "$dir/touched"
 )
 
+webui_settings_snapshot() (
+	local id dir
+	id="$1"
+	case "$id" in ''|*[!0-9a-f]*) exit 1 ;; esac
+	[ "${#id}" -eq 32 ] || exit 1
+	umask 077
+	mkdir -p "$WEBUI_DIR/requests" "$WEBUI_DIR/responses"
+	lock_acquire webui-transfer 10 || exit 1
+	trap 'lock_release webui-transfer' EXIT
+	dir="$WEBUI_DIR/requests/$id"
+	if [ -d "$dir" ]; then
+		[ -f "$dir/settings-snapshot" ] && [ -f "$dir/result.json" ] || exit 1
+		cp "$dir/result.json" "$WEBUI_DIR/responses/$id.json.tmp" && mv -f "$WEBUI_DIR/responses/$id.json.tmp" "$WEBUI_DIR/responses/$id.json"
+		exit
+	fi
+	mkdir "$dir" || exit 1
+	date +%s > "$dir/touched"
+	if [ -f "$WEBUI_SETTINGS" ]; then
+		cp "$WEBUI_SETTINGS" "$dir/shared" || { rm -rf "$dir"; exit 1; }
+	else
+		: > "$dir/shared"
+	fi
+	# Only the first space is structural. Keep empty values and all remaining bytes.
+	jq -Rn '
+		reduce inputs as $line ({}; ($line | index(" ")) as $space |
+		if $space == null or $space == 0 then . else .[$line[:$space]] = $line[$space+1:] end)
+	' < "$dir/shared" > "$dir/body" || { rm -rf "$dir"; exit 1; }
+	webui_emit "$id" 0 complete 200 "$dir/body" || exit 1
+	cp "$WEBUI_DIR/responses/$id.json" "$dir/result.json" || exit 1
+	touch "$dir/settings-snapshot" "$dir/complete"
+	rm -f "$dir/body" "$dir/shared"
+)
+
 webui_event() (
-	local snapshot worker
-	[ "$1" = restart ] && [ "$2" = exodus_ui ] || exit 0
+	local snapshot worker mode=packet id=
+	[ "$1" = restart ] || exit 0
+	case "$2" in
+		exodus_ui) ;;
+		exodus_ui_settings_*)
+			mode=settings; id="${2#exodus_ui_settings_}"
+			case "$id" in ''|*[!0-9a-f]*) exit 1 ;; esac
+			[ "${#id}" -eq 32 ] || exit 1 ;;
+		*) exit 0 ;;
+	esac
 	umask 077
 	mkdir -p "$WEBUI_DIR/workers"
 	lock_acquire webui-event 10 || exit 1
@@ -141,8 +185,10 @@ webui_event() (
 	worker="$WEBUI_DIR/workers/$(random_hex 8)"
 	mkdir "$worker" || exit 1
 	snapshot="$worker/packet.json"
-	sed -n 's/^exodus_packet //p' "$WEBUI_SETTINGS" > "$snapshot"
-	[ -s "$snapshot" ] || { rm -rf "$worker"; exit 0; }
+	if [ "$mode" = packet ]; then
+		sed -n 's/^exodus_packet //p' "$WEBUI_SETTINGS" > "$snapshot"
+		[ -s "$snapshot" ] || { rm -rf "$worker"; exit 0; }
+	fi
 	# Snapshot every sourced function before launching: updates can replace /opt.
 	cp "$LIB_DIR/common.sh" "$LIB_DIR/api.sh" "$LIB_DIR/webui-api.sh" "$worker/" || exit 1
 	cat > "$worker/run.sh" <<'WORKER'
@@ -151,10 +197,10 @@ worker="${0%/*}"
 . "$worker/common.sh"
 . "$worker/api.sh"
 . "$worker/webui-api.sh"
-webui_accept "$worker/packet.json"
+if [ "$1" = settings ]; then webui_settings_snapshot "$2"; else webui_accept "$worker/packet.json"; fi
 rm -rf "$worker"
 WORKER
-	daemonize sh "$worker/run.sh"
+	daemonize sh "$worker/run.sh" "$mode" "$id"
 )
 
 webui_cache_refresh() (

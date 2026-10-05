@@ -15,7 +15,7 @@ class WebuiTests(ShellCase):
                    'http_enable': '0', 'http_lanport': '80', 'https_lanport': '8443', 'lan_ipaddr': '192.168.50.1'}
         self.write_nv()
         self.mock('nvram', 'sed -n "s/^$2=//p" "$EXODUS_JFFS/nvram"')
-        self.mock('mount', 'echo "$*" >> "$EXODUS_JFFS/mount.calls"')
+        self.mock('mount', 'echo "$*" >> "$EXODUS_JFFS/mount.calls"\nrm -f "$4"\nln -s "$3" "$4"')
         self.mock('umount', 'exit 0')
         (self.root / 'helper.sh').write_text('am_get_webui_page() { am_webui_page=user1.asp; }\n')
         (self.www / 'require/modules').mkdir(parents=True)
@@ -57,6 +57,16 @@ class WebuiTests(ShellCase):
         self.assertIn('foreign later change', menu.read_text())
         self.assertIn('Other addon', menu.read_text())
         self.assertNotIn('tabName: "Exodus"', menu.read_text())
+
+    def test_recovery_uses_visible_menu_preserving_new_foreign_entries(self):
+        self.web('webui_mount')
+        target=self.www/'require/modules/menuTree.js'
+        visible=(ROOT/'tests/fixtures/menuTree.js').read_text()+'\n// new foreign menu entry\n'
+        target.unlink(); target.write_text(visible)
+        self.assertNotEqual(self.web('webui_status',False).returncode,0)
+        self.web('webui_mount')
+        self.assertIn('new foreign menu entry',target.read_text())
+        self.assertEqual(target.read_text().count('tabName: "Exodus"'),1)
 
     def test_all_slots_busy(self):
         for i in range(1, 21):

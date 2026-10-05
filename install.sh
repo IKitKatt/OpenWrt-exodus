@@ -456,6 +456,15 @@ for name in firewall-start nat-start unmount services-start service-event; do
  [ ! -f "$EXODUS_JFFS/scripts/$name" ] || cp -p "$EXODUS_JFFS/scripts/$name" "$temp_dir/backup/$name" || fail "hook backup failed"
 done
 [ ! -f "$EXODUS_OPT/etc/init.d/S99exodus" ] || cp -p "$EXODUS_OPT/etc/init.d/S99exodus" "$temp_dir/backup/S99exodus" || fail "init backup failed"
+# code is replaced, settings and profiles are kept
+echo "install exodus"
+rm -rf "$share_dir.new"
+mkdir -p "$share_dir.new" || fail "can not create $share_dir"
+cp -R "$src/asuswrt/opt/share/exodus/." "$share_dir.new/" || fail "install failed, not enough free space?"
+# the installer from the repository root, used by the update page
+cp -f "$src/install.sh" "$share_dir.new/install.sh"
+jq -n --arg ref "$ref" --arg commit "$commit" --arg code "$code" --arg installed "$(date '+%Y-%m-%d %H:%M:%S')" \
+	'{ref: $ref, commit: $commit, code: $code, installed: $installed}' > "$share_dir.new/BUILD"
 was_web_running=0
 # Never trust a stale PID file to stop another addon's server.
 (
@@ -469,15 +478,6 @@ was_web_running=0
 )
 [ ! -f "$temp_dir/backup/web-active" ] || was_web_running=1
 
-# code is replaced, settings and profiles are kept
-echo "install exodus"
-rm -rf "$share_dir.new"
-mkdir -p "$share_dir.new" || fail "can not create $share_dir"
-cp -R "$src/asuswrt/opt/share/exodus/." "$share_dir.new/" || fail "install failed, not enough free space?"
-# the installer from the repository root, used by the update page
-cp -f "$src/install.sh" "$share_dir.new/install.sh"
-jq -n --arg ref "$ref" --arg commit "$commit" --arg code "$code" --arg installed "$(date '+%Y-%m-%d %H:%M:%S')" \
-	'{ref: $ref, commit: $commit, code: $code, installed: $installed}' > "$share_dir.new/BUILD"
 rm -rf "$share_dir.old"
 [ -d "$share_dir" ] && mv "$share_dir" "$share_dir.old"
 migration_pending=1
