@@ -2,6 +2,24 @@ import json
 import shutil
 from shell_support import ShellCase, ROOT
 
+FIRMWARE_CASES = [
+    ('3.0.0.4', '384', '14', False),
+    ('3.0.0.4', '384', '15', True),
+    ('3.0.0.4', '384', '15_1', True),
+    ('3.0.0.4', '386', '1', True),
+    ('3.0.0.4', '388', '9', True),
+    ('3.0.0.4', '388', '12_2', True),
+    ('3004', '388', '12_2', True),
+    ('3.0.0.6', '102', '0', False),
+    ('3.0.0.6', '102', '1', True),
+    ('3.0.0.6', '102', '1_2', True),
+    ('3.0.0.6', '102', '2', True),
+    ('3.0.0.6', '103', '0', True),
+    ('unknown', '102', '1', False),
+    ('3.0.0.4', 'invalid', '15', False),
+    ('3.0.0.4', '388', '', False),
+]
+
 
 class WebuiTests(ShellCase):
     def test_native_banner_form_target_exists(self):
@@ -30,15 +48,28 @@ class WebuiTests(ShellCase):
         return self.sh(command, ('webui',), check)
 
     def test_minimum_version(self):
-        for firm, build, ext, valid in [('3.0.0.6','102','1', True), ('3.0.0.6','102','2',True),
-                                        ('3.0.0.6','102','0',False), ('3.0.0.4','388','9',False),
-                                        ('unknown','102','1',False)]:
+        for firm, build, ext, valid in FIRMWARE_CASES:
             self.nv.update(firmver=firm, buildno=build, extendno=ext)
             self.write_nv()
-            self.assertEqual(self.web('webui_preflight', False).returncode == 0, valid)
+            self.assertEqual(self.web('webui_preflight', False).returncode == 0, valid,(firm,build,ext))
         self.nv.update(firmver='3.0.0.6', extendno='1', **{'3rd-party':'stock'})
         self.write_nv()
         self.assertNotEqual(self.web('webui_preflight', False).returncode, 0)
+
+    def test_supported_version_still_requires_addons_and_helper(self):
+        self.nv.update(firmver='3.0.0.4',buildno='388',extendno='12_2',rc_support='other_feature')
+        self.write_nv()
+        self.assertNotEqual(self.web('webui_preflight',False).returncode,0)
+        self.nv['rc_support']='am_addons'; self.write_nv()
+        (self.root/'helper.sh').unlink()
+        self.assertNotEqual(self.web('webui_preflight',False).returncode,0)
+
+    def test_384_15_uses_page_slot_from_firmware_helper(self):
+        self.nv.update(firmver='3.0.0.4',buildno='384',extendno='15'); self.write_nv()
+        (self.root/'helper.sh').write_text('am_get_webui_page() { am_webui_page=user10.asp; }\n')
+        self.web('webui_mount')
+        self.assertEqual((self.ram/'run/webui/page').read_text().strip(),'user10.asp')
+        self.assertIn('page:exodus',(self.www/'user/user10.asp').read_text())
 
     def test_slot_reused_after_content_update(self):
         self.web('webui_mount')

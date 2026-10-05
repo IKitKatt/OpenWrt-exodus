@@ -5,13 +5,13 @@
 
 # Exodus for Asuswrt-Merlin
 
-Proxy with [Mihomo](https://github.com/MetaCubeX/mihomo) for Asus routers with [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) and Entware. This is the `asuswrt-native` branch of [Exodus](https://github.com/prettyleaf/openwrt-exodus): the OpenWrt version lives in `main`, the Keenetic one in `keenetic`.
+Proxy with [Mihomo](https://github.com/MetaCubeX/mihomo) for Asus routers with [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) and Entware. This is the `asuswrt-native` test branch of the [IKitKatt fork](https://github.com/IKitKatt/openwrt-exodus/tree/asuswrt-native) of [Exodus](https://github.com/prettyleaf/openwrt-exodus): the OpenWrt version lives in the original project's `main` branch, the Keenetic one in `keenetic`.
 
 It borrows ideas from [XKeen](https://github.com/jameszeroX/XKeen).
 
 ## Requirements
 
-- Asuswrt-Merlin **3006.102.1 or newer**, with Addons API (`am_addons`), `/usr/sbin/helper.sh` and writable `/jffs/addons`. Stock firmware and older Merlin releases are rejected before installation changes.
+- Asuswrt-Merlin **384.15 or newer** on the `3004` family (`384/386/388`), or **3006.102.1 or newer** on the `3006` family, with Addons API (`am_addons`), `/usr/sbin/helper.sh` and writable `/jffs/addons`. **3004.388.12_2 on RT-AX86U passes the version check.** Stock firmware and unsupported versions are rejected before installation changes. Addons API has been available since 384.15; see the [Merlin documentation](https://github.com/RMerl/asuswrt-merlin.ng/wiki/Addons-API).
 - The installer selects the core build for the router CPU. The router model must support the minimum firmware version above.
 - Entware on a USB drive, installed with [amtm](https://github.com/decoderman/amtm) (`amtm` → `ep`), and about 70 MB free on it: the Mihomo core is about 40 MB, yq about 15 MB.
 - Other transparent proxies (XRAYUI and similar addons) must be stopped and removed from autostart, they intercept the same traffic.
@@ -30,7 +30,7 @@ To install the current local implementation, use the [Native bundle and recovery
 In the SSH console of the router:
 
 ```shell
-curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt-native/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/IKitKatt/openwrt-exodus/asuswrt-native/install.sh | sh
 ```
 
 At the end it prints the Web Admin URL of the allocated `userN.asp` page. Sign in to the router and open **VPN → Exodus**. Exodus uses the router administrator session and its HTTP/HTTPS port; a separate listener on port 9099 and the `PASSWORD` option are no longer used.
@@ -38,7 +38,7 @@ At the end it prints the Web Admin URL of the allocated `userN.asp` page. Sign i
 Options can be passed as environment variables before `sh`:
 
 ```shell
-curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt-native/install.sh | CORE=alpha sh
+curl -fsSL https://raw.githubusercontent.com/IKitKatt/openwrt-exodus/asuswrt-native/install.sh | CORE=alpha sh
 ```
 
 | Variable | Meaning |
@@ -47,7 +47,7 @@ curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt-n
 | `GH_PROXY` | download from GitHub through [gh-proxy](https://github.com/prettyleaf/gh-proxy): `https://example.com/ghproxy/TOKEN` |
 | `LOW_SPACE=1` | remove the current core before writing the new one |
 | `REF` | another branch or tag; default: `asuswrt-native` |
-| `REPOSITORY` | application fork as `owner/repo`; default: `prettyleaf/openwrt-exodus` |
+| `REPOSITORY` | application fork as `owner/repo`; default: `IKitKatt/openwrt-exodus` |
 
 ### Versions
 
@@ -105,7 +105,7 @@ KEEP_CONFIG=1 sh /opt/share/exodus/uninstall.sh
 If the installed CLI is damaged, use `uninstall.sh` from the saved bundle; see the [recovery instructions](INSTALL-ASUSWRT.RU.md). Omitting `KEEP_CONFIG=1` also deletes Exodus data. Installation and removal share an exclusive lock. Cleanup failures return a nonzero status rather than reporting success.
 
 ```shell
-curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt-native/uninstall.sh | sh
+curl -fsSL https://raw.githubusercontent.com/IKitKatt/openwrt-exodus/asuswrt-native/uninstall.sh | sh
 ```
 
 The lines of Exodus are removed from `/jffs/scripts`, the lines of other addons are kept. With `KEEP_CONFIG=1` the settings, profiles and subscriptions in `/opt/etc/exodus` are kept. Entware packages are not removed, other applications may use them.

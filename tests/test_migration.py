@@ -71,6 +71,7 @@ esac''')
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         build=json.loads((self.share/'BUILD').read_text())
         self.assertEqual(build['ref'],'asuswrt-native')
+        self.assertEqual(build['repository'],'IKitKatt/openwrt-exodus')
         calls=(self.jffs/'curl.calls').read_text()
         self.assertIn('/archive/asuswrt-native.tar.gz',calls)
         self.assertNotIn('/archive/asuswrt.tar.gz',calls)
@@ -84,6 +85,15 @@ esac''')
         self.assertEqual(build.get('repository'),'router-owner/Exodus-fork')
         self.assertEqual(build['ref'],'asuswrt-native')
         self.assertIn('https://github.com/router-owner/Exodus-fork/archive/asuswrt-native.tar.gz',(self.jffs/'curl.calls').read_text())
+
+    def test_ax86u_3004_388_12_2_installs_native_ui(self):
+        self.bundle()
+        self.nv.update(productid='RT-AX86U',firmver='3.0.0.4',buildno='388',extendno='12_2')
+        self.write_nv()
+        result=self.install()
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.web('webui_status')
+        self.assertEqual(json.loads((self.share/'BUILD').read_text())['repository'],'IKitKatt/openwrt-exodus')
 
     def repack(self):
         with tarfile.open(self.env['FIXTURE_ARCHIVE'],'w:gz') as tar:
@@ -324,10 +334,12 @@ esac''')
         self.assertTrue((self.share/'exodus').is_file())
 
     def test_installer_and_helper_version_bounds_agree(self):
-        for firm,build,ext in [('3.0.0.6','102','1'),('3.0.0.6','102','2'),('3.0.0.6','102','0'),('3.0.0.4','388','9'),('unknown','102','1')]:
+        self.mock('curl','exit 1')
+        for firm,build,ext,expected in test_webui.FIRMWARE_CASES:
             self.nv.update(firmver=firm,buildno=build,extendno=ext); self.write_nv()
             calls=self.jffs/'opkg.calls'; calls.unlink(missing_ok=True)
             valid=self.web('webui_preflight',False).returncode==0
+            self.assertEqual(valid,expected,(firm,build,ext))
             self.install()
             self.assertEqual(calls.exists(),valid,(firm,build,ext))
 

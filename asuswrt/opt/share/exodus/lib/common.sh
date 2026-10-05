@@ -40,7 +40,7 @@ if ! printf '' | md5sum > /dev/null 2>&1; then
 	}
 fi
 
-REPOSITORY="prettyleaf/openwrt-exodus"
+REPOSITORY="IKitKatt/openwrt-exodus"
 BRANCH="asuswrt-native"
 
 # code, replaced on update

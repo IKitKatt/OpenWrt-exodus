@@ -11,7 +11,7 @@
 # SOURCE_DIR=<dir>  install application files from an extracted local bundle; dependencies still need internet
 # the core and GH_PROXY are saved in $EXODUS_OPT/etc/exodus/config.json, the next runs and the update page use them
 
-repository="${REPOSITORY:-prettyleaf/openwrt-exodus}"
+repository="${REPOSITORY:-IKitKatt/openwrt-exodus}"
 ref="${REF:-asuswrt-native}"
 
 EXODUS_OPT="${EXODUS_OPT:-/opt}"
@@ -261,11 +261,15 @@ merlin_preflight() {
 	build=$(nvram get buildno)
 	ext=$(nvram get extendno | sed 's/[^0-9].*//')
 	case "$firm:$build:$ext" in *[!0-9:]*|:*|*::*|*:) return 1 ;; esac
-	[ "$firm" -gt 3006 ] || { [ "$firm" -eq 3006 ] && { [ "$build" -gt 102 ] || { [ "$build" -eq 102 ] && [ "$ext" -ge 1 ]; }; }; }
+	case "$firm" in
+		3004) [ "$build" -gt 384 ] || { [ "$build" -eq 384 ] && [ "$ext" -ge 15 ]; } ;;
+		3006) [ "$build" -gt 102 ] || { [ "$build" -eq 102 ] && [ "$ext" -ge 1 ]; } ;;
+		*) [ "$firm" -gt 3006 ] ;;
+	esac
 }
 
 # check env
-merlin_preflight || fail "Merlin 3006.102.1+ with Addons API and writable JFFS is required"
+merlin_preflight || fail "Merlin 384.15+ (3004, including 386/388) or 3006.102.1+ with Addons API and writable JFFS is required"
 if [ ! -x "$EXODUS_OPT/bin/opkg" ]; then
 	fail "Entware is not installed: install it with amtm on a USB drive first"
 fi

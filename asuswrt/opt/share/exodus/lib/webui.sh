@@ -11,7 +11,11 @@ webui_preflight() {
 	build=$(nvram get buildno)
 	ext=$(nvram get extendno | sed 's/[^0-9].*//')
 	case "$firm:$build:$ext" in *[!0-9:]*|:*|*::*|*:) return 1 ;; esac
-	[ "$firm" -gt 3006 ] || { [ "$firm" -eq 3006 ] && { [ "$build" -gt 102 ] || { [ "$build" -eq 102 ] && [ "$ext" -ge 1 ]; }; }; }
+	case "$firm" in
+		3004) [ "$build" -gt 384 ] || { [ "$build" -eq 384 ] && [ "$ext" -ge 15 ]; } ;;
+		3006) [ "$build" -gt 102 ] || { [ "$build" -eq 102 ] && [ "$ext" -ge 1 ]; } ;;
+		*) [ "$firm" -gt 3006 ] ;;
+	esac
 }
 
 webui_owned_page() {
@@ -44,7 +48,7 @@ webui_menu() {
 
 webui_mount() (
 	local page file
-	webui_preflight || { echo 'Exodus requires Merlin 3006.102.1+ with Addons API and writable JFFS.' >&2; exit 1; }
+	webui_preflight || { echo 'Exodus requires Merlin 384.15+ (3004, including 386/388) or 3006.102.1+ with Addons API and writable JFFS.' >&2; exit 1; }
 	[ -r "$SHARE_DIR/www/Exodus.asp" ] || exit 1
 	mkdir -p "$WEBUI_DIR" "$WEBUI_ADDON" "$WEBUI_PUBLIC" || exit 1
 	# Serialize Exodus registrations; always edit the current shared menu.
