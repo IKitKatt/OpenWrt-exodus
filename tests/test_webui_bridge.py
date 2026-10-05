@@ -149,6 +149,21 @@ class BridgeTests(ShellCase):
         # Snapshot records are complete and do not block a subsequent operation.
         self.assertEqual(self.accept(self.packets(dict(action='load'),'b'*32)[0])['phase'],'complete')
 
+    def test_settings_worker_without_setsid_uses_absolute_shell(self):
+        # Firmware may only provide start-stop-daemon, whose -x requires a path.
+        ident='d'*32
+        self.mock('start-stop-daemon', '''[ "$1" = -S ] && [ "$2" = -b ] && [ "$3" = -x ] || exit 1
+case "$4" in /*) ;; *) echo 'absolute executable required' >&2; exit 1 ;; esac
+exe="$4"; shift 5
+"$exe" "$@" </dev/null >/dev/null 2>&1 &''')
+        self.sh(f'''have() {{ [ "$1" != setsid ]; }}
+webui_event restart exodus_ui_settings_{ident}''',('webui-api',))
+        response=self.ram/f'run/webui/responses/{ident}.json'
+        deadline=time.time()+5
+        while not response.exists() and time.time()<deadline: time.sleep(.1)
+        self.assertTrue(response.exists(), 'native snapshot never received a response')
+        self.assertEqual(json.loads(base64.b64decode(json.loads(response.read_text())['body'])),{})
+
     def test_foreign_setting_preserved_and_unrelated_event_ignored(self):
         settings = self.jffs / 'addons/custom_settings.txt'
         settings.write_text('other_addon untouched\n')

@@ -61,6 +61,8 @@
             if (!form) throw Error('Native apply form is missing');
             form.elements.current_page.value = root.location.pathname.replace(/^\//, '');
             form.elements.next_page.value = form.elements.current_page.value;
+            // Merlin start_apply.htm otherwise reloads the parent after every post.
+            form.elements.flag.value = 'background';
             form.elements.action_script.value = script;
             // A snapshot event must not invoke firmware's replacement writer.
             form.elements.amng_custom.disabled = settings == null;

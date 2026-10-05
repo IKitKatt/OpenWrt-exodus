@@ -299,6 +299,7 @@ esac''')
         self.assertTrue(result.stdout.strip().splitlines()[-1].startswith('error:'))
 
     def test_broken_cli_uninstall_stops_owned_watch(self):
+        self.mock('id', 'echo "sh: id: not found" >&2; exit 127')
         (self.share/'exodus').write_text('#!/bin/sh\nexit 1\n')
         child=subprocess.Popen(['sh','-c','trap "exit 0" TERM; while :; do sleep 1; done',str(self.share/'exodus'),'watch'],env=self.env)
         def cleanup():
@@ -309,6 +310,7 @@ esac''')
         result=subprocess.run(['sh',str(script)],env=self.env,capture_output=True,text=True,timeout=20)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         self.assertIsNotNone(child.poll(),'owned watcher still running after uninstall')
+        self.assertNotIn('id: not found',result.stderr)
 
     def test_uninstall_menu_failure_keeps_files_and_reports_error(self):
         self.web('webui_mount')

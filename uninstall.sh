@@ -14,6 +14,9 @@ export PATH="$EXODUS_OPT/bin:$EXODUS_OPT/sbin:/sbin:/bin:/usr/sbin:/usr/bin"
 
 fail() { echo "error: $1"; exit 1; }
 case "$EXODUS_TMP" in /*/exodus) ;; *) fail "EXODUS_TMP must be an absolute Exodus directory" ;; esac
+# Merlin does not necessarily provide id. Compare effective UIDs from procfs.
+current_uid=$(awk '/^Uid:/ {print $3}' "/proc/$$/status" 2>/dev/null)
+case "$current_uid" in ''|*[!0-9]*) fail "can not determine process owner from /proc; installation kept" ;; esac
 install_lock="$EXODUS_OPT/tmp/exodus-install.lock"
 mkdir -p "$EXODUS_OPT/tmp" || fail "can not create lock storage"
 mkdir "$install_lock" 2>/dev/null || fail "another installation or removal owns $install_lock; resolve stale locks before retrying"
@@ -27,8 +30,8 @@ proc_root="${EXODUS_PROC:-/proc}"
 owned_process() {
  local pid="$1" role="$2" cmd owner exe
  [ -r "$proc_root/$pid/cmdline" ] || return 1
- owner=$(awk '/^Uid:/ {print $2}' "$proc_root/$pid/status" 2>/dev/null)
- [ "$owner" = "$(id -u)" ] || return 1
+ owner=$(awk '/^Uid:/ {print $3}' "$proc_root/$pid/status" 2>/dev/null)
+ [ "$owner" = "$current_uid" ] || return 1
  cmd=$(tr '\000' '\n' < "$proc_root/$pid/cmdline")
  if [ "$role" = core ]; then
   exe=$(readlink "$proc_root/$pid/exe" 2>/dev/null)

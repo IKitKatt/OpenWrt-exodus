@@ -113,7 +113,7 @@ test('missing shared settings starts from empty object without firmware eval', a
 test('native snapshot form omits amng_custom and packet form restores it', async()=>{
     const previousDocument=globalThis.document, previousLocation=globalThis.location;
     let clock=0, serial=0;
-    const posts=[], fields=Object.fromEntries(['current_page','next_page','action_script','amng_custom'].map(key=>[key,{value:'',disabled:false}]));
+    const posts=[], fields=Object.fromEntries(['flag','current_page','next_page','action_script','amng_custom'].map(key=>[key,{value:'',disabled:false}]));
     const form={elements:fields,submit(){posts.push(Object.fromEntries(Object.entries(fields).filter(([,field])=>!field.disabled).map(([name,field])=>[name,field.value])));}};
     globalThis.document={getElementById:()=>form}; globalThis.location={pathname:'/user3.asp'};
     try {
@@ -125,6 +125,7 @@ test('native snapshot form omits amng_custom and packet form restores it', async
             }});
         assert.equal((await f.request('load')).success,true);
         assert.equal(posts.length,2);
+        assert.ok(posts.every(post=>post.flag==='background'), 'native requests must not redirect or show firmware Loading');
         assert.ok(!('amng_custom' in posts[0]));
         assert.equal(posts[1].action_script,'restart_exodus_ui');
         assert.equal(JSON.parse(posts[1].amng_custom).other,'Cool Addon 1.0');

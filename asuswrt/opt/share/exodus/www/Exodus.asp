@@ -17,6 +17,7 @@
 <iframe name="exodus_apply_frame" id="exodus_apply_frame" hidden></iframe>
 <form id="exodus_apply" method="post" action="/start_apply.htm" target="exodus_apply_frame">
 <input type="hidden" name="action_mode" value="apply">
+<input type="hidden" name="flag" value="background">
 <input type="hidden" name="action_script" value="restart_exodus_ui">
 <input type="hidden" name="action_wait" value="1">
 <input type="hidden" name="current_page"><input type="hidden" name="next_page">

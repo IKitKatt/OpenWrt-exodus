@@ -217,7 +217,8 @@ worker="${0%/*}"
 if [ "$1" = settings ]; then webui_settings_snapshot "$2"; else webui_accept "$worker/packet.json"; fi
 rm -rf "$worker"
 WORKER
-	daemonize sh "$worker/run.sh" "$mode" "$id"
+	# start-stop-daemon -x does not search PATH when setsid is unavailable.
+	daemonize /bin/sh "$worker/run.sh" "$mode" "$id"
 )
 
 webui_cache_refresh() (
