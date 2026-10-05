@@ -11,6 +11,8 @@ It borrows ideas from [XKeen](https://github.com/jameszeroX/XKeen).
 
 ## Requirements
 
+The installer installs `curl`, `jq`, `ca-bundle` and `coreutils-base64` through Entware. It checks Base64 encoding and decoding before replacing Exodus; cache generation failures abort activation and trigger rollback.
+
 - Asuswrt-Merlin **384.15 or newer** on the `3004` family (`384/386/388`), or **3006.102.1 or newer** on the `3006` family, with Addons API (`am_addons`), `/usr/sbin/helper.sh` and writable `/jffs/addons`. **3004.388.12_2 on RT-AX86U passes the version check.** Stock firmware and unsupported versions are rejected before installation changes. Addons API has been available since 384.15; see the [Merlin documentation](https://github.com/RMerl/asuswrt-merlin.ng/wiki/Addons-API).
 - The installer selects the core build for the router CPU. The router model must support the minimum firmware version above.
 - Entware on a USB drive, installed with [amtm](https://github.com/decoderman/amtm) (`amtm` → `ep`), and about 70 MB free on it: the Mihomo core is about 40 MB, yq about 15 MB.

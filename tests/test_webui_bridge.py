@@ -6,6 +6,30 @@ from shell_support import ShellCase
 
 
 class BridgeTests(ShellCase):
+    def test_failed_encoding_does_not_publish_empty_response(self):
+        self.mock('base64', 'exit 127')
+        body = self.root/'body.json'; body.write_text('{"ok":true}')
+        result = self.sh(f'webui_emit "'+('a'*32)+f'" 0 complete 200 "{body}"', ('webui-api',), False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.ram/('run/webui/responses/'+('a'*32)+'.json')).exists())
+
+    def test_failed_encoding_does_not_publish_cache_or_heartbeat(self):
+        self.mock('base64', 'exit 127')
+        result = self.sh('webui_cache_refresh', ('api', 'webui-api'), False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.ram/'run/webui/cache/status.json').exists())
+        self.assertFalse((self.ram/'run/webui/cache/heartbeat.json').exists())
+
+    def test_empty_legacy_log_cache_is_rebuilt_without_log_changes(self):
+        self.sh('webui_cache_refresh', ('api', 'webui-api'))
+        path=self.ram/'run/webui/cache/log-app.json'
+        envelope=json.loads(path.read_text()); envelope['body']=''
+        path.write_text(json.dumps(envelope))
+        self.sh('webui_cache_refresh', ('api', 'webui-api'))
+        body=json.loads(path.read_text())['body']
+        self.assertTrue(body)
+        self.assertIsInstance(json.loads(base64.b64decode(body)),dict)
+
     def packets(self, request, ident='a' * 32, size=1800):
         data = base64.b64encode(json.dumps(request, ensure_ascii=False).encode()).decode()
         parts = [data[i:i+size] for i in range(0, len(data), size)]

@@ -75,6 +75,16 @@ esac''')
         calls=(self.jffs/'curl.calls').read_text()
         self.assertIn('/archive/asuswrt-native.tar.gz',calls)
         self.assertNotIn('/archive/asuswrt.tar.gz',calls)
+        self.assertIn('coreutils-base64',(self.jffs/'opkg.calls').read_text())
+
+    def test_installer_rejects_unusable_base64_before_replacing_code(self):
+        self.mock('base64', 'exit 127')
+        previous=(self.home/'config.json').read_bytes()
+        result=self.install()
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('base64',result.stdout)
+        self.assertEqual((self.home/'config.json').read_bytes(),previous)
+        self.assertFalse((self.jffs/'curl.calls').exists())
 
     def test_fork_repository_is_used_and_saved(self):
         self.bundle()
@@ -135,6 +145,19 @@ esac''')
         self.assertEqual(json.loads((self.share/'BUILD').read_text())['code'],'fixture')
         self.assertTrue(result.stdout.strip().splitlines()[-1].startswith('error:'))
         self.web('webui_status')
+
+    def test_cache_encoder_failure_rolls_back_instead_of_reporting_success(self):
+        self.bundle()
+        api=self.root/'source/repo/asuswrt/opt/share/exodus/lib/webui-api.sh'
+        api.write_text(api.read_text()+'\nbase64() { return 1; }\n')
+        self.repack()
+        previous=(self.home/'config.json').read_bytes()
+        result=self.install()
+        self.assertNotEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('base64 encoding failed',result.stderr)
+        self.assertTrue(result.stdout.strip().splitlines()[-1].startswith('error:'))
+        self.assertEqual((self.home/'config.json').read_bytes(),previous)
+        self.assertEqual(json.loads((self.share/'BUILD').read_text())['code'],'fixture')
 
     def test_web_url_failure_or_empty_output_rolls_back(self):
         self.bundle()

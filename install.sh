@@ -352,7 +352,10 @@ trap 'fail "installation interrupted by TERM"' TERM
 # iptables and ipset are of the firmware, they match its kernel
 echo "install packages"
 opkg update > /dev/null 2>&1 || echo "warning: opkg update failed"
-opkg install curl jq ca-bundle || fail "package install failed"
+opkg install curl jq ca-bundle coreutils-base64 || fail "package install failed"
+have base64 || fail "base64 is unavailable after installing coreutils-base64"
+[ "$(printf 'Exodus' | base64 2> /dev/null | tr -d '\n')" = RXhvZHVz ] || fail "base64 encoding failed; check coreutils-base64"
+[ "$(printf RXhvZHVz | base64 -d 2> /dev/null)" = Exodus ] || fail "base64 decoding failed; check coreutils-base64"
 # secrets, the password and the update check need sha-256: sha256sum or openssl of the firmware
 printf '' | sha256sum 2> /dev/null | grep -q '^[0-9a-f]\{64\}' || fail "sha256sum is not found and openssl can not compute sha-256"
 [ ! -f "$config" ] || jq -e 'type == "object"' "$config" > /dev/null 2>&1 || fail "existing config.json is not a valid JSON object"

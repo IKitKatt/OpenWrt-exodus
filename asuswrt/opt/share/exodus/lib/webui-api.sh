@@ -2,15 +2,26 @@
 # shellcheck shell=sh disable=SC2034,SC2030,SC2031
 # Each function scopes its runtime directory locally; EXIT traps use that scope.
 # Native Addons API transport. All user content stays in RAM files.
+webui_encode() (
+	local source encoded
+	source="$1"; encoded="$source.base64.$$"
+	trap 'rm -f "$encoded"' EXIT
+	# Do not hide a failed encoder behind tr's successful pipeline exit status.
+	base64 < "$source" > "$encoded" || { echo 'Exodus WebUI: base64 encoding failed; check coreutils-base64' >&2; exit 1; }
+	tr -d '\n' < "$encoded"
+)
+
 webui_emit() {
 	local id seq phase status body target
 	id="$1"; seq="$2"; phase="$3"; status="$4"; body="$5"
 	target="$WEBUI_DIR/responses/$id.json"
 	[ -d "$WEBUI_DIR/responses" ] || mkdir -p "$WEBUI_DIR/responses"
 	# Base64 keeps do_ej from evaluating template delimiters in user content.
-	base64 < "$body" | tr -d '\n' > "$target.body"
-	jq -cn --arg id "$id" --argjson seq "$seq" --arg phase "$phase" --argjson status "$status" \
-		--rawfile body "$target.body" '{v:1,id:$id,seq:$seq,phase:$phase,status:$status,body:$body}' > "$target.tmp" && mv -f "$target.tmp" "$target"
+	webui_encode "$body" > "$target.body" || { rm -f "$target.body"; return 1; }
+	if ! { jq -cn --arg id "$id" --argjson seq "$seq" --arg phase "$phase" --argjson status "$status" \
+		--rawfile body "$target.body" '{v:1,id:$id,seq:$seq,phase:$phase,status:$status,body:$body}' > "$target.tmp" && mv -f "$target.tmp" "$target"; }; then
+		rm -f "$target.body" "$target.tmp"; return 1
+	fi
 	rm -f "$target.body"
 }
 
@@ -212,7 +223,8 @@ WORKER
 webui_cache_refresh() (
 	local name key req result target fingerprint previous now body
 	umask 077
-	mkdir -p "$WEBUI_DIR/cache"
+	mkdir -p "$WEBUI_DIR/cache" || exit 1
+	trap 'rm -f "$req" "$result" "$result.body" "$body"' EXIT
 	for name in status app core update debug web; do
 		if [ "$name" = status ]; then key=status; else key="log-$name"; fi
 		target="$WEBUI_DIR/cache/$key.json"
@@ -220,7 +232,8 @@ webui_cache_refresh() (
 		if [ "$name" != status ]; then
 			fingerprint=$(stat -c '%i:%s:%Y' "$(log_path "$name")" 2> /dev/null || echo absent)
 			previous=$(cat "$target.fingerprint" 2> /dev/null)
-			if [ "$fingerprint" = "$previous" ] && [ -f "$target" ]; then
+			if [ "$fingerprint" = "$previous" ] && [ -f "$target" ] &&
+				jq -e '.v == 1 and (.body | type == "string" and length > 0)' "$target" > /dev/null 2>&1; then
 				# Refresh the liveness timestamp separately; unchanged log payload is not rewritten.
 				continue
 			fi
@@ -228,12 +241,14 @@ webui_cache_refresh() (
 		req="$WEBUI_DIR/cache/request.$$"; result="$WEBUI_DIR/cache/result.$$"
 		if [ "$name" = status ]; then echo '{"action":"status"}' > "$req";
 		else jq -cn --arg name "$name" '{action:"log_read",name:$name}' > "$req"; fi
-		api_run "$req" "$result" || continue
-		jq -c .data "$result" | base64 | tr -d '\n' > "$result.body"
+		api_run "$req" "$result" || exit 1
+		body="$result.data"
+		jq -c .data "$result" > "$body" || exit 1
+		webui_encode "$body" > "$result.body" || exit 1
 		jq -cn --arg key "$key" --argjson now "$now" --argjson status "$(jq -r .status "$result")" --rawfile body "$result.body" \
-			'{v:1,key:$key,generated:$now,status:$status,body:$body}' > "$target.tmp" && mv -f "$target.tmp" "$target"
+			'{v:1,key:$key,generated:$now,status:$status,body:$body}' > "$target.tmp" && mv -f "$target.tmp" "$target" || exit 1
 		[ "$name" = status ] || printf '%s\n' "$fingerprint" > "$target.fingerprint"
-		rm -f "$req" "$result" "$result.body"
+		rm -f "$req" "$result" "$result.body" "$body"
 	done
 	jq -cn --argjson now "$(date +%s)" '{v:1,generated:$now}' > "$WEBUI_DIR/cache/heartbeat.json.tmp" && mv -f "$WEBUI_DIR/cache/heartbeat.json.tmp" "$WEBUI_DIR/cache/heartbeat.json"
 )

@@ -1,8 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
 const require = createRequire(import.meta.url);
 const {createTransport, encode, decode} = require('../asuswrt/opt/share/exodus/www/merlin.js');
+test('firmware jQuery bundle loads before state.js installs RequireJS', ()=>{
+    const asp = readFileSync(new URL('../asuswrt/opt/share/exodus/www/Exodus.asp', import.meta.url), 'utf8');
+    const scripts = [...asp.matchAll(/<script\s+src="([^"]+)"/g)].map(match=>match[1]);
+    assert.ok(scripts.indexOf('/js/jquery.js') < scripts.indexOf('/state.js'));
+    assert.equal(scripts.filter(path=>path==='/js/jquery.js').length, 1);
+});
 const json = value => ({ok:true,status:200,headers:{get:()=> 'application/json'},text:async()=>JSON.stringify(value)});
 function fixture(options={}) {
     let packet, snapshot, calls=[], counter=0, settings={other:'initial'}, clock=100000;
