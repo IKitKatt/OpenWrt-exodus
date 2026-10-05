@@ -38,7 +38,7 @@ typography:
     letterSpacing: "-.02em"
   title:
     fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-    fontSize: "18px"
+    fontSize: "17px"
     fontWeight: 650
     lineHeight: 1.35
     letterSpacing: "-.015em"
@@ -153,7 +153,7 @@ components:
 
 Exodus gives router administrators a clear workspace for device selection and configuration. A charcoal canvas, dark task surfaces, ivory text and violet actions organize everyday network work. The firmware still owns the ASUS header, sidebar, VPN navigation and footer; the addon owns the visual system inside its content region.
 
-The shipped interface uses flat task panels, stacked labeled fields and restrained state feedback. Useful descriptions and contextual help support dense configuration without adding decorative metrics. Explicit draft actions keep selection, saving and applying understandable.
+The shipped desktop interface starts with Service, then Selected, then full-width Networks and Devices discovery panels in that order. Flat task panels, stacked labeled fields and restrained state feedback support dense configuration. Icon-only contextual help opens on hover or keyboard focus. Explicit draft actions keep selection, saving and applying understandable. The addon header carries identity and navigation; service status and version details stay in their relevant panels.
 
 **Key Characteristics:**
 
@@ -200,27 +200,27 @@ Success, warning and danger pair dark semantic foregrounds with their correspond
 
 ### Hierarchy
 
-- **Headline:** page task heading; reduces to (22px) in the narrow container.
+- **Headline:** page task heading.
 - **Identity:** the compact Exodus name. Dialog titles share the size with weight (650) and line-height (1.3).
 - **Title:** task-panel heading and settings result-group title.
-- **Body / Label:** ordinary content and controls, with stronger labels and actions.
-- **Description:** supporting field help, search summaries and editor/log status.
-- **Metadata:** addresses, profile details and compact status badges; badges use weight (600).
+- **Body / Label:** ordinary content and controls share the same system UI family and (14px) size; headings and action emphasis provide hierarchy.
+- **Description:** supporting field help, search summaries and editor/log status use the same (13px) role across routes.
+- **Metadata:** addresses, profile details and status badges use the same (12px) role across routes.
 - **Code:** configuration and log textareas. Inline identifiers use the monospace family while retaining their contextual size.
 
-Descriptions are capped at (70ch); empty-state descriptions at (65ch). Numeric content uses tabular figures. Inputs, selects and textareas grow to (16px) below the narrow container boundary. Headings balance their wrapping, while body paragraphs use pretty wrapping where supported.
+Descriptions are capped at (70ch); empty-state descriptions at (65ch). Numeric content uses tabular figures. Body text, labels and control values share the system UI family and (14px) size; descriptions and metadata keep their consistent supporting roles throughout the desktop workspace. Headings balance their wrapping, while body paragraphs use pretty wrapping where supported.
 
 **The Utility Type Rule.** Keep task headings, labels and metadata in a readable utility hierarchy; reserve monospace for configuration, paths and technical identifiers.
 
 ## Layout
 
-The addon fills the firmware content slot and synchronizes its minimum canvas height with the sidebar and available viewport. Long routes grow naturally. Native form controls and scrollbars use a dark color scheme scoped to Exodus. Its inset uses `clamp(12px, 4%, 24px)`, with (16px) viewport padding on small screens. Styling does not reshape the firmware layout.
+The addon targets the desktop firmware content slot at (740px) and (760px), fills that slot and synchronizes its minimum canvas height with the sidebar and available viewport. Long routes grow naturally. Native form controls and scrollbars use a dark color scheme scoped to Exodus. Its inset uses `clamp(12px, 4%, 24px)`. A mobile layout is outside the current scope. Styling does not reshape the firmware layout.
 
-Fields stack their labels above controls. Task surfaces have header insets (20px 20px 16px), content insets (0 20px 20px), and recurring vertical section spacing. Titles, navigation and action groups wrap; all flexible tracks permit a zero minimum width. Long host names, paths and URLs wrap within their assigned space.
+Fields stack their labels above controls. Task surfaces have header insets (16px 20px 12px), content insets (0 20px 20px), and recurring vertical section spacing. Titles, navigation and action groups wrap; all flexible tracks permit a zero minimum width. Long host names, paths and URLs wrap within their assigned space.
 
-The layout responds to the addon container. At a minimum width of (640px), summary, service, picker and build groups use two equal columns. At a maximum width of (480px), surface insets reduce to (16px), controls and navigation reach a minimum height of (44px), and draft actions wrap across their available width. Navigation changes its wrapping again at (380px). Dialog and toast placement also respond to a viewport boundary (600px).
+The first route keeps Service above Selected. Selected groups access mode, chosen values and manual address entry in one panel. Networks and Devices occupy consecutive full-width rows below it, with Networks first. Flexible tracks allow long values to wrap within their panel. Desktop dialogs and help popovers stay within the available viewport. Help remains anchored when scrolling a hovered or focused marker into view.
 
-Editable rule tables retain usable columns in their own horizontal scroll region; the rules table has a minimum width of (720px). Device lists have bounded local scrolling (360px), with a shorter list variant (220px). List sections remain flat inside the task panel. The sticky draft toolbar occupies normal document space above the route content and stays near the top (8px) while scrolling.
+Editable rule tables retain usable columns in their own horizontal scroll region; the rules table has a minimum width of (640px). Device lists have bounded local scrolling (360px), with a shorter list variant (220px). List sections remain flat inside the task panel. The sticky draft toolbar occupies normal document space above the route content and stays near the top (8px) while scrolling.
 
 **The Firmware Boundary Rule.** Scope every Exodus visual selector to its root; preserve firmware-owned header, sidebar, VPN tabs and footer.
 
@@ -246,11 +246,11 @@ Task panels and dialogs use the panel radius. Fields, actions and the draft tool
 
 Clear, comfortably sized actions. Primary actions use violet with dark text; secondary and outline actions use a dark surface with a visible boundary. Destructive actions use danger color. Controls have a desktop minimum size (40px), a stronger label weight and centered text that can wrap. Hover styling applies only to hover-capable devices. Keyboard focus uses a violet outline (3px) with offset (3px). Disabled states use muted text and the subtle surface rather than reduced opacity.
 
-Button color transitions last (140ms) with `ease-out` when reduced motion is not requested. The same preference gates loading-spinner rotation (`exodus-spin 1s linear infinite`). Icon-only actions retain an accessible name and inline SVG.
+Button color transitions last (140ms) with `ease-out` when reduced motion is not requested. The same preference gates loading-spinner rotation (`exodus-spin 1s linear infinite`). Refresh actions use an arrow icon, disable while pending and expose their busy state. Icon-only actions retain an accessible name and inline SVG.
 
 ### Inputs / Fields
 
-Dark inset fields with a control-lilac boundary, violet caret and the control radius. Shared field padding and the body role come from the frontmatter. Descriptions and expandable help sit next to the relevant setting. Invalid fields use the danger boundary with an extra thin outline. Configuration and log textareas resize vertically, retain local overflow and have minimum heights (220px) and (380px) respectively. Read-only textareas use the inset surface (`#242631`). Native checkboxes retain visible checked state.
+Dark inset fields with a control-lilac boundary, violet caret and the control radius. Shared field padding and the body role come from the frontmatter. An icon with an accessible name opens contextual help beside the relevant setting on hover or keyboard focus; Escape dismisses it. Invalid fields use the danger boundary with an extra thin outline. Configuration and log textareas resize vertically, retain local overflow and have minimum heights (220px) and (380px) respectively. Read-only textareas use the inset surface (`#242631`). Native checkboxes retain visible checked state.
 
 ### Cards / Containers
 
@@ -266,11 +266,19 @@ Removable selections use dark-violet tags with explicit remove actions. Small st
 
 ### Device List
 
-Flat, searchable sections keep available devices and chosen values legible. Rows have a minimum height (56px), a checkbox, a strong device name and smaller metadata. Selected rows use dark violet. Search fields and headers belong to the same open section; bounded lists prevent large inventories from extending the whole page. Manual addresses and removable chosen values remain visible beside the discovered devices when the container permits two columns.
+Selected contains access mode, removable chosen values and manual addresses above discovery. Networks appears first across the full width, followed by Devices. Each panel has its own heading and list. Device rows have a minimum height (56px), a checkbox, a clear name and metadata in its consistent supporting role without italic styling for offline records. Related statuses stay grouped at the trailing edge. Selected rows use dark violet. Search fields and refresh actions stay with their discovery panel; bounded lists prevent large inventories from extending the whole page. Counts use the interface locale, and a single device has singular English copy.
+
+### Updates
+
+Versions are presented as two flat component rows for Exodus and the core. Each has a clear component name, a trailing semantic status and equally sized Installed/Latest fields. Version values share the body family at 14px and regular weight; optional commits appear separately as supporting text. Static versions do not force tabular numeral shapes. Long releases wrap without losing their suffix. Download source, architecture and free space use a compact definition list, with normal-weight values. The low-space explanation belongs to its help icon. Missing metadata uses an explicit placeholder or omits an optional line, without orphan labels. The check action keeps its circular arrow and busy feedback without shifting its size.
+
+### Logs
+
+Logs renders actual router text. A loading placeholder and status precede the first read; a successful empty read shows “No log entries yet.” A failed read shows the error and retains previous entries. A response without string log content is an error. Hidden panes stay idle, selecting a pane starts its read, and pause and follow controls preserve the existing polling and scroll behavior.
 
 ### Draft Toolbar
 
-A dark-violet toolbar appears only when the draft differs from saved configuration. Save, Save & Apply and discard actions stay explicit and wrap on narrow screens. Its sticky top position reserves space in the document. Choosing devices or a profile changes the draft; it does not imply saving. Session-expiry feedback keeps the open-tab draft recoverable.
+A dark-violet toolbar appears only when the draft differs from saved configuration. Save, Save & Apply and discard actions stay explicit and fit the desktop content slot. Its sticky top position reserves space in the document. Choosing devices or a profile changes the draft; it does not imply saving. Session-expiry feedback keeps the open-tab draft recoverable.
 
 ## Do's and Don'ts
 

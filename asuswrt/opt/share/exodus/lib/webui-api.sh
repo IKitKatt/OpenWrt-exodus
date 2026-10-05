@@ -315,7 +315,7 @@ webui_updates_start() {
 }
 
 webui_cache_refresh() (
-	local name key req result target fingerprint previous now body
+	local name key req result target fingerprint previous now body path
 	umask 077
 	mkdir -p "$WEBUI_DIR/cache" || exit 1
 	trap 'rm -f "$req" "$result" "$result.body" "$body"' EXIT
@@ -324,9 +324,16 @@ webui_cache_refresh() (
 		target="$WEBUI_DIR/cache/$key.json"
 		now=$(date +%s)
 		if [ "$name" != status ]; then
-			fingerprint=$(stat -c '%i:%s:%Y' "$(log_path "$name")" 2> /dev/null || echo absent)
+			path=$(log_path "$name")
+			if [ -f "$path" ]; then
+				# An unavailable/limited firmware stat must not freeze a live log
+				# behind the same fingerprint used for genuinely missing files.
+				fingerprint=$(stat -c '%i:%s:%Y' "$path" 2> /dev/null) || fingerprint=
+			else
+				fingerprint=absent
+			fi
 			previous=$(cat "$target.fingerprint" 2> /dev/null)
-			if [ "$fingerprint" = "$previous" ] && [ -f "$target" ] &&
+			if [ -n "$fingerprint" ] && [ "$fingerprint" = "$previous" ] && [ -f "$target" ] &&
 				jq -e '.v == 1 and (.body | type == "string" and length > 0)' "$target" > /dev/null 2>&1; then
 				# Refresh the liveness timestamp separately; unchanged log payload is not rewritten.
 				continue

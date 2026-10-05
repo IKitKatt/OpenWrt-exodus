@@ -30,6 +30,41 @@ class BridgeTests(ShellCase):
         self.assertTrue(body)
         self.assertIsInstance(json.loads(base64.b64decode(body)),dict)
 
+    def read_log_cache(self, name):
+        path = self.ram / f'run/webui/cache/log-{name}.json'
+        envelope = json.loads(path.read_text())
+        self.assertEqual(envelope['status'], 200)
+        return json.loads(base64.b64decode(envelope['body']))['content']
+
+    def test_all_log_caches_return_existing_log_files(self):
+        contents = {}
+        for name in ('app', 'core', 'update', 'debug', 'web'):
+            content = f'{name}: connection accepted\nUnicode: Привет 😀 <% event %>\n'
+            (self.ram / f'log/{name}.log').write_text(content, encoding='utf8')
+            contents[name] = content
+        self.sh('webui_cache_refresh', ('api', 'webui-api'))
+        for name, content in contents.items():
+            with self.subTest(name=name):
+                self.assertEqual(self.read_log_cache(name), content)
+
+    def test_failed_stat_does_not_freeze_log_cache(self):
+        # Firmware stat can be absent or reject GNU formatting options.
+        self.mock('stat', 'exit 127')
+        self.sh('webui_cache_refresh', ('api', 'webui-api'))
+        for name in ('app', 'core', 'update', 'debug', 'web'):
+            (self.ram / f'log/{name}.log').write_text(f'{name}: new event\n')
+        self.sh('webui_cache_refresh', ('api', 'webui-api'))
+        for name in ('app', 'core', 'update', 'debug', 'web'):
+            with self.subTest(name=name):
+                self.assertEqual(self.read_log_cache(name), f'{name}: new event\n')
+
+    def test_missing_log_cache_refreshes_when_log_appears(self):
+        self.sh('webui_cache_refresh', ('api', 'webui-api'))
+        self.assertEqual(self.read_log_cache('update'), '')
+        (self.ram / 'log/update.log').write_text('Update completed\n')
+        self.sh('webui_cache_refresh', ('api', 'webui-api'))
+        self.assertEqual(self.read_log_cache('update'), 'Update completed\n')
+
     def packets(self, request, ident='a' * 32, size=1800):
         data = base64.b64encode(json.dumps(request, ensure_ascii=False).encode()).decode()
         parts = [data[i:i+size] for i in range(0, len(data), size)]

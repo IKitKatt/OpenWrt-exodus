@@ -27,7 +27,7 @@
 <td width="17" valign="top"></td><td width="202" valign="top"><div id="mainMenu"></div><div id="subMenu"></div></td>
 <td valign="top"><div id="tabMenu" class="submenuBlock"></div>
 <main id="exodus-root" class="FormTitle">
-<div class="exodus-heading"><div class="brand"><span id="brand-mark" class="brand-mark" aria-hidden="true"></span><div class="brand-copy"><strong>Exodus</strong><span id="workspace-label"></span></div></div><div class="row"><div id="heading-state" class="heading-state"></div><button id="about" class="version-chip" type="button">About</button></div></div>
+<div class="exodus-heading"><div class="brand"><span id="brand-mark" class="brand-mark" aria-hidden="true"></span><div class="brand-copy"><strong>Exodus</strong><span id="workspace-label"></span></div></div><button id="about" class="btn btn-ghost btn-icon" type="button" aria-label="About"></button></div>
 <div id="session-warning" class="alert alert-warning" role="alert" hidden></div>
 <nav id="menu" class="nav" aria-label="Exodus"></nav><div id="savebar" class="savebar" hidden></div><div id="content" tabindex="-1"></div>
 <div id="toaster" class="toaster" aria-live="polite"></div>

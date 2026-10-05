@@ -360,8 +360,6 @@ async function refreshStatus() {
         state.status = null;
     }
     renderAboutButton();
-    const headingState = document.getElementById('heading-state');
-    if (headingState) append(clear(headingState), statusBadge());
     liveViews.forEach((update) => update());
 }
 
@@ -377,18 +375,24 @@ function btn(label, opts) {
     if (!label) {
         classes.push('btn-icon');
     }
+    const refreshing = ['refresh-cw', 'rotate-cw'].includes(opts.icon)
+        || (opts.icon === 'download' && /update|обнов/i.test(label || opts.title || ''));
+    const actionIcon = opts.icon ? icon(refreshing && opts.icon === 'download' ? 'refresh-cw' : opts.icon) : null;
+    if (refreshing) actionIcon.classList.add('refresh-icon');
     const el = E('button', { type: opts.submit ? 'submit' : 'button', class: classes.join(' '), title: opts.title || null, disabled: opts.disabled || null, 'aria-label': label ? null : opts.title }, [
-        opts.icon ? icon(opts.icon) : null,
+        actionIcon,
         label ? E('span', {}, label) : null
     ]);
     if (opts.onClick) {
         el.addEventListener('click', async (ev) => {
             el.disabled = true;
+            el.setAttribute('aria-busy', 'true');
+            if (refreshing) { el.classList.add('loading'); actionIcon.classList.add('spin'); }
             const spinner = icon('loader', 'spin');
             // a spinner only for actions that take a while
             const timer = setTimeout(() => {
                 el.classList.add('loading');
-                el.prepend(spinner);
+                if (!refreshing) el.prepend(spinner);
             }, 150);
             try {
                 await opts.onClick(ev);
@@ -399,6 +403,8 @@ function btn(label, opts) {
                 clearTimeout(timer);
                 spinner.remove();
                 el.classList.remove('loading');
+                if (actionIcon) actionIcon.classList.remove('spin');
+                el.setAttribute('aria-busy', 'false');
                 el.disabled = false;
             }
         });
@@ -463,6 +469,7 @@ let dialogClose = null;
 let dialogTrigger = null;
 
 function openDialog(opts) {
+    hideHelp();
     const overlay = document.getElementById('dialog');
     if (overlay.hidden) dialogTrigger = document.activeElement;
     const titleId = nextId();
@@ -593,23 +600,82 @@ function field(label, control, description, depends, info) {
         const target = control.id === targetId ? control : control.querySelector('#' + targetId);
         if (target) target.setAttribute('aria-describedby', descriptionId);
     }
-    return dependOn(E('div', { class: 'field' }, [title,
-        E('div', { class: 'field-control' }, [control, description ? E('p', { id: descriptionId, class: 'description', html: description }) : null,
-            info ? E('details', { class: 'field-help' }, [E('summary', {}, [icon('info'), _('Details')]),
-                E('div', { class: 'help-content' }, info.map(p => typeof p === 'string' ? E('p', { html: p }) : p))]) : null])
+    return dependOn(E('div', { class: 'field' }, [E('div', {class: 'label-row'}, [title, info ? infoButton(label, info) : null]),
+        E('div', { class: 'field-control' }, [control, description ? E('p', { id: descriptionId, class: 'description', html: description }) : null])
     ]), depends);
 }
 
-// (i) that opens the explanation in a dialog; paragraphs are static strings or nodes
+// One viewport-bound help popup; hover and keyboard focus share the same copy.
+let helpPopup = null, helpAnchor = null, helpCloseTimer = null;
+function hideHelp() {
+    clearTimeout(helpCloseTimer);
+    if (helpPopup) helpPopup.hidden = true;
+    if (helpAnchor) helpAnchor.setAttribute('aria-expanded', 'false');
+    helpAnchor = null;
+}
+
+function positionHelp() {
+    if (!helpPopup || helpPopup.hidden || !helpAnchor) return;
+    const rect = helpAnchor.getBoundingClientRect();
+    if (!helpAnchor.isConnected || rect.bottom < 0 || rect.top > innerHeight || rect.right < 0 || rect.left > innerWidth) {
+        hideHelp(); return;
+    }
+    const scale = exodusRoot.getBoundingClientRect().width / exodusRoot.offsetWidth || 1;
+    helpPopup.style.maxWidth = (innerWidth - 24) / scale + 'px';
+    helpPopup.style.maxHeight = (innerHeight - 24) / scale + 'px';
+    const bounds = helpPopup.getBoundingClientRect();
+    const left = Math.max(12, Math.min(rect.left, innerWidth - bounds.width - 12));
+    const top = rect.bottom + bounds.height + 10 <= innerHeight ? rect.bottom + 8 : Math.max(12, rect.top - bounds.height - 8);
+    helpPopup.style.left = left / scale + 'px'; helpPopup.style.top = top / scale + 'px';
+}
+
 function infoButton(title, paragraphs) {
-    return E('button', { class: 'btn btn-ghost btn-icon info-btn', type: 'button', title: _('More'), 'aria-label': _('More'), onclick: (ev) => {
-        ev.preventDefault();
-        openDialog({
-            title: title,
-            content: E('div', { class: 'info-text' }, paragraphs.map((p) => (typeof p === 'string' ? E('p', { html: p }) : p))),
-            footer: [btn(_('Got it'), { onClick: () => closeDialog() })]
-        });
-    } }, icon('info'));
+    const source = E('div', {class: 'help-source', hidden: true, id: nextId()}, paragraphs.map(p => typeof p === 'string' ? E('p', {html: p}) : p));
+    const marker = E('button', {class: 'info-btn', type: 'button', 'aria-label': _('Help: %s', title || _('Settings')), 'aria-describedby': source.id, 'aria-expanded': 'false'}, icon('info'));
+    const interactive = !!source.querySelector('a[href]');
+    if (interactive) marker.setAttribute('aria-haspopup', 'dialog');
+    const show = () => {
+        clearTimeout(helpCloseTimer);
+        if (!helpPopup) {
+            helpPopup = E('div', {id: 'help-popover', class: 'help-popover', role: 'tooltip', hidden: true});
+            exodusRoot.appendChild(helpPopup);
+            helpPopup.addEventListener('mouseenter', () => clearTimeout(helpCloseTimer));
+            helpPopup.addEventListener('mouseleave', () => {helpCloseTimer = setTimeout(hideHelp, 140);});
+            helpPopup.addEventListener('focusin', () => clearTimeout(helpCloseTimer));
+            helpPopup.addEventListener('focusout', event => {
+                if (!helpPopup.contains(event.relatedTarget)) helpCloseTimer = setTimeout(hideHelp, 140);
+            });
+        }
+        if (helpAnchor && helpAnchor !== marker) helpAnchor.setAttribute('aria-expanded', 'false');
+        helpAnchor = marker; marker.setAttribute('aria-expanded', 'true');
+        helpPopup.setAttribute('role', interactive ? 'dialog' : 'tooltip');
+        helpPopup.setAttribute('aria-label', title || _('Settings'));
+        append(clear(helpPopup), [E('strong', {}, title), E('div', {class: 'info-text'}, Array.from(source.children, node => node.cloneNode(true)))]);
+        helpPopup.hidden = false;
+        positionHelp();
+    };
+    marker.addEventListener('mouseenter', show); marker.addEventListener('focus', show);
+    marker.addEventListener('click', show);
+    marker.addEventListener('mouseleave', () => {helpCloseTimer = setTimeout(hideHelp, 140);});
+    marker.addEventListener('blur', () => {helpCloseTimer = setTimeout(hideHelp, 140);});
+    marker.addEventListener('keydown', ev => {
+        if (ev.key === 'Escape') {ev.stopPropagation(); hideHelp();}
+        if (ev.key === 'ArrowDown' && helpAnchor === marker) {
+            const link = helpPopup.querySelector('a[href]');
+            if (link) {ev.preventDefault(); link.focus();}
+        }
+    });
+    return E('span', {class: 'help-tip'}, [marker, source]);
+}
+
+function compactDescriptions(section, except = []) {
+    for (const item of section.querySelectorAll('.field, .field-switch')) {
+        const label = item.querySelector('.label');
+        const description = item.querySelector('.field-control > .description');
+        if (!description || except.includes(label?.textContent)) continue;
+        description.hidden = true;
+        item.querySelector('.label-row').appendChild(infoButton(label?.textContent, [description.innerHTML]));
+    }
 }
 
 function switchControl(r) {
@@ -620,14 +686,13 @@ function switchControl(r) {
 }
 
 // an option that is on or off: text on the left, switch on the right
-function switchField(label, description, r, depends) {
+function switchField(label, description, r, depends, compact = false) {
     const control = switchControl(r);
     control.id = nextId();
     return dependOn(E('div', { class: 'field-switch' }, [
-        E('label', { class: 'label', for: control.id }, label),
+        E('div', {class: 'label-row switch-label'}, [control, E('label', { class: 'label', for: control.id }, label), compact && description ? infoButton(label, [description]) : null]),
         E('div', { class: 'field-control' }, [
-            control,
-            description ? E('p', { class: 'description', html: description }) : null
+            description && !compact ? E('p', { class: 'description', html: description }) : null
         ])
     ]), depends);
 }
@@ -865,6 +930,8 @@ function tabs(id, list) {
             trigger.tabIndex=0;
             panes.forEach((p) => { p.hidden = true; });
             pane.hidden = false;
+            hideHelp();
+            if (id === 'logs') state.pagePollers.forEach(poll => poll());
         });
         triggers.appendChild(trigger);
         panes.push(pane);
@@ -1038,201 +1105,126 @@ async function loadHosts() {
 }
 
 function devicePicker() {
-    const container = E('div', { class: 'picker' });
-    let choices = [], refreshSelected = () => {}, searchBox = null;
+    const container = E('div', {class: 'picker'});
+    const countFormat = new Intl.NumberFormat(lang === 'ru' ? 'ru-RU' : 'en-US');
+    const countText = value => value == null ? _('Unknown') : countFormat.format(value);
+    let choices = [], refreshSelected = () => {}, searchBox = null, filter = '';
     const items = () => {
-        if (!Array.isArray(state.draft.proxy.access_items)) {
-            state.draft.proxy.access_items = [];
-        }
+        if (!Array.isArray(state.draft.proxy.access_items)) state.draft.proxy.access_items = [];
         return state.draft.proxy.access_items;
     };
     const toggle = (item, on) => {
-        const list = items().filter((i) => i !== item);
-        if (on) {
-            list.push(item);
-        }
-        state.draft.proxy.access_items = list;
-        choices.forEach(({item: key, box, row}) => {
-            box.checked = items().includes(key);
-            row.classList.toggle('selected', box.checked);
-        });
+        state.draft.proxy.access_items = items().filter(value => value !== item).concat(on ? [item] : []);
+        choices.forEach(({item: key, box, row}) => {box.checked = items().includes(key); row.classList.toggle('selected', box.checked);});
         const focused = document.activeElement;
         refreshSelected();
         if (focused && !focused.isConnected && searchBox) searchBox.focus();
         changed();
     };
-    let filter = '';
-
     const option = (item, iconName, title, meta, extra) => {
-        const checked = items().includes(item);
-        const box = E('input', { type: 'checkbox', class: 'checkbox' });
-        box.dataset.item = item;
-        box.checked = checked;
+        const states = (extra?.tags || []).filter(Boolean);
+        const box = E('input', {type: 'checkbox', class: 'checkbox', 'data-item': item});
+        box.checked = items().includes(item);
         box.addEventListener('change', () => toggle(item, box.checked));
-        const row = E('label', { class: `picker-item${checked ? ' selected' : ''}${extra && extra.inactive ? ' inactive' : ''}` }, [
-            box,
-            icon(iconName),
-            E('div', { class: 'picker-text' }, [
-                E('div', { class: 'picker-title' }, [E('span', {}, title), extra && extra.tags]),
-                meta ? E('div', { class: 'picker-meta' }, meta) : null
-            ])
-        ]);
+        const row = E('label', {class: `picker-item${box.checked ? ' selected' : ''}${extra?.inactive ? ' inactive' : ''}`}, [
+            box, icon(iconName), E('div', {class: 'picker-text'}, [
+                E('div', {class: 'picker-title'}, [E('span', {class: 'picker-name'}, title), states.length ? E('div', {class: 'row picker-statuses'}, states) : null]),
+                meta ? E('div', {class: 'picker-meta'}, meta) : null])]);
         choices.push({item, box, row});
         return row;
     };
-
-    const group = (title, count, content, action) => E('div', { class: 'picker-group' }, [
-        E('div', { class: 'picker-head' }, [E('div', { class: 'label' }, [title, count != null ? badge(String(count), 'secondary') : null]), action]),
-        content
-    ]);
-
     const render = () => {
-        clear(container);
-        choices = [];
-        const hosts = state.hosts ? {...state.hosts,
-            segments: state.hosts.segments || [], aps: state.hosts.aps || [], hosts: state.hosts.hosts || []} : null;
-        const selected = items();
-
-        const summary = E('div', { class: 'picker-summary' });
+        clear(container); choices = [];
+        const hosts = state.hosts ? {...state.hosts, segments: state.hosts.segments || [], aps: state.hosts.aps || [], hosts: state.hosts.hosts || []} : null;
+        const count = badge(countText(items().length), 'secondary');
+        const summary = E('div', {class: 'picker-summary'});
         const clearSelection = btn(_('Clear selection'), {variant: 'ghost', size: 'sm', onClick: async () => {
             if (!await confirmDialog(_('Clear selection?'), _('Remove all selected devices and networks from the draft?'), {confirm: _('Clear selection')})) return;
             state.draft.proxy.access_items = [];
-            choices.forEach(({box, row}) => { box.checked = false; row.classList.remove('selected'); });
+            choices.forEach(({box, row}) => {box.checked = false; row.classList.remove('selected');});
             refreshSelected(); changed();
         }});
-        const selectedGroup = group(_('Selected'), selected.length, summary,
-            E('div', {class: 'row'}, [clearSelection, btn(_('Refresh'), { variant: 'outline', size: 'sm', icon: 'refresh-cw', onClick: async () => {
-                await loadHosts();
-                render();
-            } })]));
         refreshSelected = () => {
-            const selection = items();
-            selectedGroup.querySelector('.badge').textContent = String(selection.length);
-            clearSelection.disabled = selection.length === 0;
-            append(clear(summary), selection.length === 0
-                ? E('p', { class: 'description' }, _('Select devices below or add an address.'))
-                : E('div', { class: 'chips' }, selection.map(item => E('span', { class: 'tag plain' }, [
-                    E('span', { title: itemValue(item) }, describeItem(item)),
-                    E('button', { type: 'button', title: _('Remove %s', describeItem(item)), 'aria-label': _('Remove %s', describeItem(item)), onclick: () => toggle(item, false) }, icon('x'))
-                ]))));
+            count.textContent = countText(items().length);
+            clearSelection.disabled = items().length === 0;
+            append(clear(summary), items().length ? E('div', {class: 'chips'}, items().map(item => E('span', {class: 'tag plain'}, [
+                E('span', {title: itemValue(item)}, describeItem(item)),
+                E('button', {type: 'button', 'aria-label': _('Remove %s', describeItem(item)), title: _('Remove %s', describeItem(item)), onclick: () => toggle(item, false)}, icon('x'))])))
+                : E('p', {class: 'description'}, _('Select devices below or add an address.')));
         };
-        refreshSelected();
-        container.appendChild(selectedGroup);
-
-        if (!hosts) {
-            container.appendChild(loader());
-            return;
-        }
-        if (!hosts.router) {
-            container.appendChild(alertBox('warning', _('The router did not give the list of devices'),
-                hosts.error ? `${_('Error')}: ${hosts.error}` : _('Names of devices, Wi-Fi networks and parental control are not available: only devices from the ARP table of the router are listed.')));
-        }
-
-        // segments, wi-fi points and the manual address on the left, devices on the right
-        const left = E('div', { class: 'picker-column' });
-        const right = E('div', { class: 'picker-column' });
-        container.appendChild(E('div', { class: 'picker-columns' }, [right, left]));
-
-        if (hosts.segments.length > 0) {
-            left.appendChild(group(_('Network segments'), null, E('div', { class: 'picker-list scroll short' }, hosts.segments.map((s) =>
-                option(`iface:${s.ifname}`, 'network', s.name || s.ifname, [s.ifname, s.address].filter(Boolean).join(' · '))))));
-        }
-
-        if (hosts.aps.length > 0) {
-            left.appendChild(group(_('Wi-Fi networks'), hosts.aps.length, E('div', { class: 'picker-list scroll short' }, hosts.aps.map((ap) =>
-                option(`ap:${ap.id}`, 'wifi', ap.ssid || ap.description || ap.id,
-                    [ap.band, ap.id, _('clients: %s', ap.clients)].filter(Boolean).join(' · '),
-                    { inactive: ap.state === 'down', tags: [ap.guest ? badge(_('guest'), 'secondary') : null, ap.state === 'down' ? badge(_('off'), 'outline') : null] })))));
-        }
-
-        const search = E('input', { class: 'input', type: 'search', 'aria-label': _('Search by name, MAC or IP'), placeholder: _('Name, MAC or IP address'), value: filter });
-        searchBox = search;
-        const list = E('div', { class: 'picker-list scroll' });
-        const resultCount = E('p', { class: 'description', role: 'status' });
-        let hostLimit = 50;
-        const more = btn(_('Show more'), {variant: 'outline', onClick: () => {hostLimit += 50; renderHosts();}});
-        const segmentNames = {};
-        for (const s of hosts.segments) {
-            if (s.id) {
-                segmentNames[s.id] = s.name || s.ifname;
-            }
-            segmentNames[s.ifname] = s.name || s.ifname;
-        }
-        const renderHosts = () => {
-            choices = choices.filter(choice => !list.contains(choice.row));
-            clear(list);
-            const needle = filter.toLowerCase();
-            const shown = hosts.hosts
-                .filter((h) => !needle || [h.name, h.hostname, h.mac, h.ip, h.ssid].some((v) => (v || '').toLowerCase().includes(needle)))
-                .sort((a, b) => (b.active - a.active) || (a.name || a.hostname || a.mac).localeCompare(b.name || b.hostname || b.mac));
-            if (shown.length === 0) {
-                list.appendChild(E('div', { class: 'picker-empty' }, needle ? _('Nothing found') : _('No devices')));
-            }
-            resultCount.textContent = _('Showing %s of %s devices', Math.min(shown.length, hostLimit), shown.length);
-            more.hidden = shown.length <= hostLimit;
-            for (const h of shown.slice(0, hostLimit)) {
-                const tagList = [];
-                if (!h.active) {
-                    tagList.push(badge(_('offline'), 'outline'));
-                }
-                if (h.access === 'deny') {
-                    tagList.push(badge(_('blocked'), 'destructive'));
-                }
-                if (h.access === 'schedule') {
-                    tagList.push(badge(_('on schedule'), 'outline'));
-                }
-                list.appendChild(option(`mac:${h.mac}`, h.ssid ? 'wifi' : 'device', h.name || h.hostname || h.mac,
-                    [h.mac, h.ip, h.ssid ? `Wi-Fi ${h.ssid}` : (segmentNames[h.segment] || h.segment || null)].filter(Boolean).join(' · '),
-                    { inactive: !h.active, tags: tagList }));
-            }
-        };
-        search.addEventListener('input', () => {
-            filter = search.value;
-            hostLimit = 50;
-            renderHosts();
-        });
-        renderHosts();
-        right.appendChild(group(_('Devices'), hosts.hosts.length, [E('label', { class: 'search' }, [
-            E('span', {class: 'visually-hidden'}, _('Search by name, MAC or IP')), icon('search'), search]), resultCount, list, more]));
-
-        const manual = E('input', { class: 'input', type: 'text', placeholder: _('MAC, IPv4 or IPv6 address or network'), spellcheck: 'false' });
-        const manualError = E('p', {class: 'description', role: 'status', hidden: true});
-        manualError.id = nextId(); manual.setAttribute('aria-describedby', manualError.id);
+        const manual = E('input', {class: 'input', type: 'text', placeholder: _('MAC, IPv4 or IPv6 address or network'), spellcheck: 'false'});
+        const manualError = E('p', {class: 'description', role: 'status', hidden: true, id: nextId()});
+        manual.setAttribute('aria-describedby', manualError.id);
         const addManual = () => {
             const item = parseItem(manual.value);
             if (!item) {
-                manual.classList.add('invalid');
-                manual.setAttribute('aria-invalid', 'true');
-                manualError.textContent = _('Enter a valid MAC, IP address or network.');
-                manualError.hidden = false;
-                manual.focus();
-                return;
+                manual.classList.add('invalid'); manual.setAttribute('aria-invalid', 'true');
+                manualError.textContent = _('Enter a valid MAC, IP address or network.'); manualError.hidden = false; manual.focus(); return;
             }
-            toggle(item, true);
-            manual.value = ''; manual.removeAttribute('aria-invalid'); manualError.hidden = true;
-            manual.focus();
+            toggle(item, true); manual.value = ''; manual.classList.remove('invalid');
+            manual.removeAttribute('aria-invalid'); manualError.hidden = true; manual.focus();
         };
-        manual.addEventListener('keydown', (ev) => {
-            manual.classList.remove('invalid');
-            if (ev.key === 'Enter') {
-                ev.preventDefault();
-                addManual();
-            }
-        });
-        const manualField = field(_('Add by address'), E('div', {class: 'manual-address'}, [E('div', { class: 'row' }, [manual, btn(_('Add'), { variant: 'outline', icon: 'plus', onClick: addManual })]), manualError]), null, null, [
+        manual.addEventListener('input', () => {manual.classList.remove('invalid'); manual.removeAttribute('aria-invalid'); manualError.hidden = true;});
+        manual.addEventListener('keydown', ev => {if (ev.key === 'Enter') {ev.preventDefault(); addManual();}});
+        const mode = field(_('Mode'), segmented(ref('proxy.access_mode'), [['exclude', _('All except selected')], ['include', _('Only selected')]]), null, null, [
+            _('All devices go through the proxy, the selected ones go directly.'),
+            _('Only the selected devices go through the proxy, the others go directly.'),
+            _('A segment matches all its devices, a Wi-Fi network matches the devices connected to it on this router, not on AiMesh nodes (synced every 30 seconds), a device is matched by its MAC with IPv4 and IPv6. DNS follows the choice: proxied devices ask the core, the others ask the router.')]);
+        const manualField = field(_('Add by address'), E('div', {class: 'manual-address'}, [E('div', {class: 'input-group'}, [manual, btn(_('Add'), {variant: 'outline', icon: 'plus', onClick: addManual})]), manualError]), null, null, [
             _('For a device the router does not list, or a whole network like <code>192.168.1.0/24</code>.'),
-            _('The IP address of a device the router knows is saved as its MAC, so the choice follows the device when its address changes.')
-        ]);
-        manualField.classList.add('field-stacked');
-        left.appendChild(manualField);
-    };
+            _('The IP address of a device the router knows is saved as its MAC, so the choice follows the device when its address changes.')]);
+        refreshSelected();
+        container.appendChild(card({class: 'selected-routing', title: E('span', {class: 'row'}, [_('Selected'), count]), action: clearSelection,
+            content: [E('div', {class: 'selection-settings'}, [mode, manualField]),
+                live(() => E('p', {class: 'selection-consequence description'}, state.draft.proxy.access_mode === 'include'
+                    ? _('Only the selected devices use the proxy. Every other device connects directly.')
+                    : _('Selected devices connect directly. Every other device uses the proxy.')), () => state.draft.proxy.access_mode),
+                state.draft.proxy.enabled !== true ? alertBox('warning', null, _('The proxy is turned off in Settings, the selection has no effect.')) : null, summary]}));
+        if (!hosts) {container.appendChild(loader()); return;}
+        if (!hosts.router) container.appendChild(alertBox('warning', _('The router did not give the list of devices'), hosts.error
+            ? `${_('Error')}: ${hosts.error}` : _('Names of devices, Wi-Fi networks and parental control are not available: only devices from the ARP table of the router are listed.')));
 
+        const search = E('input', {class: 'input', type: 'search', 'aria-label': _('Search by name, MAC or IP'), placeholder: _('Name, MAC or IP address'), value: filter});
+        searchBox = search;
+        const list = E('div', {class: 'picker-list scroll'});
+        const resultCount = E('p', {class: 'description', role: 'status'});
+        let hostLimit = 50;
+        const more = btn(_('Show more'), {variant: 'outline', size: 'sm', onClick: () => {hostLimit += 50; renderHosts();}});
+        const segmentNames = {};
+        for (const segment of hosts.segments) {if (segment.id) segmentNames[segment.id] = segment.name || segment.ifname; segmentNames[segment.ifname] = segment.name || segment.ifname;}
+        const renderHosts = () => {
+            choices = choices.filter(choice => !list.contains(choice.row)); clear(list);
+            const needle = filter.toLocaleLowerCase();
+            const shown = hosts.hosts.filter(host => !needle || [host.name, host.hostname, host.mac, host.ip, host.ssid].some(value => (value || '').toLocaleLowerCase().includes(needle)))
+                .sort((a,b) => (b.active - a.active) || (a.name || a.hostname || a.mac).localeCompare(b.name || b.hostname || b.mac));
+            if (!shown.length) list.appendChild(E('div', {class: 'picker-empty'}, needle ? _('Nothing found') : _('No devices')));
+            resultCount.textContent = _(shown.length === 1 ? 'Showing %s of %s device' : 'Showing %s of %s devices', countText(Math.min(shown.length, hostLimit)), countText(shown.length));
+            more.hidden = shown.length <= hostLimit;
+            for (const host of shown.slice(0,hostLimit)) list.appendChild(option(`mac:${host.mac}`, host.ssid ? 'wifi' : 'device', host.name || host.hostname || host.mac,
+                [host.mac, host.ip, host.ssid ? `Wi-Fi ${host.ssid}` : (segmentNames[host.segment] || host.segment || null)].filter(Boolean).join(' · '),
+                {inactive: !host.active, tags: [!host.active ? badge(_('offline'), 'outline') : null, host.access === 'deny' ? badge(_('blocked'), 'destructive') : null,
+                    host.access === 'schedule' ? badge(_('on schedule'), 'outline') : null]}));
+        };
+        search.addEventListener('input', () => {filter = search.value; hostLimit = 50; renderHosts();});
+        renderHosts();
+        const devices = card({class: 'devices-discovery', title: E('span', {class: 'row'}, [_('Devices'), badge(countText(hosts.hosts.length))]),
+            action: btn(_('Refresh'), {variant: 'outline', size: 'sm', icon: 'refresh-cw', onClick: async () => {await loadHosts(); render();}}),
+            content: [E('label', {class: 'search'}, [E('span', {class: 'visually-hidden'}, _('Search by name, MAC or IP')), icon('search'), search]), list],
+            footer: E('div', {class: 'discovery-footer'}, [resultCount, more])});
+        const networkContent = [];
+        if (hosts.segments.length) networkContent.push(E('section', {class: 'network-section'}, [E('h3', {class: 'section-title'}, _('Network segments')),
+            E('div', {class: 'picker-list'}, hosts.segments.map(segment => option(`iface:${segment.ifname}`, 'network', segment.name || segment.ifname, [segment.ifname, segment.address].filter(Boolean).join(' · '))))]));
+        if (hosts.aps.length) networkContent.push(E('section', {class: 'network-section'}, [E('h3', {class: 'section-title'}, _('Wi-Fi networks')),
+            E('div', {class: 'picker-list'}, hosts.aps.map(ap => option(`ap:${ap.id}`, 'wifi', ap.ssid || ap.description || ap.id,
+                [ap.band, ap.id, _('clients: %s', countText(ap.clients))].filter(Boolean).join(' · '), {inactive: ap.state === 'down', tags: [ap.guest ? badge(_('guest')) : null, ap.state === 'down' ? badge(_('off'), 'outline') : null]})))]));
+        container.appendChild(E('div', {class: 'discovery-grid'}, [card({class: 'networks-discovery', title: _('Networks'),
+            content: networkContent.length ? networkContent : empty('network', _('No networks'))}), devices]));
+    };
     render();
-    if (!state.hosts) {
-        loadHosts().then(render, render);
-    }
+    if (!state.hosts) loadHosts().then(render, render);
     return container;
 }
+
 
 // ---------- pages ----------
 
@@ -1266,79 +1258,31 @@ function providerCard() {
 }
 
 function pageStatus() {
-    const d = state.draft;
     const status = () => state.status || {};
-
-    // the state of the service on the left, what it runs on the right
-    const service = card({
-        title: _('Service'),
-        action: live(statusBadge, () => [status().running, !!state.status]),
-        content: [
-            E('div', { class: 'service-workbench service-grid' }, [
-                E('div', { class: 'service-summary' }, [
-                    live(() => {
-                        const s = status();
-                        const core = s.core_version ? `${s.core_version} · ${CORE_TITLES[s.core_type] || s.core_type || 'Mihomo'}` : '—';
-                        let proxy;
-                        if (!state.config.proxy.enabled) {
-                            proxy = badge(_('Off'), 'outline');
-                        } else if (s.running && s.hijack) {
-                            proxy = badge(_('Active'), 'success');
-                        } else {
-                            proxy = badge(_('Inactive'), 'secondary');
-                        }
-                        return infoList([
-                            [_('Exodus'), E('span', { class: 'mono' }, s.app_version || '—')],
-                            [_('Core'), E('span', { class: 'mono' }, core)],
-                            [_('Profile'), profileTitle(state.config.config.profile) || '—'],
-                            [_('Proxy'), proxy]
-                        ]);
-                    }, () => [status().app_version, status().core_version, status().core_type, status().running, status().hijack, state.config.config.profile, state.config.proxy.enabled]),
-                    E('div', { class: 'row toolbar' }, live(() => (status().running
-                        ? [
-                            btn(_('Restart'), { icon: 'rotate-cw', onClick: () => serviceOp('restart') }),
-                            btn(_('Stop'), { variant: 'outline', icon: 'square', onClick: () => serviceOp('stop') }),
-                            btn(_('Dashboard'), { variant: 'outline', icon: 'external-link', onClick: openDashboard })
-                        ]
-                        : [btn(_('Start'), { icon: 'play', onClick: () => serviceOp('start') })]
-                    ), () => [status().running]))
-                ]),
-                E('div', { class: 'service-summary' }, [
-                    switchField(_('Autostart'), _('Start the service when the router boots.'), ref('config.enabled')),
-                    field(_('Profile'), select(ref('config.profile'), profileChoices(), { optional: true, placeholder: _('Not selected') }), null, null, [
-                        _('A subscription or an uploaded file, they are managed on the Profiles page.'),
-                        _('On every start the profile is merged with the settings of Exodus and the mixin file, a subscription is downloaded again unless its update is manual.'),
-                        _('Save & Apply restarts the service with the chosen profile.')
-                    ])
-                ])
-            ])
-        ]
-    });
-
-    const modeInfo = (key, text) => E('p', {}, [E('strong', {}, key), E('br'), text]);
-    const devices = card({
-        title: _('Device routing'),
-        content: [
-            d.proxy.enabled !== true ? alertBox('warning', null, _('The proxy is turned off in Settings, the selection has no effect.')) : null,
-            field(_('Mode'), segmented(ref('proxy.access_mode'), [['exclude', _('All except selected')], ['include', _('Only selected')]]), null, null, [
-                modeInfo(_('All except selected'), _('All devices go through the proxy, the selected ones go directly.')),
-                modeInfo(_('Only selected'), _('Only the selected devices go through the proxy, the others go directly.')),
-                _('A segment matches all its devices, a Wi-Fi network matches the devices connected to it on this router, not on AiMesh nodes (synced every 30 seconds), a device is matched by its MAC with IPv4 and IPv6. DNS follows the choice: proxied devices ask the core, the others ask the router.')
-            ]),
-            live(() => E('p', {class: 'picker-mode description'},
-                d.proxy.access_mode === 'include'
-                    ? _('Only the selected devices use the proxy. Every other device connects directly.')
-                    : _('Selected devices connect directly. Every other device uses the proxy.')),
-                () => d.proxy.access_mode),
-            devicePicker()
-        ]
-    });
-
-    return [
-        pageHeader(_('Devices'), _('Choose who uses the proxy. Changes take effect after Save & Apply.')),
-        E('div', { class: 'stack' }, [devices, service, providerCard()])
-    ];
+    const service = card({class: 'service-panel', title: _('Service'), content: [
+        live(() => {
+            const s = status();
+            const proxy = !state.status ? _('Unknown') : !s.running ? _('Stopped') : !state.config.proxy.enabled ? _('Off') : s.hijack ? _('Active') : _('Inactive');
+            return E('dl', {class: 'service-facts'}, [
+                E('div', {}, [E('dt', {}, _('Core')), E('dd', {}, [E('span', {}, CORE_TITLES[s.core_type] || s.core_type || 'Mihomo'), E('span', {class: 'fact-meta'}, s.core_version || '—')])]),
+                E('div', {}, [E('dt', {}, _('Proxy')), E('dd', {id: 'service-status', class: s.running && s.hijack ? 'service-active' : 'service-inactive'}, proxy)])]);
+        }, () => [status().core_version, status().core_type, status().running, status().hijack, !!state.status, state.config.proxy.enabled]),
+        E('div', {class: 'service-settings'}, [
+            field(_('Profile'), select(ref('config.profile'), profileChoices(), {optional: true, placeholder: _('Not selected')}), null, null, [
+                _('A subscription or an uploaded file, they are managed on the Profiles page.'),
+                _('On every start the profile is merged with the settings of Exodus and the mixin file, a subscription is downloaded again unless its update is manual.'),
+                _('Save & Apply restarts the service with the chosen profile.')]),
+            switchField(_('Autostart'), _('Start the service when the router boots.'), ref('config.enabled'), null, true)]),
+        E('div', {class: 'service-actions'}, live(() => [
+            btn(status().running ? _('Restart') : _('Start'), {icon: status().running ? 'rotate-cw' : 'play', onClick: () => serviceOp(status().running ? 'restart' : 'start')}),
+            btn(_('Stop'), {variant: 'outline', icon: 'square', disabled: !status().running, onClick: () => serviceOp('stop')}),
+            btn(_('Dashboard'), {variant: 'outline', icon: 'external-link', disabled: !status().running, onClick: openDashboard})
+        ], () => [status().running]))
+    ]});
+    return [pageHeader(_('Devices'), _('Choose who uses the proxy. Changes take effect after Save & Apply.')),
+        E('div', {class: 'stack'}, [service, devicePicker(), providerCard()])];
 }
+
 
 function newId() {
     return `sub_${Math.random().toString(16).slice(2, 10)}`;
@@ -1416,10 +1360,11 @@ function pageProfiles() {
                 host = '';
             }
             entries.appendChild(E('article', {class: 'profile-entry'}, [
-                E('div', {class: 'profile-entry-name'}, [
+                E('div', {class: 'profile-entry-top'}, [E('div', {class: 'profile-entry-name'}, [
                     E('div', { class: 'cell-title' }, [providerLogo(st.logo, 'sub-logo'), sub.name, profileBadge(`subscription:${sub.id}`)]),
-                    host ? E('div', { class: 'description mono' }, host) : null
-                ]),
+                    host ? E('div', { class: 'description' }, host) : null
+                ]), useProfile(`subscription:${sub.id}`)]),
+                E('div', {class: 'profile-entry-bottom'}, [
                 E('dl', {class: 'profile-meta'}, [
                     E('div', {}, [E('dt', {}, _('Traffic')), E('dd', {}, st.used || st.total ? `${st.used || '—'} / ${st.total || '∞'}` : '—')]),
                     E('div', {}, [E('dt', {}, _('Expires')), E('dd', {}, expireText(st))]),
@@ -1427,7 +1372,6 @@ function pageProfiles() {
                         E('span', {class: 'description'}, intervalText(sub))])])
                 ]),
                 E('div', { class: 'row profile-actions' }, [
-                    useProfile(`subscription:${sub.id}`),
                     btn(null, { variant: 'ghost', size: 'sm', icon: 'refresh-cw', title: _('Update'), onClick: async () => {
                         if (JSON.stringify((state.config.subscriptions || []).find((s) => s.id === sub.id)) !== JSON.stringify(sub)) {
                             toast(_('Save the subscription first.'), 'warning');
@@ -1470,7 +1414,7 @@ function pageProfiles() {
                         renderSubscriptions();
                         changed();
                     } })
-                ])
+                ])])
             ]));
         });
         subsContainer.appendChild(entries);
@@ -1497,10 +1441,10 @@ function pageProfiles() {
             return;
         }
         filesContainer.appendChild(E('div', {class: 'profile-list'}, state.profiles.map(p => E('article', {class: 'profile-entry'}, [
-                E('div', { class: 'cell-title profile-entry-name' }, [E('span', { class: 'mono' }, p.name), profileBadge(`file:${p.name}`)]),
+                E('div', {class: 'profile-entry-top'}, [E('div', { class: 'cell-title profile-entry-name' }, [E('span', {}, p.name), profileBadge(`file:${p.name}`)]), useProfile(`file:${p.name}`)]),
+                E('div', {class: 'profile-entry-bottom'}, [
                 E('p', {class: 'description'}, `${_('Size')}: ${formatSize(p.size)}`),
                 E('div', { class: 'row profile-actions' }, [
-                    useProfile(`file:${p.name}`),
                     btn(null, { variant: 'ghost', size: 'sm', icon: 'download', title: _('Download'), onClick: async () => {
                         const data = await run(api('file_read', { path: `${state.dirs.profiles}/${p.name}` }));
                         download(p.name, data.content, 'application/yaml');
@@ -1513,7 +1457,7 @@ function pageProfiles() {
                         state.profiles = state.profiles.filter((x) => x.name !== p.name);
                         renderFiles();
                     } })
-                ])
+                ])])
             ]))));
     };
     renderFiles();
@@ -1552,21 +1496,22 @@ function pageProfiles() {
 
     const filesCard = card({
         title: _('Profile files'),
-        action: [fileInput, uploadProgress, uploadButton],
-        content: filesContainer
+        content: [filesContainer, E('div', {class: 'profile-import'}, [fileInput, uploadButton, uploadProgress,
+            E('p', {class: 'description'}, _('Add a local configuration file.'))])]
     });
 
     // a compact row: the text on the left, the button on the right
     const hardUpdateCard = card({
-        title: _('Hard update'),
-        description: _('Remove everything downloaded by the providers of the current profile, download the subscription again and restart. Files of local providers are kept.'),
-        action: btn(_('Hard update'), { variant: 'destructive-outline', icon: 'refresh-cw', onClick: async () => {
+        content: [E('div', {class: 'inline-task-copy'}, [E('h2', {class: 'card-title'}, _('Hard update')),
+            E('p', {class: 'description'}, _('Remove everything downloaded by the providers of the current profile, download the subscription again and restart. Files of local providers are kept.'))]),
+        btn(_('Hard update'), { variant: 'destructive-outline', icon: 'refresh-cw', onClick: async () => {
             if (!await confirmDialog(_('Hard update?'), _('The proxy restarts and all providers are downloaded again.'), { confirm: _('Hard update'), destructive: true })) {
                 return;
             }
             await run(api('service', { op: 'hard_update' }), _('Hard update started, the progress is in the app log.'));
-        } })
+        } })]
     });
+    hardUpdateCard.classList.add('inline-task');
 
     return [
         pageHeader(_('Profiles'), _('Add a subscription or upload a configuration, then select the profile to use.')),
@@ -1634,6 +1579,11 @@ function rulesEditor() {
     };
     const row = (rule, index, list) => {
         const matcher = input(objRef(rule, 'matcher'), { empty: '' });
+        const named = (control, label) => {
+            (control.matches('input,select,textarea') ? control : control.querySelector('input,select,textarea')).setAttribute('aria-label', `${label} · ${index + 1}`);
+            return control;
+        };
+        named(matcher, _('Value'));
         const incomplete = badge(_('Incomplete'), 'warning');
         incomplete.title = _('Skipped until the type, the value and the target are filled.');
         // the example follows the type, a finished rule loses the warning
@@ -1644,24 +1594,23 @@ function rulesEditor() {
             incomplete.hidden = ruleComplete(rule);
         };
         const tr = E('tr', {}, [
-            E('td', {}, switchControl({ get: () => rule.enabled !== false, set: (v) => { rule.enabled = v; } })),
-            E('td', {}, input(objRef(rule, 'type'), { empty: '', values: types, placeholder: _('Choose') })),
-            E('td', {}, matcher),
-            E('td', {}, input(objRef(rule, 'node'), { empty: '', values: targets, placeholder: _('Choose') })),
-            E('td', {}, checkbox(objRef(rule, 'no_resolve'))),
+            E('td', {}, named(switchControl({ get: () => rule.enabled !== false, set: (v) => { rule.enabled = v; } }), _('On'))),
+            E('td', {}, named(input(objRef(rule, 'type'), { empty: '', values: types, placeholder: _('Choose') }), _('Type'))),
+            E('td', {}, E('div', {class: 'rule-value'}, [matcher, incomplete])),
+            E('td', {}, named(input(objRef(rule, 'node'), { empty: '', values: targets, placeholder: _('Choose') }), _('Target'))),
+            E('td', {}, named(checkbox(objRef(rule, 'no_resolve')), _('No resolve'))),
             E('td', { class: 'actions' }, E('div', { class: 'row' }, [
-                incomplete,
-                btn(null, { variant: 'ghost', size: 'sm', icon: 'chevron-up', title: _('Up'), disabled: index === 0, onClick: () => {
+                btn(null, { variant: 'outline', size: 'sm', icon: 'chevron-up', title: _('Up'), disabled: index === 0, onClick: () => {
                     const next = list.slice();
                     next.splice(index - 1, 0, next.splice(index, 1)[0]);
                     update(next);
                 } }),
-                btn(null, { variant: 'ghost', size: 'sm', icon: 'chevron-down', title: _('Down'), disabled: index === list.length - 1, onClick: () => {
+                btn(null, { variant: 'outline', size: 'sm', icon: 'chevron-down', title: _('Down'), disabled: index === list.length - 1, onClick: () => {
                     const next = list.slice();
                     next.splice(index + 1, 0, next.splice(index, 1)[0]);
                     update(next);
                 } }),
-                btn(null, { variant: 'ghost', size: 'sm', icon: 'trash', title: _('Delete'), onClick: () => update(list.filter((_x, i) => i !== index)) })
+                btn(null, { variant: 'destructive-outline', size: 'sm', icon: 'trash', title: _('Delete'), onClick: () => update(list.filter((_x, i) => i !== index)) })
             ]))
         ]);
         tr.addEventListener('input', refresh);
@@ -1750,7 +1699,7 @@ function searchableSettings(list) {
     search.addEventListener('input', filter);
     return E('div', {class: 'stack'}, [E('div', {class: 'settings-search'}, [
         E('label', {class: 'label', for: search.id}, _('Search settings')),
-        E('div', {class: 'row'}, [search, clearSearch]), summary]), noResults, tabset]);
+        E('div', {class: 'row search-input-row'}, [search, clearSearch]), summary]), noResults, tabset]);
 }
 
 function pageSettings() {
@@ -1904,6 +1853,8 @@ function pageSettings() {
         })
     ];
 
+    compactDescriptions(proxyTab[0], ['TCP', 'UDP']);
+    coreTab.forEach(section => compactDescriptions(section));
     return [
         pageHeader(_('Settings'), _('Find an option or explore the categories. Your changes remain a draft until you save.')),
         searchableSettings([
@@ -2072,8 +2023,10 @@ function pageLogs() {
     const logView = (name) => {
         const title = { app: _('Exodus'), core: _('Core'), web: _('Integration') }[name];
         const text = E('textarea', { class: 'textarea log', wrap: 'off', readonly: true, spellcheck: 'false', 'aria-label': _('%s log', title) });
-        text.value = retained[name] || '';
-        const status = E('p', { class: 'log-status', role: 'status', id: nextId() });
+        let loaded = typeof retained[name] === 'string';
+        text.value = loaded ? retained[name] : '';
+        text.placeholder = loaded ? _('No log entries yet.') : _('Loading log…');
+        const status = E('p', { class: 'log-status', role: 'status', id: nextId() }, loaded && !text.value ? _('No log entries yet.') : _('Refreshing log…'));
         text.setAttribute('aria-describedby', status.id);
         let paused = false, pending = false, clearing = false, generation = 0;
         let follow = true;
@@ -2089,19 +2042,26 @@ function pageLogs() {
             pending = true;
             text.setAttribute('aria-busy', 'true');
             status.textContent = _('Refreshing log…');
+            if (!loaded) text.placeholder = _('Loading log…');
             try {
                 const data = await api('log_read', { name: name });
                 if (token !== generation || !text.isConnected) return;
+                if (!data || typeof data.content !== 'string') throw Error(_('Router response does not contain log text.'));
+                loaded = true;
                 retained[name] = data.content;
+                text.placeholder = _('No log entries yet.');
                 if (text.value !== data.content) {
                     text.value = data.content;
                     if (follow) {
                         text.scrollTop = text.scrollHeight;
                     }
                 }
-                status.textContent = paused ? _('Refresh paused') : _('Updated at %s', new Date().toLocaleTimeString(lang === 'ru' ? 'ru-RU' : 'en-US'));
+                status.textContent = paused ? _('Refresh paused') : data.content.length ? _('Updated at %s', new Date().toLocaleTimeString(lang === 'ru' ? 'ru-RU' : 'en-US')) : _('No log entries yet.');
             } catch (e) {
-                if (token === generation && text.isConnected) status.textContent = _('Could not refresh. Previous log is retained. %s', e.message);
+                if (token === generation && text.isConnected) {
+                    status.textContent = loaded ? _('Could not refresh. Previous log is retained. %s', e.message) : _('Could not load the log. %s', e.message);
+                    text.placeholder = status.textContent;
+                }
             } finally {
                 pending = false;
                 text.setAttribute('aria-busy', 'false');
@@ -2133,7 +2093,9 @@ function pageLogs() {
                         clearing = true;
                         try {
                             await api('log_clear', { name: name });
+                            loaded = true;
                             retained[name] = text.value = '';
+                            text.placeholder = _('No log entries yet.');
                             status.textContent = _('Log cleared.');
                         } catch (error) {
                             status.textContent = _('Could not clear the log. %s', error.message);
@@ -2169,14 +2131,33 @@ function pageUpdates() {
     const pageToken = renderToken;
     const container = E('div', { class: 'contents' });
     const lowSpace = { value: null };
-    const logView = E('textarea', { class: 'textarea', 'aria-label': _('Update log'), rows: 10, wrap: 'off', readonly: true, spellcheck: 'false' });
+    const logStatus = E('p', { class: 'log-status', role: 'status', id: nextId() }, _('Loading log…'));
+    const logView = E('textarea', { class: 'textarea', 'aria-label': _('Update log'), 'aria-describedby': logStatus.id, placeholder: _('Loading log…'), rows: 10, wrap: 'off', readonly: true, spellcheck: 'false' });
+    let logLoaded = false;
     const pollLog = async () => {
-        const data = await api('log_read', { name: 'update' });
-        logView.value = data.content;
-        logView.scrollTop = logView.scrollHeight;
-        const lines = data.content.trim().split('\n');
-        const last = lines[lines.length - 1] || '';
-        return last === 'success' || last.startsWith('error:');
+        logView.setAttribute('aria-busy', 'true');
+        logStatus.textContent = _('Refreshing log…');
+        try {
+            const data = await api('log_read', { name: 'update' });
+            if (pageToken !== renderToken) return false;
+            if (!data || typeof data.content !== 'string') throw Error(_('Router response does not contain log text.'));
+            logLoaded = true;
+            logView.value = data.content;
+            logView.placeholder = _('No log entries yet.');
+            logView.scrollTop = logView.scrollHeight;
+            logStatus.textContent = data.content.length ? _('Updated at %s', new Date().toLocaleTimeString(lang === 'ru' ? 'ru-RU' : 'en-US')) : _('No log entries yet.');
+            const lines = data.content.trim().split('\n');
+            const last = lines[lines.length - 1] || '';
+            return last === 'success' || last.startsWith('error:');
+        } catch (error) {
+            if (pageToken === renderToken) {
+                logStatus.textContent = logLoaded ? _('Could not refresh. Previous log is retained. %s', error.message) : _('Could not load the log. %s', error.message);
+                logView.placeholder = logStatus.textContent;
+            }
+            throw error;
+        } finally {
+            logView.setAttribute('aria-busy', 'false');
+        }
     };
     pollLog().catch(() => {});
 
@@ -2195,17 +2176,25 @@ function pageUpdates() {
             }
             return update ? badge(_('Update available'), 'warning') : badge(_('Up to date'), 'success');
         };
-        const rows = [
-            ['Exodus', appBuild(info.app, info.app_commit), appBuild(info.app_latest, info.app_latest_commit), status(info.app_update, info.app)],
-            [`${_('Core')} · ${CORE_TITLES[info.core_type] || info.core_type}`, info.core, info.core_latest,
-                status(info.core_latest == null ? null : newer(info.core, info.core_latest), info.core)]
-        ];
-        const table = E('div', { class: 'table-wrap' }, E('table', { class: 'table' }, [
-            E('thead', {}, E('tr', {}, [E('th', {}, _('Component')), E('th', {}, _('Installed')), E('th', {}, _('Latest')), E('th', {}, _('Status'))])),
-            E('tbody', {}, rows.map(([name, current, next, badgeEl]) => E('tr', {}, [
-                E('td', {}, E('div', { class: 'cell-title' }, name)), E('td', { class: 'mono' }, current || '—'), E('td', { class: 'mono' }, next || '—'), E('td', {}, badgeEl)
-            ])))
-        ]));
+        const version = (label, value, commit) => E('div', {}, [E('dt', {}, label), E('dd', {}, [
+            E('span', {class: 'version-value'}, value || '—'),
+            value && commit ? E('span', {class: 'version-commit'}, `${_('Commit')} ${commit.substring(0, 7)}`) : null])]);
+        const component = (name, subtitle, current, next, badgeEl, currentCommit, nextCommit) => {
+            badgeEl.classList.add('update-status');
+            return E('article', {class: 'update-component', 'aria-label': name}, [
+                E('div', {class: 'update-component-header'}, [E('div', {class: 'update-component-name'}, [
+                    E('h3', {class: 'update-component-title'}, name), subtitle ? E('p', {class: 'update-component-subtitle'}, subtitle) : null]), badgeEl]),
+                E('dl', {class: 'update-versions'}, [version(_('Installed'), current, currentCommit), version(_('Latest'), next, nextCommit)])]);
+        };
+        const components = E('div', {class: 'update-components'}, [
+            component('Exodus', null, info.app, info.app_latest, status(info.app_update, info.app), info.app_commit, info.app_latest_commit),
+            component(_('Core'), CORE_TITLES[info.core_type] || info.core_type, info.core, info.core_latest,
+                status(info.core_latest == null ? null : newer(info.core, info.core_latest), info.core))]);
+        const environment = E('dl', {class: 'update-environment'}, [
+            E('div', {}, [E('dt', {}, _('Downloads')), E('dd', {}, info.gh_proxy ? _('through gh-proxy at %s', info.gh_proxy) : _('directly from GitHub'))]),
+            E('div', {}, [E('dt', {}, _('Architecture')), E('dd', {}, info.arch || '—')]),
+            E('div', {}, [E('dt', {}, _('Free space')), E('dd', {}, [formatSize(info.free_space), info.core_size != null
+                ? E('span', {class: 'update-space-note'}, `${_('Core')}: ${formatSize(info.core_size)}`) : null])])]);
         if (lowSpace.value === null) {
             lowSpace.value = info.free_space != null && info.core_size != null && info.free_space < info.core_size * 1.2;
         }
@@ -2231,6 +2220,7 @@ function pageUpdates() {
             state.timers.push(timer);
         } });
         append(container, card({
+            class: 'updates-panel',
             title: _('Versions'),
             info: [
                 _('Exodus and the core are downloaded from GitHub into Entware. Settings, profiles and subscriptions are kept.'),
@@ -2242,13 +2232,9 @@ function pageUpdates() {
                 renderVersions(await run(fetchUpdate(true)));
             } }),
             content: [
-                table,
-                infoList([
-                    [_('Downloads'), info.gh_proxy ? _('through gh-proxy at %s', info.gh_proxy) : _('directly from GitHub')],
-                    [_('Architecture'), E('span', { class: 'mono' }, info.arch || '—')],
-                    [_('Free space'), `${formatSize(info.free_space)} · ${_('core')} ${formatSize(info.core_size)}`]
-                ]),
-                switchField(_('Low flash space mode'), _('Remove the current core before installing the new one, when the update fails for lack of space. The proxy does not work until the new core is installed.'), objRef(lowSpace, 'value'))
+                components,
+                environment,
+                switchField(_('Low flash space mode'), _('Remove the current core before installing the new one, when the update fails for lack of space. The proxy does not work until the new core is installed.'), objRef(lowSpace, 'value'), null, true)
             ],
             footer: E('div', { class: 'row end', style: { width: '100%' } }, updateButton)
         }));
@@ -2279,7 +2265,7 @@ function pageUpdates() {
 
     return [
         pageHeader(_('Updates'), _('Check available versions and update Exodus or the core. Profiles and settings are kept.')),
-        E('div', { class: 'stack' }, [container, card({ title: _('Update log'), content: E('div', { class: 'text-surface' }, logView) })])
+        E('div', { class: 'stack' }, [container, card({ title: _('Update log'), content: [logStatus, E('div', { class: 'text-surface' }, logView)] })])
     ];
 }
 
@@ -2328,20 +2314,18 @@ async function checkUpdates() {
 
 let aboutKey = null;
 
-// the version in the navbar, it pulses when an update is available
+// Build information is available without a persistent status or version badge.
 function renderAboutButton() {
     const button = document.getElementById('about');
-    const version = (state.status && state.status.app_version) || (state.update && state.update.app);
-    const update = updateAvailable(state.update);
-    const key = JSON.stringify([state.sessionExpired, version, update]);
+    const key = lang;
     if (key === aboutKey) {
         return;
     }
     aboutKey = key;
-    button.hidden = state.sessionExpired || !version;
-    button.classList.toggle('update', update);
-    button.title = update ? _('Update available') : _('Build info');
-    append(clear(button), [update ? E('span', { class: 'dot' }) : icon('git-branch'), version || '']);
+    button.hidden = false;
+    button.title = _('Build info');
+    button.setAttribute('aria-label', _('Build info'));
+    append(clear(button), icon('info'));
 }
 
 // the clipboard api needs https, the web ui of the router is http
@@ -2482,6 +2466,7 @@ function renderMenu() {
 let renderToken = 0;
 
 async function render() {
+    hideHelp();
     // the login form stays until the password is entered, start() renders the page then
     if (state.sessionExpired) {
         return;
@@ -2567,6 +2552,14 @@ async function start() {
 // ---------- init ----------
 
 renderSavebar();
+window.addEventListener('resize', hideHelp);
+window.addEventListener('scroll', event => {
+    if (!helpPopup || (event.target instanceof Node && helpPopup.contains(event.target))) return;
+    // Scrolling a marker into view can deliver its scroll event after mouseenter.
+    // Preserve anchored help while hovered or focused, without rebuilding its links.
+    if (helpAnchor && (helpAnchor.matches(':hover,:focus') || helpPopup.matches(':hover') || helpPopup.contains(document.activeElement))) positionHelp();
+    else hideHelp();
+}, true);
 const brandMark = document.getElementById('brand-mark');
 if (brandMark) brandMark.appendChild(logo());
 const workspaceLabel = document.getElementById('workspace-label');
@@ -2596,11 +2589,13 @@ document.addEventListener('keydown', (ev) => {
         else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
     }
     if (ev.key === 'Escape') {
+        if (helpPopup && !helpPopup.hidden) {hideHelp(); return;}
         closeDialog();
     }
 });
 
 window.addEventListener('exodus-session-expired', () => {
+    hideHelp();
     state.sessionExpired = true;
     state.timers.forEach(clearInterval);
     state.timers = [];

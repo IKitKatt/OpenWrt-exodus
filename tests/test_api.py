@@ -3,6 +3,29 @@ from shell_support import ShellCase
 
 
 class ApiTests(ShellCase):
+    def test_all_existing_logs_read_and_clear_only_the_selected_file(self):
+        names = ('app', 'core', 'update', 'debug', 'web')
+        contents = {name: f'{name}: event\nПривет 😀 <% event %>\n' for name in names}
+        for name, content in contents.items():
+            (self.ram / f'log/{name}.log').write_text(content, encoding='utf8')
+        for name, content in contents.items():
+            with self.subTest(name=name):
+                response = self.api('log_read', name=name)
+                self.assertEqual(response['status'], 200)
+                self.assertEqual(response['data']['content'], content)
+        self.assertEqual(self.api('log_clear', name='core')['status'], 200)
+        for name, content in contents.items():
+            self.assertEqual((self.ram / f'log/{name}.log').read_text(), '' if name == 'core' else content)
+        for action in ('log_read', 'log_clear'):
+            self.assertEqual(self.api(action, name='../outside')['status'], 400)
+
+    def test_log_read_returns_latest_megabyte(self):
+        content = b'old event\n' + b'x' * (1048576 - 13) + b'latest event\n'
+        (self.ram / 'log/core.log').write_bytes(content)
+        response = self.api('log_read', name='core')
+        self.assertEqual(response['status'], 200)
+        self.assertEqual(response['data']['content'].encode(), content[-1048576:])
+
     def test_passive_update_read_never_contacts_network(self):
         self.mock('curl','echo called >> "$EXODUS_JFFS/network.calls"; exit 1')
         info=self.api('check_update',cached=True)

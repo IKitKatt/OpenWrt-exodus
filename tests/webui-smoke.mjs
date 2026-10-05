@@ -67,15 +67,16 @@ async function checkDelayedUpdate() {
     await page.clock.install();
     await page.goto(`${base}/?pendingUpdate#/updates`);
     await page.getByLabel('Low flash space mode',{exact:true}).waitFor();
-    assert.equal(await page.locator('#content .table .badge').first().innerText(),'Unknown');
+    assert.equal(await page.locator('#content .update-status').first().innerText(),'Unknown');
     assert.equal(await page.getByRole('button',{name:'Update',exact:true}).isDisabled(),true);
     await page.getByLabel('Low flash space mode',{exact:true}).check();
     await page.evaluate(()=>Object.assign(previewData.check_update,{app_latest:'1.27.5',app_update:true,core_latest:'v1.19.16'}));
     await page.clock.fastForward(5100);
-    await page.waitForFunction(()=>document.querySelector('#content .table').textContent.includes('v1.19.16'),{},{timeout:1500});
+    await page.waitForFunction(()=>document.querySelector('#content .update-components').textContent.includes('v1.19.16'),{},{timeout:1500});
     assert.equal(await page.getByLabel('Low flash space mode',{exact:true}).isChecked(),true,'background result preserves the selected update option');
     assert.equal(await page.getByRole('button',{name:'Update',exact:true}).isEnabled(),true);
-    assert.equal(await page.locator('#about').getAttribute('title'),'Update available');
+    assert.equal(await page.locator('#about').getAttribute('title'),'Build info');
+    assert.equal(await page.locator('#content .update-status').first().innerText(),'Update available');
     assert.equal(await page.evaluate(()=>previewCalls.some(c=>c.action==='check_update'&&c.params.force||c.action==='update')),false,'passive refresh does not force checks or start updates');
     await page.getByRole('button',{name:'Check again',exact:true}).click();
     assert.equal(await page.evaluate(()=>previewCalls.filter(c=>c.action==='check_update'&&c.params.force===true).length),1,'explicit recheck still requests a forced check');
@@ -100,13 +101,13 @@ try {
         assert.deepEqual(errors,[]);
         process.exitCode=0;
     } else {
-    for(const lang of ['EN','RU']) for(const width of [760,600,390]) {
-        const page=await browser.newPage({viewport:{width:width===390?390:1000,height:1000}});
+    for(const lang of ['EN','RU']) for(const width of [760,740]) {
+        const page=await browser.newPage({viewport:{width:1100,height:1000}});
         page.on('pageerror',error=>errors.push(error.message));
         await page.goto(`${base}/?lang=${lang}&width=${width}`);
         await page.locator('#content h1').waitFor();
         await page.locator('.shell').evaluate((el,width)=>el.style.width=width+'px',width);
-        assert.ok(await page.locator('.picker-column .field input').evaluate(el=>el.getBoundingClientRect().width>=72),`${lang}/${width} manual address remains usable`);
+        assert.ok(await page.getByLabel(lang==='RU'?'Добавить по адресу':'Add by address',{exact:true}).evaluate(el=>el.getBoundingClientRect().width>=72),`${lang}/${width} manual address remains usable`);
         assert.equal(await page.locator('#menu a').count(),6);
         for(const route of ['status','profiles','settings','editor','logs','updates']) {
             await page.locator(`#menu a[href="#/${route}"]`).click();
@@ -178,13 +179,13 @@ try {
     await page.locator('#menu a[href="#/status"]').click();
     await page.evaluate(()=>window.previewFailStatus=true);
     await page.waitForTimeout(5200);
-    assert.equal(await page.locator('#heading-state .badge').innerText(),'Unknown');
+    assert.equal(await page.locator('#service-status').innerText(),'Unknown');
     await page.getByLabel('Autostart',{exact:true}).uncheck();
     await page.evaluate(()=>window.dispatchEvent(new Event('exodus-session-expired')));
     assert.equal(await page.locator('#session-warning').isVisible(),true);
     assert.equal(await page.getByLabel('Autostart',{exact:true}).isChecked(),false);
     await page.close();
     assert.deepEqual(errors,[]);
-    console.log('PASS: 6 sections, settings tabs, modal Escape/focus, RU/EN, widths 760/600/390, address input, table headers, draft bar; synthetic data only.');
+    console.log('PASS: 6 sections, settings tabs, modal Escape/focus, RU/EN, desktop widths 760/740, address input, table headers, draft bar; synthetic data only.');
     }
 } finally {await browser.close();}

@@ -170,7 +170,7 @@
             "segment": "br0",
             "guest": false,
             "band": "2.4 GHz",
-            "clients": 1284
+            "clients": 48
           },
           {
             "id": "wl1.1",
@@ -312,13 +312,16 @@
       },
       "check_update": {
         "app": "1.27.4-rc.12+asuswrt-native",
+        "app_commit": "0123456789abcdef0123456789abcdef01234567",
         "app_latest": "1.27.5",
+        "app_latest_commit": "9876543210abcdef0123456789abcdef01234567",
         "app_update": true,
         "core_type": "prizrak",
         "core": "v1.19.32-r1-development-20261005-arm64",
         "core_latest": "v1.19.33-r1",
         "free_space": 1234567,
-        "core_size": 123456789
+        "core_size": 123456789,
+        "gh_proxy": "github-relay.ap-southeast-1.proxy.example.test"
       },
       "about": {
         "app": "1.27.4-rc.12+asuswrt-native",
