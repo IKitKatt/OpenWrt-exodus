@@ -59,6 +59,7 @@ while [ "$#" -gt 0 ]; do
 done
 echo "$url" >> "$EXODUS_JFFS/curl.calls"
 case "$url" in
+ */archive/asuswrt.tar.gz) cp "${FIXTURE_LEGACY_ARCHIVE:-$FIXTURE_ARCHIVE}" "$out" ;;
  */archive/*.tar.gz) cp "$FIXTURE_ARCHIVE" "$out" ;;
  */VERSION) if [ -n "$out" ]; then printf '1.27.4\\n' > "$out"; else printf '1.27.4\\n'; fi ;;
  */version.txt) printf '%s\\n' "${FIXTURE_CORE_VERSION:-v1.19.15}" ;;
@@ -241,17 +242,46 @@ esac''')
         self.assertTrue(state.returncode!=0 or 'State:\tZ' in state.stdout,'foreground child survived')
         self.assertFalse((webui/'cache.pid').exists())
 
-    def test_pr_target_branch_is_default_download_source(self):
+    def legacy_bundle(self):
+        source=self.root/'source/repo'
+        archive=self.root/'legacy-source.tar.gz'
+        with tarfile.open(archive,'w:gz') as tar:
+            tar.add(source,arcname='repo',filter=lambda entry:
+                    None if entry.name.endswith(('/Exodus.asp','/merlin.js')) else entry)
+        self.env['FIXTURE_LEGACY_ARCHIVE']=str(archive)
+
+    def test_native_branch_is_default_download_source(self):
         self.bundle()
+        self.legacy_bundle()
         result=self.install()
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         build=json.loads((self.share/'BUILD').read_text())
-        self.assertEqual(build['ref'],'asuswrt')
+        self.assertEqual(build['ref'],'asuswrt-native')
         self.assertEqual(build['repository'],'IKitKatt/openwrt-exodus')
         calls=(self.jffs/'curl.calls').read_text()
-        self.assertIn('/archive/asuswrt.tar.gz',calls)
-        self.assertNotIn('/archive/asuswrt-native.tar.gz',calls)
+        self.assertIn('/archive/asuswrt-native.tar.gz',calls)
+        self.assertNotIn('/archive/asuswrt.tar.gz',calls)
         self.assertIn('coreutils-base64',(self.jffs/'opkg.calls').read_text())
+
+    def test_explicit_legacy_ref_reports_source_before_replacing_code(self):
+        self.bundle();self.legacy_bundle()
+        self.env['REF']='asuswrt'
+        previous=(self.share/'BUILD').read_bytes()
+        result=self.install()
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('incomplete application payload: asuswrt/opt/share/exodus/www/Exodus.asp',result.stdout)
+        self.assertIn('IKitKatt/openwrt-exodus@asuswrt',result.stdout)
+        self.assertIn('native WebUI',result.stdout)
+        self.assertEqual((self.share/'BUILD').read_bytes(),previous)
+        self.assertFalse((self.jffs/'addons/exodus').exists())
+
+    def test_explicit_ref_is_used_and_saved(self):
+        self.bundle()
+        self.env['REF']='asuswrt'
+        result=self.install()
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertEqual(json.loads((self.share/'BUILD').read_text())['ref'],'asuswrt')
+        self.assertIn('/archive/asuswrt.tar.gz',(self.jffs/'curl.calls').read_text())
 
     def test_installer_rejects_unusable_base64_before_replacing_code(self):
         self.mock('base64', 'exit 127')
@@ -269,8 +299,8 @@ esac''')
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         build=json.loads((self.share/'BUILD').read_text())
         self.assertEqual(build.get('repository'),'router-owner/Exodus-fork')
-        self.assertEqual(build['ref'],'asuswrt')
-        self.assertIn('https://github.com/router-owner/Exodus-fork/archive/asuswrt.tar.gz',(self.jffs/'curl.calls').read_text())
+        self.assertEqual(build['ref'],'asuswrt-native')
+        self.assertIn('https://github.com/router-owner/Exodus-fork/archive/asuswrt-native.tar.gz',(self.jffs/'curl.calls').read_text())
 
     def test_ax86u_3004_388_12_2_installs_native_ui(self):
         self.bundle()

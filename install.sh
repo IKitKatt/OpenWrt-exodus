@@ -3,7 +3,7 @@
 # Exodus for Asuswrt-Merlin installer and updater
 # installs into entware: the service, the web ui, the mihomo core and yq, settings and profiles are kept
 # adds a line to the user scripts firewall-start, nat-start and unmount in /jffs/scripts, other lines there are kept
-# REF=<branch|tag>  install another version, the asuswrt branch by default
+# REF=<branch|tag>  install another version, the asuswrt-native branch by default
 # REPOSITORY=<owner/repo> download application files from this fork
 # LOW_SPACE=1       remove the current core before installing the new one, for routers with little free space
 # CORE=<core>       install this core without asking: meta (stable), alpha (Mihomo Alpha) or prizrak (Prizrak-Core)
@@ -13,7 +13,7 @@
 # the core and GH_PROXY are saved in $EXODUS_OPT/etc/exodus/config.json, the next runs and the update page use them
 
 repository="${REPOSITORY:-IKitKatt/openwrt-exodus}"
-ref="${REF:-asuswrt}"
+ref="${REF:-asuswrt-native}"
 
 EXODUS_OPT="${EXODUS_OPT:-/opt}"
 EXODUS_JFFS="${EXODUS_JFFS:-/jffs}"
@@ -539,6 +539,7 @@ if [ -n "$SOURCE_DIR" ]; then
  src=$(cd "$SOURCE_DIR" 2>/dev/null && pwd -P) || fail "SOURCE_DIR is not readable"
  case "$src/" in "$temp_dir/"*) fail "SOURCE_DIR must be outside installer staging" ;; esac
  info "Local Exodus source: $src"
+ payload_source="$src"
 else
  # The application archive is small and staged on Entware storage.
  info "Downloading Exodus ($ref)..."
@@ -548,12 +549,13 @@ else
  commit=$(archive_commit "$temp_dir/app.tar.gz")
  rm -f "$temp_dir/app.tar.gz"
  src=$(find "$temp_dir/app" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+ payload_source="$repository@$ref"
 fi
 if [ -z "$src" ] || [ ! -f "$src/asuswrt/opt/share/exodus/exodus" ]; then
 	fail "download failed, if the provider slows down GitHub, install through gh-proxy, see README"
 fi
 for file in install.sh uninstall.sh asuswrt/opt/etc/init.d/S99exodus asuswrt/opt/etc/exodus/config.json asuswrt/opt/etc/exodus/mixin.yaml asuswrt/opt/share/exodus/VERSION asuswrt/opt/share/exodus/www/Exodus.asp asuswrt/opt/share/exodus/www/app.js asuswrt/opt/share/exodus/www/merlin.js asuswrt/opt/share/exodus/www/i18n.js asuswrt/opt/share/exodus/www/style.css; do
- [ -s "$src/$file" ] || fail "incomplete application payload: $file"
+ [ -s "$src/$file" ] || fail "incomplete application payload: $file (source: $payload_source); use a source revision containing the native WebUI"
 done
 for file in "$src/install.sh" "$src/uninstall.sh" "$src/asuswrt/opt/share/exodus/exodus" "$src/asuswrt/opt/etc/init.d/S99exodus" "$src/asuswrt/opt/share/exodus/lib/"*.sh; do
  sh -n "$file" || fail "invalid shell payload: $file"

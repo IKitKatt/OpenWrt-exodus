@@ -2420,7 +2420,7 @@ async function openAbout() {
             ])) : null,
             E('div', { class: 'build-links' }, [
                 E('a', { class: 'btn btn-outline', href: `${repo}/issues`, target: '_blank', rel: 'noopener' }, [icon('bug'), _('Issues')]),
-                E('a', { class: 'btn btn-outline', href: `${repo}/tree/${info.ref || 'asuswrt'}`, target: '_blank', rel: 'noopener' }, [icon('github'), 'GitHub'])
+                E('a', { class: 'btn btn-outline', href: `${repo}/tree/${info.ref || 'asuswrt-native'}`, target: '_blank', rel: 'noopener' }, [icon('github'), 'GitHub'])
             ])
         ]
     });

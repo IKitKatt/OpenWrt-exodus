@@ -5,7 +5,7 @@
 
 # Exodus для Asuswrt-Merlin
 
-Прокси на [Mihomo](https://github.com/MetaCubeX/mihomo) для роутеров Asus с [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) и Entware. Это ветка `asuswrt` [форка IKitKatt](https://github.com/IKitKatt/openwrt-exodus/tree/asuswrt) проекта [Exodus](https://github.com/prettyleaf/openwrt-exodus): версия для OpenWrt живёт в ветке `main` исходного проекта, для Keenetic — в `keenetic`.
+Прокси на [Mihomo](https://github.com/MetaCubeX/mihomo) для роутеров Asus с [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) и Entware. Это ветка `asuswrt-native` [форка IKitKatt](https://github.com/IKitKatt/openwrt-exodus/tree/asuswrt-native) проекта [Exodus](https://github.com/prettyleaf/openwrt-exodus): версия для OpenWrt живёт в ветке `main` исходного проекта, для Keenetic — в `keenetic`.
 
 Идеи взяты из [XKeen](https://github.com/jameszeroX/XKeen).
 
@@ -27,10 +27,12 @@
 
 ## Установка и обновление
 
+До слияния изменений встроенного WebUI в `asuswrt` используйте `asuswrt-native` и в URL установщика, и в `REF`. URL выбирает скрипт установщика, а `REF` отдельно выбирает архив приложения.
+
 В SSH-консоли роутера:
 
 ```shell
-curl -fsSL https://raw.githubusercontent.com/IKitKatt/openwrt-exodus/asuswrt/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/IKitKatt/openwrt-exodus/asuswrt-native/install.sh | REF=asuswrt-native sh
 ```
 
 В конце он печатает адрес выделенной страницы `userN.asp` в Web Admin. Войдите в панель роутера и откройте **VPN → Exodus**. Используются сессия администратора и HTTP/HTTPS-порт роутера; отдельный сервер на порту 9099 и параметр `PASSWORD` больше не используются.
@@ -38,7 +40,7 @@ curl -fsSL https://raw.githubusercontent.com/IKitKatt/openwrt-exodus/asuswrt/ins
 Параметры можно передать переменными окружения перед `sh`:
 
 ```shell
-curl -fsSL https://raw.githubusercontent.com/IKitKatt/openwrt-exodus/asuswrt/install.sh | CORE=alpha sh
+curl -fsSL https://raw.githubusercontent.com/IKitKatt/openwrt-exodus/asuswrt-native/install.sh | REF=asuswrt-native CORE=alpha sh
 ```
 
 | Переменная | Значение |
@@ -47,14 +49,14 @@ curl -fsSL https://raw.githubusercontent.com/IKitKatt/openwrt-exodus/asuswrt/ins
 | `GH_PROXY` | скачивать с GitHub через [gh-proxy](https://github.com/prettyleaf/gh-proxy): `https://example.com/ghproxy/TOKEN` |
 | `LOW_SPACE=1` | удалить текущее ядро перед записью нового |
 | `ALLOW_RUNNING_MIHOMO=1` | явно разрешить установку при запущенном стороннем Mihomo без терминала |
-| `REF` | другая ветка или тег; по умолчанию `asuswrt` |
+| `REF` | другая ветка или тег; по умолчанию `asuswrt-native` |
 | `REPOSITORY` | форк приложения в формате `owner/repo`; по умолчанию `IKitKatt/openwrt-exodus` |
 
 Если работает сторонний Mihomo, установщик спрашивает, продолжать ли установку. «Да» продолжает, «Нет» и Enter отменяют её до проверки и скачивания зависимостей. Собственное ядро Exodus не вызывает это предупреждение. Цветом выделяются этапы, успех, предупреждения и ошибки; в журнале обновлений цвета отключены. `NO_COLOR=1` отключает их и в терминале.
 
 ### Версии
 
-У Exodus одна версия для всех роутеров — версия [релизов](https://github.com/prettyleaf/openwrt-exodus/releases) проекта: она в `/opt/share/exodus/VERSION`, на странице **«Обновления»** и в информации о сборке. Страница **«Обновления»** предлагает обновление, когда меняется код ветки `asuswrt`, изменения README не считаются.
+У Exodus одна версия для всех роутеров — версия [релизов](https://github.com/prettyleaf/openwrt-exodus/releases) проекта: она в `/opt/share/exodus/VERSION`, на странице **«Обновления»** и в информации о сборке. Страница **«Обновления»** предлагает обновление, когда меняется код ветки `asuswrt-native`, изменения README не считаются.
 
 ## Переход с другого прокси
 
@@ -112,7 +114,7 @@ KEEP_CONFIG=1 sh /opt/share/exodus/uninstall.sh
 При повреждённом CLI скачайте `uninstall.sh` командой ниже: он работает независимо от CLI. Без `KEEP_CONFIG=1` удаляются также данные Exodus. Установка и удаление используют общую блокировку; ошибка очистки возвращает ненулевой код вместо сообщения об успехе.
 
 ```shell
-curl -fsSL https://raw.githubusercontent.com/IKitKatt/openwrt-exodus/asuswrt/uninstall.sh | sh
+curl -fsSL https://raw.githubusercontent.com/IKitKatt/openwrt-exodus/asuswrt-native/uninstall.sh | sh
 ```
 
 Строки Exodus удаляются из `/jffs/scripts`, строки других аддонов остаются. С `KEEP_CONFIG=1` настройки, профили и подписки в `/opt/etc/exodus` сохраняются. Пакеты Entware не удаляются, ими могут пользоваться другие приложения.
