@@ -11,10 +11,8 @@ It borrows ideas from [XKeen](https://github.com/jameszeroX/XKeen).
 
 ## Requirements
 
-The installer installs `curl`, `jq`, `ca-bundle` and `coreutils-base64` through Entware. It checks Base64 encoding and decoding before replacing Exodus; cache generation failures abort activation and trigger rollback.
-
-- Asuswrt-Merlin **384.15 or newer** on the `3004` family (`384/386/388`), or **3006.102.1 or newer** on the `3006` family, with Addons API (`am_addons`), `/usr/sbin/helper.sh` and writable `/jffs/addons`. **3004.388.12_2 on RT-AX86U passes the version check.** Stock firmware and unsupported versions are rejected before installation changes. Addons API has been available since 384.15; see the [Merlin documentation](https://github.com/RMerl/asuswrt-merlin.ng/wiki/Addons-API).
-- The installer selects the core build for the router CPU. The router model must support the minimum firmware version above.
+- Asuswrt-Merlin on a Broadcom model: **384.15 or newer** on the `3004` family, or **3006.102.1 or newer** on the `3006` family, with Addons API (`am_addons`), `/usr/sbin/helper.sh` and writable `/jffs/addons`.
+- Architectures: `arm64` (RT-AX86U, RT-AX88U, GT-AX6000 and other HND models) and `armv7` (RT-AX58U, RT-AC68U and others). Models without an FPU, like RT-AC68U, get the `armv5` build of the core.
 - Entware on a USB drive, installed with [amtm](https://github.com/decoderman/amtm) (`amtm` → `ep`), and about 70 MB free on it: the Mihomo core is about 40 MB, yq about 15 MB.
 - Other transparent proxies (XRAYUI and similar addons) must be stopped and removed from autostart, they intercept the same traffic.
 - UDP through the proxy needs the TPROXY module of the firmware. Without it UDP goes directly, the app log tells about it.
@@ -27,15 +25,13 @@ The installer installs `curl`, `jq`, `ca-bundle` and `coreutils-base64` through 
 
 ## Install & Update
 
-The command below installs the native WebUI after these changes are merged into `prettyleaf/openwrt-exodus`'s `asuswrt` branch. Until then, use the testing command below to install this branch.
-
 In the SSH console of the router:
 
 ```shell
 curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/install.sh | sh
 ```
 
-At the end it prints the Web Admin URL of the allocated `userN.asp` page. Sign in to the router and open **VPN → Exodus**. Exodus uses the router administrator session and its HTTP/HTTPS port.
+At the end it prints the address of the Exodus page in the router's Web Admin. Sign in to the router and open **VPN → Exodus**. Exodus uses the native router interface and administrator session; requests are handled through Merlin's Addons API.
 
 Options can be passed as environment variables before `sh`:
 
@@ -48,17 +44,7 @@ curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/i
 | `CORE` | `meta` (stable Mihomo), `alpha` (Mihomo Alpha) or `prizrak` ([Prizrak-Core](https://github.com/legiz-ru/Prizrak-Core)), asked otherwise |
 | `GH_PROXY` | download from GitHub through [gh-proxy](https://github.com/prettyleaf/gh-proxy): `https://example.com/ghproxy/TOKEN` |
 | `LOW_SPACE=1` | remove the current core before writing the new one |
-| `ALLOW_RUNNING_MIHOMO=1` | explicitly allow installation with another Mihomo running when no terminal is available |
-| `REF` | another branch or tag; default: `asuswrt` |
-| `REPOSITORY` | application fork as `owner/repo`; default: `prettyleaf/openwrt-exodus` |
-
-To test this branch before the upstream merge, select both the repository and revision explicitly. The URL selects the installer; `REPOSITORY` and `REF` select the application payload and subsequent updates:
-
-```shell
-curl -fsSL https://raw.githubusercontent.com/IKitKatt/openwrt-exodus/asuswrt-native/install.sh | REPOSITORY=IKitKatt/openwrt-exodus REF=asuswrt-native sh
-```
-
-When another Mihomo is running, the installer asks whether to continue. Yes continues; No or Enter cancels before dependency checks or downloads. Exodus's own core does not trigger this warning. Terminal output highlights stages, success, warnings and errors. Update logs stay plain; `NO_COLOR=1` disables terminal colors too.
+| `REF` | another branch or tag |
 
 ### Versions
 
@@ -71,13 +57,13 @@ Two transparent proxies can not intercept the same traffic.
 1. Stop the other addon (XRAYUI, a Clash or sing-box addon) and turn off its autostart, or remove it by its instructions.
 2. Install Exodus, see [Install & Update](#install--update).
 3. **Profiles**: add the subscription of your provider. A Mihomo (Clash Meta) config of the other addon can be uploaded as a profile as it is: Exodus sets its ports, the DNS listener, the API and the dashboard over it, TUN of the profile is turned off. An Xray config does not fit, Exodus needs a subscription or a config for Mihomo.
-4. **Status → Devices**: choose the devices that go through the proxy, then **Save & Apply**.
+4. **Devices**: choose the devices that go through the proxy, then **Save & Apply**.
 
 ## How To Use
 
-1. Sign in to Merlin Web Admin and open **VPN → Exodus**. The interface follows the firmware styling and supports English and Russian.
+1. Sign in to the router's Web Admin and open **VPN → Exodus**. The interface follows Merlin's styling and uses Russian when the router language is Russian, otherwise English.
 2. **Profiles**: add a subscription or upload a profile.
-3. **Status**: turn on **Autostart**, choose the profile, choose the mode and the devices / Wi-Fi networks / segments in the Devices section, then **Save & Apply**. Device names come from the client list of the router, DHCP and its network map.
+3. **Devices**: turn on **Autostart**, choose the profile, choose the mode and the devices / Wi-Fi networks / segments, then **Save & Apply**. Device names come from the client list of the router, DHCP and its network map.
 4. **Settings** holds only what makes sense to change on the router: proxy modes, ports and exclusions, DSCP, a few Mihomo options, your own rules, the service. Everything else (DNS servers, hosts, sniffer, rule providers) goes to the profile or to the mixin file on the **Editor** page, it is merged into the profile on every start.
 
 The **Dashboard** button opens Zashboard, the core downloads it on the first start.
@@ -91,31 +77,7 @@ The **Dashboard** button opens Zashboard, the core downloads it on the first sta
 5. The proxied traffic goes to the router itself, past the filtering of forwarded traffic. With **Respect parental control** on, it is checked by the parental control chain of the firmware (`PControls`), so blocked devices and time scheduling apply to it too.
 6. `/jffs/scripts/unmount` stops the proxy before its USB drive is unmounted: the rules must not stay without the core.
 
-## Native Web Admin
-
-Updating an existing installation keeps profiles, subscriptions, mixin, API/proxy secrets and device ID. Registration failure restores the previous Exodus code and settings instead of reporting success.
-
-The `services-start` recovery stub waits for Entware in the background, and `S99exodus` registers the page when USB storage becomes available. Status and logs refresh from RAM every five seconds. Navigation also reads RAM caches; WebUI writes refresh them before confirming completion, and CLI changes appear within about 30 seconds. Network update checks run separately. Stopping the proxy leaves administration available; `exodus web stop` stops both workers and removes the Exodus page. Request IDs, chunk acknowledgements and stable workers preserve responses while an update replaces scripts.
-
-Cache freshness uses the router's HTTP clock rather than the computer's clock. A stale or missing cache triggers one recovery event: it starts a stopped cache worker and restarts a verified worker whose heartbeat has not advanced for over a minute of router uptime. Recovery does not write Addons API settings or restart Mihomo. Cache refresh errors appear in the App and Web logs. If recovery fails, run `exodus web restart` over SSH and save these logs before rebooting the router.
-
-Exodus uses English unless Merlin's interface language is Russian (`preferred_lang=RU`). There is no separate language selector. Its gray canvas extends to the sidebar and viewport height, including loading and error states.
-
-Uploaded profiles and editor files are limited to **8 MiB of UTF-8 data** (complete request: 16 MiB). Native forms transfer small acknowledged chunks with progress; keep the tab open for large files. Navigation and frequent status/log reads do not write JFFS. Write operations use the shared Addons API settings file. Before each packet, a native event returns a fresh, complete base64 snapshot in RAM, preserving spaces and empty values without writing shared settings. Snapshot records are separate from upload buffers; unrelated incomplete transfers do not block a new upload, with a limit of four unfinished transfers. Simultaneous writes from an unrelated addon are not atomic with Exodus. The final `exodus_packet` chunk remains there until the next submission or uninstall.
-
-If the router session expires, the tab retains the unsaved draft and pauses requests. Sign in to Web Admin in another tab, then use the resume button. Reloading the page discards an unsaved draft.
-
-CI checks in `.github/tests` use isolated firmware fixtures: `python3 -m unittest discover -s .github/tests -v` and `node --test .github/tests/merlin.test.mjs`. They require Linux, Python 3, Node.js, jq and standard Unix utilities. Before deployment, verify Web Admin session protection of the Exodus page and response URLs, service restart, routing, reboot recovery and removal on a router. These hardware checks have not been performed in this environment.
-
 ## Uninstall
-
-The installed version includes an uninstaller that requires no download:
-
-```shell
-KEEP_CONFIG=1 sh /opt/share/exodus/uninstall.sh
-```
-
-If the installed CLI is damaged, download `uninstall.sh` using the command below. It runs independently of the CLI. Omitting `KEEP_CONFIG=1` also deletes Exodus data. Installation and removal share an exclusive lock. Cleanup failures return a nonzero status rather than reporting success.
 
 ```shell
 curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/uninstall.sh | sh
@@ -130,8 +92,8 @@ exodus start | stop | restart | status
 exodus update_subscription <id>   # download a subscription, the running core gets it when it is in use
 exodus hard_update     # remove downloaded providers, update the subscription and restart
 exodus debug           # report for an issue, server addresses and passwords are hidden
-exodus web start | stop | restart | status | url
-exodus passwd          # points to Administration → System for the router password
+exodus web restart     # restore the native Exodus page and refresh its cache
+exodus passwd          # shows where to change the router administrator password
 ```
 
 ## Files
@@ -147,9 +109,8 @@ exodus passwd          # points to Administration → System for the router pass
 | `/opt/libexec/exodus/` | `mihomo` and `yq` |
 | `/opt/etc/init.d/S99exodus` | start with Entware |
 | `/jffs/scripts/firewall-start`, `nat-start`, `unmount`, `services-start`, `service-event` | one line marked `# exodus` in each |
-| `/jffs/addons/exodus/` | persistent ASP page and boot recovery stub |
-| `/tmp/exodus/run/webui/` | request staging, response envelopes, status/log caches and cache worker PID |
-| `/www/user/exodus/` (`/ext/exodus/` in Web Admin) | authenticated static resources and RAM response/cache links |
+| `/jffs/addons/exodus/` | native Web Admin page and boot recovery script |
+| `/tmp/exodus/run/webui/` | RAM caches and Addons API request/response files |
 | `/tmp/exodus/log/` | logs of the app, the core and the update |
 
 ## Special Thanks
