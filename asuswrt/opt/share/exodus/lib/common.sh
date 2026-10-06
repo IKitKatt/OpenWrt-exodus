@@ -40,8 +40,8 @@ if ! printf '' | md5sum > /dev/null 2>&1; then
 	}
 fi
 
-REPOSITORY="IKitKatt/openwrt-exodus"
-BRANCH="asuswrt-native"
+REPOSITORY="prettyleaf/openwrt-exodus"
+BRANCH="asuswrt"
 
 # code, replaced on update
 SHARE_DIR="$EXODUS_OPT/share/exodus"

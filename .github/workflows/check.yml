@@ -34,8 +34,8 @@ jobs:
 
       - name: Native Merlin transport and lifecycle
         run: |
-          python3 -m unittest discover -s tests -v
-          node --test tests/merlin.test.mjs
+          python3 -m unittest discover -s .github/tests -v
+          node --test .github/tests/merlin.test.mjs
 
       - name: No regex in jq
         # jq of entware is built without oniguruma: test, match, capture, sub, gsub, splits and split/2 fail there

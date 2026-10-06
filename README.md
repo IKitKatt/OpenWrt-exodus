@@ -5,7 +5,7 @@
 
 # Exodus for Asuswrt-Merlin
 
-Proxy with [Mihomo](https://github.com/MetaCubeX/mihomo) for Asus routers with [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) and Entware. This is the `asuswrt-native` branch of the [IKitKatt fork](https://github.com/IKitKatt/openwrt-exodus/tree/asuswrt-native) of [Exodus](https://github.com/prettyleaf/openwrt-exodus): the OpenWrt version lives in the original project's `main` branch, the Keenetic one in `keenetic`.
+Proxy with [Mihomo](https://github.com/MetaCubeX/mihomo) for Asus routers with [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) and Entware. This is the `asuswrt` branch of [Exodus](https://github.com/prettyleaf/openwrt-exodus): the OpenWrt version lives in `main`, the Keenetic one in `keenetic`.
 
 It borrows ideas from [XKeen](https://github.com/jameszeroX/XKeen).
 
@@ -27,20 +27,20 @@ The installer installs `curl`, `jq`, `ca-bundle` and `coreutils-base64` through 
 
 ## Install & Update
 
-Until the native WebUI changes are merged into `asuswrt`, use `asuswrt-native` for both the installer URL and `REF`. The URL selects the installer script; `REF` independently selects the application archive.
+The command below installs the native WebUI after these changes are merged into `prettyleaf/openwrt-exodus`'s `asuswrt` branch. Until then, use the testing command below to install this branch.
 
 In the SSH console of the router:
 
 ```shell
-curl -fsSL https://raw.githubusercontent.com/IKitKatt/openwrt-exodus/asuswrt-native/install.sh | REF=asuswrt-native sh
+curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/install.sh | sh
 ```
 
-At the end it prints the Web Admin URL of the allocated `userN.asp` page. Sign in to the router and open **VPN → Exodus**. Exodus uses the router administrator session and its HTTP/HTTPS port; a separate listener on port 9099 and the `PASSWORD` option are no longer used.
+At the end it prints the Web Admin URL of the allocated `userN.asp` page. Sign in to the router and open **VPN → Exodus**. Exodus uses the router administrator session and its HTTP/HTTPS port.
 
 Options can be passed as environment variables before `sh`:
 
 ```shell
-curl -fsSL https://raw.githubusercontent.com/IKitKatt/openwrt-exodus/asuswrt-native/install.sh | REF=asuswrt-native CORE=alpha sh
+curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/install.sh | CORE=alpha sh
 ```
 
 | Variable | Meaning |
@@ -49,14 +49,20 @@ curl -fsSL https://raw.githubusercontent.com/IKitKatt/openwrt-exodus/asuswrt-nat
 | `GH_PROXY` | download from GitHub through [gh-proxy](https://github.com/prettyleaf/gh-proxy): `https://example.com/ghproxy/TOKEN` |
 | `LOW_SPACE=1` | remove the current core before writing the new one |
 | `ALLOW_RUNNING_MIHOMO=1` | explicitly allow installation with another Mihomo running when no terminal is available |
-| `REF` | another branch or tag; default: `asuswrt-native` |
-| `REPOSITORY` | application fork as `owner/repo`; default: `IKitKatt/openwrt-exodus` |
+| `REF` | another branch or tag; default: `asuswrt` |
+| `REPOSITORY` | application fork as `owner/repo`; default: `prettyleaf/openwrt-exodus` |
+
+To test this branch before the upstream merge, select both the repository and revision explicitly. The URL selects the installer; `REPOSITORY` and `REF` select the application payload and subsequent updates:
+
+```shell
+curl -fsSL https://raw.githubusercontent.com/IKitKatt/openwrt-exodus/asuswrt-native/install.sh | REPOSITORY=IKitKatt/openwrt-exodus REF=asuswrt-native sh
+```
 
 When another Mihomo is running, the installer asks whether to continue. Yes continues; No or Enter cancels before dependency checks or downloads. Exodus's own core does not trigger this warning. Terminal output highlights stages, success, warnings and errors. Update logs stay plain; `NO_COLOR=1` disables terminal colors too.
 
 ### Versions
 
-Exodus has one version for all routers, the version of the [releases](https://github.com/prettyleaf/openwrt-exodus/releases) of the project: it is in `/opt/share/exodus/VERSION`, on the **Updates** page and in the build info. The **Updates** page offers an update when the code of the `asuswrt-native` branch changes, a change of the readme does not count.
+Exodus has one version for all routers, the version of the [releases](https://github.com/prettyleaf/openwrt-exodus/releases) of the project: it is in `/opt/share/exodus/VERSION`, on the **Updates** page and in the build info. The **Updates** page offers an update when the code of the `asuswrt` branch changes, a change of the readme does not count.
 
 ## Migrating from Another Proxy
 
@@ -85,9 +91,9 @@ The **Dashboard** button opens Zashboard, the core downloads it on the first sta
 5. The proxied traffic goes to the router itself, past the filtering of forwarded traffic. With **Respect parental control** on, it is checked by the parental control chain of the firmware (`PControls`), so blocked devices and time scheduling apply to it too.
 6. `/jffs/scripts/unmount` stops the proxy before its USB drive is unmounted: the rules must not stay without the core.
 
-## Native Web Admin migration
+## Native Web Admin
 
-Updating an existing installation keeps profiles, subscriptions, mixin, API/proxy secrets and device ID. Legacy `.web.port` and `web.auth` are retained for a possible manual downgrade; they do not control native Web Admin. The installer stops only the verified Exodus Lighttpd process and no longer installs Lighttpd packages. Registration failure restores the previous Exodus code and settings instead of reporting success.
+Updating an existing installation keeps profiles, subscriptions, mixin, API/proxy secrets and device ID. Registration failure restores the previous Exodus code and settings instead of reporting success.
 
 The `services-start` recovery stub waits for Entware in the background, and `S99exodus` registers the page when USB storage becomes available. Status and logs refresh from RAM every five seconds. Navigation also reads RAM caches; WebUI writes refresh them before confirming completion, and CLI changes appear within about 30 seconds. Network update checks run separately. Stopping the proxy leaves administration available; `exodus web stop` stops both workers and removes the Exodus page. Request IDs, chunk acknowledgements and stable workers preserve responses while an update replaces scripts.
 
@@ -99,9 +105,7 @@ Uploaded profiles and editor files are limited to **8 MiB of UTF-8 data** (compl
 
 If the router session expires, the tab retains the unsaved draft and pauses requests. Sign in to Web Admin in another tab, then use the resume button. Reloading the page discards an unsaved draft.
 
-For a manual downgrade, back up `/opt/etc/exodus`, run `exodus web stop`, remove only Exodus's marked lines from `services-start` and `service-event`, and remove `/jffs/addons/exodus`. Fetch the **installer from the selected older commit**, and run it with `REF` set to that same commit. The current native installer requires native registration helpers and cannot install an arbitrary legacy revision. Restore the backup if needed; a legacy first-time password may need to be set by the older installer.
-
-CI checks use isolated firmware fixtures: `python3 -m unittest discover -s tests -v` and `node --test tests/merlin.test.mjs`. They require Linux, Python 3, Node.js, jq and standard Unix utilities. Before deployment, verify Web Admin session protection of the Exodus page and response URLs, service restart, routing, reboot recovery and removal on a router. These hardware checks have not been performed in this environment.
+CI checks in `.github/tests` use isolated firmware fixtures: `python3 -m unittest discover -s .github/tests -v` and `node --test .github/tests/merlin.test.mjs`. They require Linux, Python 3, Node.js, jq and standard Unix utilities. Before deployment, verify Web Admin session protection of the Exodus page and response URLs, service restart, routing, reboot recovery and removal on a router. These hardware checks have not been performed in this environment.
 
 ## Uninstall
 
@@ -114,7 +118,7 @@ KEEP_CONFIG=1 sh /opt/share/exodus/uninstall.sh
 If the installed CLI is damaged, download `uninstall.sh` using the command below. It runs independently of the CLI. Omitting `KEEP_CONFIG=1` also deletes Exodus data. Installation and removal share an exclusive lock. Cleanup failures return a nonzero status rather than reporting success.
 
 ```shell
-curl -fsSL https://raw.githubusercontent.com/IKitKatt/openwrt-exodus/asuswrt-native/uninstall.sh | sh
+curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/uninstall.sh | sh
 ```
 
 The lines of Exodus are removed from `/jffs/scripts`, the lines of other addons are kept. With `KEEP_CONFIG=1` the settings, profiles and subscriptions in `/opt/etc/exodus` are kept. Entware packages are not removed, other applications may use them.

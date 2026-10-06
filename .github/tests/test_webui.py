@@ -46,7 +46,7 @@ class WebuiTests(ShellCase):
         self.mock('umount', 'exit 0')
         (self.root / 'helper.sh').write_text('am_get_webui_page() { am_webui_page=user1.asp; }\n')
         (self.www / 'require/modules').mkdir(parents=True)
-        shutil.copy(ROOT / 'tests/fixtures/menuTree.js', self.www / 'require/modules/menuTree.js')
+        shutil.copy(ROOT / '.github/tests/fixtures/menuTree.js', self.www / 'require/modules/menuTree.js')
         (self.www / 'user/user20.asp').write_text('foreign page')
         self.env['EXODUS_MENU'] = str(self.root / 'tmp/menuTree.js')
 
@@ -114,7 +114,7 @@ class WebuiTests(ShellCase):
     def test_recovery_uses_visible_menu_preserving_new_foreign_entries(self):
         self.web('webui_mount')
         target=self.www/'require/modules/menuTree.js'
-        visible=(ROOT/'tests/fixtures/menuTree.js').read_text()+'\n// new foreign menu entry\n'
+        visible=(ROOT/'.github/tests/fixtures/menuTree.js').read_text()+'\n// new foreign menu entry\n'
         target.unlink(); target.write_text(visible)
         self.assertNotEqual(self.web('webui_status',False).returncode,0)
         self.web('webui_mount')

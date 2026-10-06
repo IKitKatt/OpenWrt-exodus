@@ -3,7 +3,7 @@
 # Exodus for Asuswrt-Merlin installer and updater
 # installs into entware: the service, the web ui, the mihomo core and yq, settings and profiles are kept
 # adds a line to the user scripts firewall-start, nat-start and unmount in /jffs/scripts, other lines there are kept
-# REF=<branch|tag>  install another version, the asuswrt-native branch by default
+# REF=<branch|tag>  install another version, the asuswrt branch by default
 # REPOSITORY=<owner/repo> download application files from this fork
 # LOW_SPACE=1       remove the current core before installing the new one, for routers with little free space
 # CORE=<core>       install this core without asking: meta (stable), alpha (Mihomo Alpha) or prizrak (Prizrak-Core)
@@ -12,8 +12,8 @@
 # SOURCE_DIR=<dir>  install application files from a local source tree; dependencies still need internet
 # the core and GH_PROXY are saved in $EXODUS_OPT/etc/exodus/config.json, the next runs and the update page use them
 
-repository="${REPOSITORY:-IKitKatt/openwrt-exodus}"
-ref="${REF:-asuswrt-native}"
+repository="${REPOSITORY:-prettyleaf/openwrt-exodus}"
+ref="${REF:-asuswrt}"
 
 EXODUS_OPT="${EXODUS_OPT:-/opt}"
 EXODUS_JFFS="${EXODUS_JFFS:-/jffs}"

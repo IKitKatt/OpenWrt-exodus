@@ -33,6 +33,12 @@ class ApiTests(ShellCase):
         self.assertIsNone(info['data']['app_latest'])
         self.assertFalse((self.jffs/'network.calls').exists())
 
+    def test_about_without_build_uses_upstream_asuswrt(self):
+        (self.share/'BUILD').unlink(missing_ok=True)
+        info=self.api('about')['data']
+        self.assertEqual(info['repository'],'prettyleaf/openwrt-exodus')
+        self.assertEqual(info['ref'],'asuswrt')
+
     def test_about_reports_installed_fork(self):
         (self.share/'BUILD').write_text(json.dumps({'repository':'router-owner/Exodus-fork','ref':'asuswrt-native'}))
         info=self.api('about')['data']
