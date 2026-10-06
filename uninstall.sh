@@ -12,7 +12,27 @@ EXODUS_TMP="${EXODUS_TMP:-/tmp/exodus}"
 EXODUS_MENU="${EXODUS_MENU:-/tmp/menuTree.js}"
 export PATH="$EXODUS_OPT/bin:$EXODUS_OPT/sbin:/sbin:/bin:/usr/sbin:/usr/bin"
 
-fail() { echo "error: $1"; exit 1; }
+# Standalone entrypoint, including when piped into sh. Keep logs ANSI-free.
+ui_reset='' ui_bold='' ui_accent='' ui_info='' ui_ok='' ui_warn='' ui_error='' ui_muted=''
+if [ -t 1 ] && [ "${TERM:-dumb}" != dumb ] && [ "${NO_COLOR+set}" != set ]; then
+	ui_reset='\033[0m'; ui_bold='\033[1m'; ui_accent='\033[95m'
+	ui_info='\033[96m'; ui_ok='\033[92m'; ui_warn='\033[93m'; ui_error='\033[91m'; ui_muted='\033[90m'
+fi
+info() { printf '  %b[INFO]%b %s\n' "$ui_info" "$ui_reset" "$1"; }
+done_message() { printf '  %b[ OK ]%b %s\n' "$ui_ok" "$ui_reset" "$1"; }
+step() { printf '\n%b%s  %s%b\n' "$ui_bold$ui_accent" "$1" "$2" "$ui_reset"; }
+fail() {
+	[ -z "$ui_error" ] || printf '  %b[FAIL]%b %s\n' "$ui_error" "$ui_reset" "$1"
+	echo "error: $1"; exit 1
+}
+printf '\n%bExodus%b  /  Remove\n' "$ui_bold$ui_accent" "$ui_reset"
+printf '%bAsuswrt-Merlin + Entware%b\n\n' "$ui_muted" "$ui_reset"
+if [ "$KEEP_CONFIG" = 1 ]; then
+	info 'Settings, profiles and subscriptions will be kept.'
+else
+	printf '  %b[WARN]%b Settings, profiles and subscriptions will be removed.\n' "$ui_warn" "$ui_reset"
+fi
+info 'Shared Entware packages are kept for other applications.'
 case "$EXODUS_TMP" in /*/exodus) ;; *) fail "EXODUS_TMP must be an absolute Exodus directory" ;; esac
 # Merlin does not necessarily provide id. Compare effective UIDs from procfs.
 current_uid=$(awk '/^Uid:/ {print $3}' "/proc/$$/status" 2>/dev/null)
@@ -24,6 +44,7 @@ trap 'rm -f "$install_lock/pid"; rmdir "$install_lock"' EXIT
 trap 'fail "removal interrupted"' HUP INT TERM
 echo "$$" > "$install_lock/pid" || fail "can not write removal lock"
 [ ! -d "$EXODUS_TMP/run" ] || touch "$EXODUS_TMP/run/stop.flag" || fail "can not prevent core respawn"
+step '1/4' 'Stop Exodus processes'
 
 # Do not rely on the installed CLI or a PID alone during emergency cleanup.
 proc_root="${EXODUS_PROC:-/proc}"
@@ -51,6 +72,7 @@ stop_owned() {
  pid=$(cat "$file" 2>/dev/null)
  case "$pid" in ''|*[!0-9]*) rm -f "$file"; return ;; esac
  if owned_process "$pid" "$role"; then
+  info "Stopping $role..."
   kill "$pid" 2>/dev/null || :
   while owned_process "$pid" "$role"; do
    [ "$attempt" -lt 12 ] || fail "$role did not stop; installation kept"
@@ -72,6 +94,8 @@ if [ -x "$EXODUS_OPT/share/exodus/exodus" ]; then
 	"$EXODUS_OPT/share/exodus/exodus" stop
 	"$EXODUS_OPT/share/exodus/exodus" web stop
 fi
+done_message 'Exodus processes stopped.'
+step '2/4' 'Clean firewall rules and routes'
 
 # the rules once more, also when the stop failed or exodus is broken: rules without the core cut the internet of the network
 # the same as fw_clean in lib/firewall.sh, with the iptables and ipset of the firmware
@@ -104,6 +128,8 @@ for set in exodus_mac exodus_src4 exodus_src6 exodus_rsv4 exodus_rsv6 exodus_loc
 	"$ipset" destroy "$set" > /dev/null 2>&1
 	"$ipset" destroy "${set}_new" > /dev/null 2>&1
 done
+info 'Firewall and route cleanup attempted for Exodus entries.'
+step '3/4' 'Remove WebUI and startup hooks'
 
 # Marker-based cleanup also works when the installed CLI is broken.
 for page in "$EXODUS_WWW"/user/user*.asp; do
@@ -132,11 +158,16 @@ for name in firewall-start nat-start unmount services-start service-event; do
 	mv -f "$file.new" "$file" || fail "can not save $name hook; installation kept"
 	chmod 755 "$file" || fail "can not set $name hook permissions; installation kept"
 done
+done_message 'Exodus WebUI and hooks removed.'
+step '4/4' 'Remove application files'
 
 rm -f "$EXODUS_OPT/etc/init.d/S99exodus" "$EXODUS_OPT/bin/exodus" || fail "can not remove startup files"
 rm -rf "$EXODUS_OPT/share/exodus" "$EXODUS_OPT/share/exodus.old" "$EXODUS_OPT/share/exodus.new" "$EXODUS_OPT/libexec/exodus" "$EXODUS_TMP" || fail "can not remove runtime files"
 if [ "$KEEP_CONFIG" != 1 ]; then
 	rm -rf "$EXODUS_OPT/etc/exodus" || fail "can not remove configuration files"
+else
+	done_message "Configuration kept in $EXODUS_OPT/etc/exodus"
 fi
 
+done_message 'Removal complete.'
 echo "success"

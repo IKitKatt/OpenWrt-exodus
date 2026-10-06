@@ -18,6 +18,7 @@
         const makeId = options.id || (() => Array.from(root.crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join(''));
         let closed = false, login = false, active = false;
         const queue = [], reads = new Map();
+        let recovery = null, routerOffset = 0, lastRecovery = -Infinity;
         let controller = new AbortController();
         const check = () => { if (login) throw Error('Web Admin session expired. Sign in to the router again; your draft is kept in this tab.'); if (closed) throw Error('Transport closed'); };
         function expire() {
@@ -27,10 +28,11 @@
             else if (root.dispatchEvent) root.dispatchEvent(new Event('exodus-session-expired'));
             check();
         }
-        async function get(url) {
+        async function get(url, timing) {
             check();
             const result = await fetcher(url, {credentials:'same-origin', cache:'no-store', signal:controller.signal});
             const text = await result.text();
+            if (timing) timing.routerTime = Date.parse(result.headers?.get('date')) / 1000;
             if (result.status === 401 || result.status === 403) expire();
             if (!result.ok) throw Error('Router HTTP ' + result.status);
             if (/^\s*</.test(text)) expire();
@@ -44,16 +46,51 @@
             if (envelope.status !== 200 || body.error) throw Error(body.error || 'Router operation failed (' + envelope.status + ')');
             return body;
         }
-        async function cache(action, params) {
+        async function readCache(action, params) {
             const name = params.name;
             if (action === 'log_read' && !['app','core','update','web','debug'].includes(name)) throw Error('Unknown log');
             const key = action === 'log_read' ? 'log-' + name : action;
-            const envelope = await get('/ext/exodus/cache/' + key + '.json');
+            const timing = {};
+            const envelope = await get('/ext/exodus/cache/' + key + '.json', timing);
             if (envelope.v !== 1 || envelope.key !== key) throw Error('Invalid cache response');
-            const live = action === 'status' ? envelope : await get('/ext/exodus/cache/heartbeat.json');
-            const age = now()/1000 - live.generated;
-            if (live.v !== 1 || !Number.isFinite(age) || age < -5 || age > 15) throw Error('Router cache is stale');
+            const live = action === 'status' ? envelope : await get('/ext/exodus/cache/heartbeat.json', timing);
+            // httpd Date and generated use the same router clock. Client drift
+            // or NTP correction must not make a healthy RAM cache unusable.
+            const routerTime = Number.isFinite(timing.routerTime) ? timing.routerTime : now()/1000 + routerOffset;
+            const age = routerTime - live.generated;
+            if (live.v !== 1 || typeof live.generated !== 'number' || !Number.isFinite(age) || age < -5 || age > 15) throw Error('Router cache is stale');
             return unpack(envelope);
+        }
+        async function cache(action, params) {
+            try { return await readCache(action, params); }
+            catch (error) {
+                check();
+                if (!/Router cache is stale|Router HTTP 404/.test(error.message)) throw error;
+                if (!recovery) {
+                    if (now() - lastRecovery < 30000) throw error;
+                    lastRecovery = now();
+                    // All native posts share one firmware iframe. Wait for an
+                    // active upload/mutation so health cannot cancel its POST.
+                    recovery = new Promise((resolve,reject) => {
+                        queue.push({health:true,resolve,reject});
+                        drain();
+                    }).finally(() => { recovery = null; });
+                }
+                try { await recovery; }
+                catch (failure) { check(); throw Error('Router cache is stale; recovery failed: ' + failure.message); }
+                // A running worker can still hold the pre-NTP generation, or
+                // be rebuilding a missing file. Allow its next five-second
+                // cycle to finish without sending another native event.
+                const deadline = now() + 10000;
+                while (true) {
+                    try { return await readCache(action, params); }
+                    catch (pending) {
+                        check();
+                        if (!/Router cache is stale|Router HTTP 404/.test(pending.message) || now() >= deadline) throw pending;
+                        await sleep(500);
+                    }
+                }
+            }
         }
         const submit = options.submit || (async (settings, script = 'restart_exodus_ui') => {
             check();
@@ -69,6 +106,27 @@
             form.elements.amng_custom.value = settings == null ? '' : JSON.stringify(settings);
             form.submit();
         });
+        async function recoverCache() {
+            const id = makeId(), deadline = now() + 30000;
+            // Omit amng_custom: recovery never writes addon settings or starts
+            // the proxy. Concurrent reads share this single native event.
+            await submit(null, 'restart_exodus_ui_health_' + id);
+            while (now() < deadline) {
+                check(); await sleep(500);
+                let result;
+                try { result = await get('/ext/exodus/responses/' + id + '.json'); }
+                catch (error) { check(); if (!/HTTP 404|Failed to fetch|network/i.test(error.message)) throw error; }
+                if (result && result.v === 1 && result.id === id && result.seq === 0) {
+                    if (result.phase === 'error' || result.phase === 'complete') {
+                        const body = unpack(result);
+                        if (typeof body.router_time !== 'number' || !Number.isFinite(body.router_time)) throw Error('Invalid router clock');
+                        routerOffset = body.router_time - now()/1000;
+                        return;
+                    }
+                }
+            }
+            throw Error('Cache recovery timed out. Run exodus web restart on the router and check the Web log.');
+        }
         async function settingsSnapshot() {
             const id = makeId(), script = 'restart_exodus_ui_settings_' + id;
             const deadline = now() + 30000;
@@ -141,7 +199,7 @@
             active = true;
             while (queue.length) {
                 const item = queue.shift();
-                try { check(); item.resolve(await perform(item.raw,item.progress)); }
+                try { check(); item.resolve(await (item.health ? recoverCache() : perform(item.raw,item.progress))); }
                 catch (error) { item.reject(error); }
             }
             active = false;
@@ -160,7 +218,10 @@
                 return new Promise((resolve,reject) => {
                     const item = {raw,resolve,reject,progress:typeof params.onProgress==='function'?params.onProgress:null};
                     if (action === 'check_update' && params.force !== true) queue.push(item);
-                    else queue.splice(queue.findIndex(x=>JSON.parse(x.raw).action==='check_update') < 0 ? queue.length : queue.findIndex(x=>JSON.parse(x.raw).action==='check_update'),0,item);
+                    else {
+                        const index = queue.findIndex(x=>x.raw && JSON.parse(x.raw).action==='check_update');
+                        queue.splice(index < 0 ? queue.length : index,0,item);
+                    }
                     drain();
                 });
             } catch (error) { return Promise.reject(error); }

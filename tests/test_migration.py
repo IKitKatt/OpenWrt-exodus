@@ -3,6 +3,9 @@ import subprocess
 import shutil
 import tarfile
 import os
+import pty
+import select
+import time
 from shell_support import ROOT
 import test_webui
 
@@ -64,6 +67,134 @@ esac''')
 
     def install(self):
         return subprocess.run(['sh',str(self.installer)],env=self.env,capture_output=True,text=True,timeout=30,start_new_session=True)
+
+    def foreign_mihomo(self):
+        self.mock('pidof', '[ "$1" = mihomo ] && echo 12345')
+        proc=self.root/'proc/12345';proc.mkdir(parents=True)
+        (proc/'exe').symlink_to('/another-addon/mihomo')
+        self.env['EXODUS_INSTALL_PROC']=str(proc.parent)
+
+    def test_foreign_mihomo_requires_confirmation_before_dependencies(self):
+        self.foreign_mihomo()
+        result=self.install()
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('ALLOW_RUNNING_MIHOMO=1',result.stdout)
+        self.assertFalse((self.jffs/'opkg.calls').exists())
+        self.assertFalse((self.jffs/'curl.calls').exists())
+        self.assertFalse((self.opt/'tmp/exodus-install.lock').exists())
+
+    def test_foreign_mihomo_explicit_noninteractive_override(self):
+        self.foreign_mihomo();self.bundle();self.env['ALLOW_RUNNING_MIHOMO']='1'
+        result=self.install()
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertEqual(result.stdout.strip().splitlines()[-1],'success')
+        self.assertNotIn('\x1b',result.stdout)
+
+    def test_owned_mihomo_resolves_entware_symlinks_before_warning(self):
+        self.bundle();self.mock('pidof','[ "$1" = mihomo ] && echo 12345')
+        proc=self.root/'proc/12345';proc.mkdir(parents=True)
+        (proc/'exe').symlink_to(self.opt/'libexec/exodus/mihomo')
+        alias=self.root/'mounted-opt';alias.symlink_to(self.opt,target_is_directory=True)
+        self.env.update(EXODUS_OPT=str(alias),EXODUS_INSTALL_PROC=str(proc.parent))
+        result=self.install()
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertNotIn('another Mihomo',result.stdout)
+
+    def install_at_terminal(self, answers):
+        env={**self.env,'TERM':'xterm-256color'}
+        env.pop('NO_COLOR',None)
+        pid,terminal=pty.fork()
+        if pid==0:
+            os.execve('/bin/sh',['sh',str(self.installer)],env)
+        output=b'';sent=0;deadline=time.monotonic()+30;status=None;done=0
+        try:
+            while time.monotonic()<deadline:
+                if select.select([terminal],[],[],0.1)[0]:
+                    try: chunk=os.read(terminal,65536)
+                    except OSError: break
+                    if not chunk: break
+                    output+=chunk
+                    prompts=output.count(b'[y/N,')
+                    if prompts>sent and sent<len(answers):
+                        os.write(terminal,(answers[sent]+'\n').encode())
+                        sent+=1
+                done,status=os.waitpid(pid,os.WNOHANG)
+                if done: break
+            if time.monotonic()>=deadline and not done:
+                os.kill(pid,9);os.waitpid(pid,0)
+                self.fail('terminal installer timed out: '+output.decode())
+            if not done: _,status=os.waitpid(pid,0)
+            return os.waitstatus_to_exitcode(status),output.decode()
+        finally:
+            os.close(terminal)
+
+    def test_terminal_no_and_enter_cancel_before_any_dependencies(self):
+        self.foreign_mihomo()
+        for answer in ('Нет',''):
+            with self.subTest(answer=answer):
+                status,output=self.install_at_terminal([answer])
+                self.assertNotEqual(status,0,output)
+                self.assertIn('cancelled',output)
+                self.assertIn('\x1b[93m',output)
+                self.assertFalse((self.jffs/'opkg.calls').exists())
+                self.assertFalse((self.jffs/'curl.calls').exists())
+
+    def test_terminal_invalid_then_yes_continues_after_warning(self):
+        self.foreign_mihomo();self.bundle()
+        status,output=self.install_at_terminal(['maybe','Да'])
+        self.assertEqual(status,0,output)
+        self.assertIn('Enter Yes / Да',output)
+        self.assertLess(output.index('[WARN]'),output.index('Dependencies and architecture'))
+        self.assertEqual(output.strip().splitlines()[-1],'success')
+        self.assertTrue((self.jffs/'opkg.calls').exists())
+
+    def test_native_health_event_restarts_dead_cache_without_proxy_or_jffs_changes(self):
+        self.mock('curl','exit 1')
+        self.sh(f'"{self.share}/exodus" web start')
+        pid=int((self.ram/'run/webui/cache.pid').read_text())
+        # SIGKILL models OOM/crash: no EXIT trap can clear the PID or loop lock.
+        os.kill(pid,9)
+        deadline=time.monotonic()+10
+        while time.monotonic()<deadline:
+            state=self.sh(f'cat /proc/{pid}/status',check=False)
+            if state.returncode!=0 or 'State:\tZ' in state.stdout: break
+            time.sleep(0.1)
+        settings=self.jffs/'addons/custom_settings.txt'
+        settings.write_text('foreign Cool Addon\nempty \n')
+        config=(self.home/'config.json').read_bytes()
+        ident='d'*32
+        self.sh(f'webui_event restart exodus_ui_health_{ident}',('api','webui-api'))
+        response=self.ram/f'run/webui/responses/{ident}.json'
+        deadline=time.monotonic()+10
+        while not response.exists() and time.monotonic()<deadline: time.sleep(0.1)
+        self.assertTrue(response.exists())
+        self.assertEqual(json.loads(response.read_text())['status'],200,response.read_text())
+        self.assertNotEqual(int((self.ram/'run/webui/cache.pid').read_text()),pid)
+        self.assertEqual(settings.read_text(),'foreign Cool Addon\nempty \n')
+        self.assertEqual((self.home/'config.json').read_bytes(),config)
+        self.assertFalse((self.ram/'run/supervisor.pid').exists())
+
+    def test_cache_stop_cancels_hung_foreground_descendant(self):
+        webui=self.ram/'run/webui';webui.mkdir(parents=True,exist_ok=True)
+        child=subprocess.Popen(['sh','-c',
+            'trap "exit 0" TERM; sh -c \'echo $$ > "$EXODUS_TMP/run/webui/stuck.pid"; exec sleep 300\'',
+            str(self.share/'exodus'),'web','cache'],env=self.env,start_new_session=True)
+        def cleanup():
+            try: os.killpg(child.pid,9)
+            except ProcessLookupError: pass
+            child.wait(timeout=5)
+        self.addCleanup(cleanup)
+        (webui/'cache.pid').write_text(str(child.pid))
+        deadline=time.monotonic()+5
+        while not (webui/'stuck.pid').exists() and time.monotonic()<deadline: time.sleep(0.01)
+        self.assertTrue((webui/'stuck.pid').exists())
+        descendant=int((webui/'stuck.pid').read_text())
+        result=self.web('msleep() { sleep 0.01; }; webui_cache_stop',False)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        child.wait(timeout=5)
+        state=self.sh(f'cat /proc/{descendant}/status',check=False)
+        self.assertTrue(state.returncode!=0 or 'State:\tZ' in state.stdout,'foreground child survived')
+        self.assertFalse((webui/'cache.pid').exists())
 
     def test_native_branch_is_default_download_source(self):
         self.bundle()

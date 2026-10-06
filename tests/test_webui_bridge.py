@@ -6,6 +6,28 @@ from shell_support import ShellCase
 
 
 class BridgeTests(ShellCase):
+    def test_web_log_is_bounded_with_proxy_stopped_and_respects_zero_limit(self):
+        path=self.ram/'log/web.log';path.write_text('error\n'*200000)
+        self.sh('webui_log_limit',('webui-api',))
+        self.assertLess(path.stat().st_size,1048576)
+        config=json.loads((self.home/'config.json').read_text())
+        config['log']['max_size']=0
+        (self.home/'config.json').write_text(json.dumps(config))
+        path.write_text('x'*1048577)
+        self.sh('webui_log_limit',('webui-api',))
+        self.assertEqual(path.stat().st_size,1048577)
+
+    def test_health_recovers_cache_without_changing_shared_settings(self):
+        settings=self.jffs/'addons/custom_settings.txt';settings.write_text('foreign unchanged\n')
+        ident='c'*32
+        # Run the real handler with a harmless replacement for starting the daemon.
+        self.sh(f'webui_cache_start() {{ touch "$WEBUI_DIR/recovered"; }}; webui_health "{ident}"', ('api','webui','webui-api'))
+        envelope=json.loads((self.ram/f'run/webui/responses/{ident}.json').read_text())
+        self.assertEqual(envelope['phase'],'complete')
+        self.assertGreater(json.loads(base64.b64decode(envelope['body']))['router_time'],0)
+        self.assertTrue((self.ram/'run/webui/recovered').exists())
+        self.assertEqual(settings.read_text(),'foreign unchanged\n')
+
     def test_failed_encoding_does_not_publish_empty_response(self):
         self.mock('base64', 'exit 127')
         body = self.root/'body.json'; body.write_text('{"ok":true}')

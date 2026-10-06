@@ -127,7 +127,7 @@ lock_acquire() {
 	mkdir -p "$RUN_TMP"
 	while ! mkdir "$dir" 2> /dev/null; do
 		pid=$(cat "$dir/pid" 2> /dev/null)
-		if [ -n "$pid" ] && ! kill -0 "$pid" 2> /dev/null; then
+		if [ -n "$pid" ] && { ! kill -0 "$pid" 2> /dev/null || grep -q '^State:.*Z' "$EXODUS_PROC/$pid/status" 2>/dev/null; }; then
 			rm -rf "$dir"
 			continue
 		fi

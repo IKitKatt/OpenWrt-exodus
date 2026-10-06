@@ -159,37 +159,73 @@ webui_stop_legacy() {
 	rm -f "$WEB_PID_PATH"
 }
 
+# PID reuse must not make another process look like our cache worker.
+webui_worker_alive() {
+	local pid="$1" role="$2" owner current
+	case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+	[ -r "$EXODUS_PROC/$pid/cmdline" ] || return 1
+	owner=$(awk '/^Uid:/ {print $3}' "$EXODUS_PROC/$pid/status" 2>/dev/null)
+	current=$(awk '/^Uid:/ {print $3}' "$EXODUS_PROC/$$/status" 2>/dev/null)
+	[ -n "$owner" ] && [ "$owner" = "$current" ] || return 1
+	grep -q '^State:.*Z' "$EXODUS_PROC/$pid/status" && return 1
+	tr '\000' '\n' < "$EXODUS_PROC/$pid/cmdline" | grep -Fxq "$EXODUS" &&
+		tr '\000' '\n' < "$EXODUS_PROC/$pid/cmdline" | grep -Fxq "$role" && kill -0 "$pid" 2>/dev/null
+}
+
+webui_cache_alive() { webui_worker_alive "$(cat "$WEBUI_DIR/cache.pid" 2>/dev/null)" cache; }
+
+# Only called after validating the root worker. Freeze each parent before
+# discovering its children, as with the update worker's network cancellation.
+webui_cache_cancel_tree() {
+	local pid="$1" child
+	kill -STOP "$pid" 2>/dev/null || return 0
+	awk -v parent="$pid" '$1 == "Pid:" {pid=$2} $1 == "PPid:" && $2 == parent {print pid}' "$EXODUS_PROC"/[0-9]*/status 2>/dev/null |
+	while read -r child; do webui_cache_cancel_tree "$child"; done
+	kill -KILL "$pid" 2>/dev/null || :
+}
+
 webui_cache_start() (
 	lock_acquire webui-cache 10 || exit 1
 	trap 'lock_release webui-cache' EXIT
-	pid_alive "$WEBUI_DIR/cache.pid" && exit 0
+	webui_cache_alive && exit 0
 	. "$LIB_DIR/api.sh"
 	. "$LIB_DIR/webui-api.sh"
 	# Refresh local state after installation/update even if old RAM caches remain.
 	webui_cache_views_refresh || exit 1
 	webui_cache_refresh || exit 1
 	# A separate CLI process owns this loop, independently of proxy stop.
-	daemonize "$EXODUS" web cache
+	daemonize /bin/sh -c 'exec "$1" web cache >> "$2" 2>&1' sh "$EXODUS" "$WEB_LOG_PATH"
 	# Keep the start lock until the child advertises its PID.
 	local i=0
 	while [ "$i" -lt 5 ]; do
-		pid_alive "$WEBUI_DIR/cache.pid" && exit 0
+		webui_cache_alive && exit 0
 		i=$((i + 1)); sleep 1
 	done
 	exit 1
 )
 
 webui_cache_stop() {
-	local pid file role i
+	local pid file role i dir
 	for role in cache updates; do
 		if [ "$role" = cache ]; then file="$WEBUI_DIR/cache.pid"; else file="$WEBUI_DIR/update.pid"; fi
 		pid=$(cat "$file" 2> /dev/null); i=0
 		case "$pid" in ''|*[!0-9]*) continue ;; esac
-		if [ -r "$EXODUS_PROC/$pid/cmdline" ] && tr '\000' '\n' < "$EXODUS_PROC/$pid/cmdline" | grep -Fxq "$EXODUS" &&
-			tr '\000' '\n' < "$EXODUS_PROC/$pid/cmdline" | grep -Fxq "$role"; then
+		if webui_worker_alive "$pid" "$role"; then
 			kill "$pid" 2> /dev/null || :
 			while kill -0 "$pid" 2> /dev/null && [ "$(cat "$file" 2>/dev/null)" = "$pid" ]; do
-				[ "$i" -lt 60 ] || return 1
+				if [ "$i" -ge 60 ]; then
+					[ "$role" = cache ] || return 1
+					if webui_worker_alive "$pid" cache; then
+						log WARN 'WebUI cache did not stop gracefully; cancelling its descendants'
+						webui_cache_cancel_tree "$pid"
+						# A killed shell cannot release its locks; PID zombies can
+						# otherwise keep kill -0 succeeding until init reaps them.
+						for dir in "$RUN_TMP"/*.lock; do
+							[ "$(cat "$dir/pid" 2>/dev/null)" != "$pid" ] || rm -rf "$dir"
+						 done
+					fi
+					break
+				fi
 				i=$((i + 1)); msleep 100
 			done
 		fi

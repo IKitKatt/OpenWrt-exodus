@@ -206,6 +206,39 @@ webui_settings_snapshot() (
 	rm -f "$dir/body" "$dir/shared"
 )
 
+webui_health() (
+	local id body uptime heartbeat age dir
+	id="$1"
+	case "$id" in ''|*[!0-9a-f]*) exit 1 ;; esac
+	[ "${#id}" -eq 32 ] || exit 1
+	mkdir -p "$WEBUI_DIR/responses"
+	lock_acquire webui-health 30 || { webui_error "$id" 0 503 'cache recovery is busy'; exit 1; }
+	body="$WEBUI_DIR/health.$$"
+	trap 'rm -f "$body"; lock_release webui-health' EXIT
+	# Reuse the RAM snapshot lifetime so abandoned recovery responses expire.
+	dir="$WEBUI_DIR/snapshots/$id"
+	mkdir -p "$dir" || exit 1
+	date +%s > "$dir/touched"
+	# Uptime survives NTP corrections. Give a busy local refresh a full minute
+	# before restarting a verified worker, and never touch the proxy service.
+	uptime=$(awk '{print int($1)}' "$EXODUS_PROC/uptime" 2>/dev/null)
+	heartbeat=$(jq -r '.uptime // empty' "$WEBUI_DIR/cache/heartbeat.json" 2>/dev/null)
+	case "$uptime:$heartbeat" in
+		*[!0-9:]*|:*|*:) ;;
+		*) age=$((uptime - heartbeat))
+			if [ "$age" -gt 60 ] && webui_cache_alive; then
+				log WARN "WebUI cache stalled for ${age}s; restarting cache worker"
+				webui_cache_stop || { webui_error "$id" 0 503 'cache worker did not stop'; exit 1; }
+			fi ;;
+	esac
+	if ! webui_cache_start; then
+		log ERROR 'WebUI cache recovery failed; inspect the Web log'
+		webui_error "$id" 0 503 'cache recovery failed; run exodus web restart and check the Web log'; exit 1
+	fi
+	jq -cn --argjson now "$(date +%s)" '{router_time:$now}' > "$body" || exit 1
+	webui_emit "$id" 0 complete 200 "$body"
+)
+
 webui_event() (
 	local snapshot worker mode=packet id=
 	[ "$1" = restart ] || exit 0
@@ -213,6 +246,10 @@ webui_event() (
 		exodus_ui) ;;
 		exodus_ui_settings_*)
 			mode=settings; id="${2#exodus_ui_settings_}"
+			case "$id" in ''|*[!0-9a-f]*) exit 1 ;; esac
+			[ "${#id}" -eq 32 ] || exit 1 ;;
+		exodus_ui_health_*)
+			mode=health; id="${2#exodus_ui_health_}"
 			case "$id" in ''|*[!0-9a-f]*) exit 1 ;; esac
 			[ "${#id}" -eq 32 ] || exit 1 ;;
 		*) exit 0 ;;
@@ -229,14 +266,19 @@ webui_event() (
 		[ -s "$snapshot" ] || { rm -rf "$worker"; exit 0; }
 	fi
 	# Snapshot every sourced function before launching: updates can replace /opt.
-	cp "$LIB_DIR/common.sh" "$LIB_DIR/api.sh" "$LIB_DIR/webui-api.sh" "$worker/" || exit 1
+	cp "$LIB_DIR/common.sh" "$LIB_DIR/api.sh" "$LIB_DIR/webui.sh" "$LIB_DIR/webui-api.sh" "$worker/" || exit 1
 	cat > "$worker/run.sh" <<'WORKER'
 #!/bin/sh
 worker="${0%/*}"
 . "$worker/common.sh"
 . "$worker/api.sh"
+. "$worker/webui.sh"
 . "$worker/webui-api.sh"
-if [ "$1" = settings ]; then webui_settings_snapshot "$2"; else webui_accept "$worker/packet.json"; fi
+case "$1" in
+ settings) webui_settings_snapshot "$2" ;;
+ health) webui_health "$2" ;;
+ *) webui_accept "$worker/packet.json" ;;
+esac
 rm -rf "$worker"
 WORKER
 	# start-stop-daemon -x does not search PATH when setsid is unavailable.
@@ -352,15 +394,37 @@ webui_cache_refresh() (
 		rm -f "$req" "$result" "$result.body" "$body"
 	done
 	[ -f "$WEBUI_DIR/cache/load.json" ] || webui_cache_views_refresh || exit 1
-	jq -cn --argjson now "$(date +%s)" '{v:1,generated:$now}' > "$WEBUI_DIR/cache/heartbeat.json.tmp" && mv -f "$WEBUI_DIR/cache/heartbeat.json.tmp" "$WEBUI_DIR/cache/heartbeat.json"
+	jq -cn --argjson now "$(date +%s)" --argjson uptime "$(awk '{print int($1)}' "$EXODUS_PROC/uptime")" \
+		'{v:1,generated:$now,uptime:$uptime}' > "$WEBUI_DIR/cache/heartbeat.json.tmp" && mv -f "$WEBUI_DIR/cache/heartbeat.json.tmp" "$WEBUI_DIR/cache/heartbeat.json"
+)
+
+# The cache worker remains active with the proxy stopped, so it owns the bound
+# on its diagnostic RAM log. Keep the tail and the inode used by stderr.
+webui_log_limit() (
+	local limit bytes tail_file
+	limit=$(cfg_get .log.max_size); limit="${limit:-1}"
+	case "$limit" in *[!0-9]*|0) exit 0 ;; esac
+	bytes=$((limit * 1024 * 1024))
+	[ -f "$WEB_LOG_PATH" ] && [ "$(wc -c < "$WEB_LOG_PATH")" -ge "$bytes" ] || exit 0
+	tail_file="$WEB_LOG_PATH.tail.$$"
+	trap 'rm -f "$tail_file"' EXIT
+	tail -c 65536 "$WEB_LOG_PATH" > "$tail_file" && cat "$tail_file" > "$WEB_LOG_PATH"
 )
 
 webui_cache_loop() {
 	. "$LIB_DIR/api.sh"
 	. "$LIB_DIR/webui.sh"
-	local tick=0
+	local tick=0 failed=0
 	while :; do
-		webui_cache_refresh; webui_gc
+		webui_log_limit
+		if webui_cache_refresh; then
+			[ "$failed" = 0 ] || log INFO 'WebUI cache refresh recovered'
+			failed=0
+		else
+			[ "$failed" = 1 ] || log ERROR 'WebUI cache refresh failed; inspect the Web log'
+			failed=1
+		fi
+		webui_gc
 		if [ "$tick" -gt 0 ] && [ "$((tick % 6))" -eq 0 ]; then webui_cache_views_refresh; fi
 		webui_updates_start
 		# Firmware menu rebuilds need recovery, even while the proxy is stopped.

@@ -390,6 +390,7 @@ web() {
             echo "$$" > "$WEBUI_DIR/cache.pid"
             trap '[ "$(cat "$WEBUI_DIR/cache.pid" 2>/dev/null)" != "$$" ] || rm -f "$WEBUI_DIR/cache.pid"; lock_release webui-cache-loop' EXIT
             trap 'exit 0' TERM INT
+            trap '' HUP
             . "$LIB_DIR/webui-api.sh"
             webui_cache_loop ;;
         *) usage; return 1 ;;

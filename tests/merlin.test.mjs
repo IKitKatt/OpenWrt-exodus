@@ -76,6 +76,65 @@ test('stale cache is not running', async()=>{
     const f=fixture({fetch:async()=>json({v:1,key:'status',generated:1,status:200,body:encode('{"running":true}')})});
     await assert.rejects(f.transport.request('status'),/stale/i);
 });
+test('cache freshness uses router HTTP Date despite client clock skew', async()=>{
+    for (const offset of [-86400000,86400000]) {
+        const routerTime=1791223895;
+        const f=createTransport({now:()=>routerTime*1000+offset,
+            submit:async()=>{throw Error('healthy cache must not post');},
+            fetch:async url=>({...json({v:1,key:url.includes('heartbeat')?undefined:'status',generated:routerTime,status:200,body:encode('{"running":true}')}),
+                headers:{get:name=>name==='date'?new Date(routerTime*1000).toUTCString():null}})});
+        assert.equal((await f.request('status')).running,true);
+    }
+});
+test('parallel stale reads share one read-only cache recovery event', async()=>{
+    let repaired=false, posts=0, clock=100000;
+    const id='a'.repeat(32);
+    const f=createTransport({now:()=>clock,sleep:async ms=>{clock+=ms;},id:()=>id,
+        submit:async(settings,script)=>{assert.equal(settings,null);assert.equal(script,'restart_exodus_ui_health_'+id);posts++;repaired=true;},
+        fetch:async url=>{
+            if(url.includes('/responses/')) return json({v:1,id,seq:0,phase:'complete',status:200,body:encode(JSON.stringify({router_time:clock/1000}))});
+            const key=url.split('/').at(-1).replace('.json','');
+            return json({v:1,key,generated:repaired?clock/1000:1,status:200,body:encode('{"running":true}')});
+        }});
+    const result=await Promise.all([f.request('status'),f.request('load'),f.request('hosts')]);
+    assert.ok(result.every(value=>value.running));assert.equal(posts,1);
+});
+test('recovery cannot hide cache that remains stale', async()=>{
+    let clock=100000, posts=0;const id='b'.repeat(32);
+    const f=createTransport({now:()=>clock,sleep:async ms=>{clock+=ms;},id:()=>id,
+        submit:async()=>posts++, fetch:async url=>url.includes('/responses/')?
+            json({v:1,id,seq:0,phase:'complete',status:200,body:encode(JSON.stringify({router_time:clock/1000}))}):
+            json({v:1,key:'status',generated:1,status:200,body:encode('{"running":true}')})});
+    await assert.rejects(f.request('status'),/stale/i);assert.equal(posts,1);
+});
+test('recovery waits for the next cache cycle after a router clock correction', async()=>{
+    let clock=100000,reads=0;const id='e'.repeat(32);
+    const f=createTransport({now:()=>clock,sleep:async ms=>{clock+=ms;},id:()=>id,submit:async()=>{},
+        fetch:async url=>url.includes('/responses/')?
+            json({v:1,id,seq:0,phase:'complete',status:200,body:encode(JSON.stringify({router_time:clock/1000}))}):
+            json({v:1,key:'status',generated:++reads<3?1:clock/1000,status:200,body:encode('{"running":true}')})});
+    assert.equal((await f.request('status')).running,true);
+});
+test('stale read waits for active native mutation before submitting recovery', async()=>{
+    let clock=100000,serial=0,snapshot,packet,repaired=false,healthPosted=false,release;
+    const hold=new Promise(resolve=>{release=resolve;});
+    const f=createTransport({now:()=>clock,sleep:async ms=>{clock+=ms;},id:()=> (++serial).toString(16).padStart(32,'0'),
+        submit:async(settings,script)=>{
+            if(script?.includes('_settings_')) {snapshot=script.split('_settings_')[1];await hold;}
+            else if(script?.includes('_health_')) {healthPosted=true;repaired=true;}
+            else packet=JSON.parse(settings.exodus_packet);
+        },fetch:async url=>{
+            if(url.includes('/cache/')) return json({v:1,key:'status',generated:repaired?clock/1000:1,status:200,body:encode('{"running":true}')});
+            const id=url.match(/([0-9a-f]{32})\.json/)[1];
+            return json({v:1,id,seq:0,phase:'complete',status:200,body:encode(id===snapshot?'{}':id===packet?.id?'{"success":true}':JSON.stringify({router_time:clock/1000}))});
+        }});
+    const write=f.request('service',{op:'start'}),read=f.request('status');
+    await new Promise(resolve=>setImmediate(resolve));
+    const raced=healthPosted;release();
+    await Promise.all([write,read]);
+    assert.equal(raced,false,'health must not replace an in-flight native form navigation');
+    assert.equal(healthPosted,true);
+});
 test('oversize rejected before post', async()=>{
     const f=fixture(); await assert.rejects(f.transport.request('file_write',{content:'я'.repeat(4194305)}), /8 MiB/);
     assert.equal(f.calls.length,0);

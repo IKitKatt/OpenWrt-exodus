@@ -7,6 +7,7 @@
 # REPOSITORY=<owner/repo> download application files from this fork
 # LOW_SPACE=1       remove the current core before installing the new one, for routers with little free space
 # CORE=<core>       install this core without asking: meta (stable), alpha (Mihomo Alpha) or prizrak (Prizrak-Core)
+# ALLOW_RUNNING_MIHOMO=1 confirm a conflicting Mihomo without a terminal (automation only)
 # GH_PROXY=<url>    download from GitHub through gh-proxy (https://github.com/prettyleaf/gh-proxy), e.g. https://example.com/ghproxy/TOKEN, empty to download directly
 # SOURCE_DIR=<dir>  install application files from an extracted local bundle; dependencies still need internet
 # the core and GH_PROXY are saved in $EXODUS_OPT/etc/exodus/config.json, the next runs and the update page use them
@@ -33,17 +34,21 @@ have() {
 	return 1
 }
 
-# the busybox of the firmware has no sha256sum, openssl of the firmware gives the same in the same format
-if ! printf '' | sha256sum > /dev/null 2>&1; then
-	sha256sum() {
-		openssl dgst -sha256 -r "$@" | sed 's/ \*/  /'
-	}
+# Keep this entrypoint self-contained: it is also downloaded directly into sh.
+# Logs and the updater stay plain; terminal output follows the Exodus palette.
+ui_reset='' ui_bold='' ui_accent='' ui_info='' ui_ok='' ui_warn='' ui_error='' ui_muted=''
+if [ -t 1 ] && [ "${TERM:-dumb}" != dumb ] && [ "${NO_COLOR+set}" != set ]; then
+	ui_reset='\033[0m'; ui_bold='\033[1m'; ui_accent='\033[95m'
+	ui_info='\033[96m'; ui_ok='\033[92m'; ui_warn='\033[93m'; ui_error='\033[91m'; ui_muted='\033[90m'
 fi
-if ! printf '' | md5sum > /dev/null 2>&1; then
-	md5sum() {
-		openssl dgst -md5 -r "$@" | sed 's/ \*/  /'
-	}
-fi
+info() { printf '  %b[INFO]%b %s\n' "$ui_info" "$ui_reset" "$1"; }
+warn() { printf '  %b[WARN]%b %s\n' "$ui_warn" "$ui_reset" "$1"; }
+done_message() { printf '  %b[ OK ]%b %s\n' "$ui_ok" "$ui_reset" "$1"; }
+step() { printf '\n%b%s  %s%b\n' "$ui_bold$ui_accent" "$1" "$2" "$ui_reset"; }
+banner() {
+	printf '\n%bExodus%b  /  %s\n' "$ui_bold$ui_accent" "$ui_reset" "$1"
+	printf '%bAsuswrt-Merlin + Entware%b\n\n' "$ui_muted" "$ui_reset"
+}
 
 share_dir="$EXODUS_OPT/share/exodus"
 libexec_dir="$EXODUS_OPT/libexec/exodus"
@@ -55,6 +60,7 @@ yq_path="$libexec_dir/yq"
 # the last line is "success" or starts with "error:", the update page relies on it
 fail() {
 	rollback
+	[ -z "$ui_error" ] || printf '  %b[FAIL]%b %s\n' "$ui_error" "$ui_reset" "$1"
 	echo "error: $1${rollback_failed:+; recovery files kept in $temp_dir}${core_lost:+; previous core unavailable in LOW_SPACE mode}"
 	exit 1
 }
@@ -99,8 +105,8 @@ rollback() {
  else
   rm -f "$EXODUS_OPT/bin/exodus" || rollback_failed=1
  fi
- if [ -n "$rollback_failed" ]; then echo "rollback incomplete; recovery files: $temp_dir";
- else echo 'previous Exodus code and settings restored'; fi
+ if [ -n "$rollback_failed" ]; then warn "Rollback incomplete; recovery files: $temp_dir";
+ else done_message 'Previous Exodus code and settings restored.'; fi
 }
 
 # Rename on Entware's filesystem retains the old inode without another full copy.
@@ -118,9 +124,27 @@ interactive() {
 }
 
 ask() {
-	printf '%s' "$1" > /dev/tty
+	printf '\n%b%s%b' "$ui_bold" "$1" "$ui_reset" > /dev/tty
 	answer=
 	read -r answer < /dev/tty
+}
+
+confirm_mihomo() {
+	warn 'Another Mihomo is running and may intercept the same traffic.'
+	info 'Stop the other addon and disable its autostart to avoid routing conflicts.'
+	if [ "$ALLOW_RUNNING_MIHOMO" = 1 ]; then
+		warn 'Continuing with explicit ALLOW_RUNNING_MIHOMO=1 confirmation.'
+		return
+	fi
+	interactive || fail 'another Mihomo is running; stop it or set ALLOW_RUNNING_MIHOMO=1 to confirm installation without a terminal'
+	while :; do
+		ask 'Continue installation? / Продолжить установку? [y/N, Да/Нет]: ' || fail 'installation cancelled before dependency checks'
+		case "$answer" in
+			y|Y|yes|Yes|YES|д|Д|да|Да|ДА) done_message 'Installation confirmed.'; return ;;
+			''|n|N|no|No|NO|н|Н|нет|Нет|НЕТ) info 'Installation cancelled. No dependencies were checked or downloaded.'; fail 'installation cancelled before dependency checks' ;;
+			*) warn 'Enter Yes / Да to continue or No / Нет to cancel. Enter cancels.' ;;
+		esac
+	done
 }
 
 # github url, through gh-proxy if it is used
@@ -176,13 +200,13 @@ config_get() {
 # $1 url of the gzipped binary
 install_core() {
 	local file="$temp_dir/core.gz"
-	echo "download $1"
+	info 'Downloading and validating the selected core...'
 	if ! download "$1" "$file" || ! gzip -t "$file" 2> /dev/null; then
 		fail "core download failed"
 	fi
 	mkdir -p "$libexec_dir" || fail "can not create core directory"
 	if [ "$LOW_SPACE" = 1 ]; then
-		echo "low space mode: remove current core"
+		warn 'Low space mode: stopping Exodus and removing the current core before extraction.'
 		# the running core keeps its file allocated, stop it first
 		[ -x "$share_dir/exodus" ] && "$share_dir/exodus" stop
 		core_lost=1
@@ -205,11 +229,12 @@ install_core() {
 		mv -f "$core_path.new" "$core_path" || fail "core activation failed"
 	fi
 	rm -f "$file"
+	done_message "$(core_title "$core") installed and verified."
 }
 
 install_yq() {
 	local file="$temp_dir/yq.tar.gz"
-	echo "download yq"
+	info 'Downloading and validating yq...'
 	if ! download "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_$yq_arch.tar.gz" "$file" || ! gzip -t "$file" 2> /dev/null; then
 		fail "yq download failed"
 	fi
@@ -231,6 +256,7 @@ install_yq() {
 	backup_binary yq
 	mv -f "$temp_dir/yq/yq_linux_$yq_arch" "$yq_path" || fail "yq install failed, not enough free space?"
 	rm -rf "$temp_dir/yq"
+	done_message 'yq installed and verified.'
 }
 
 # a line of exodus in a user script of asuswrt-merlin, right after the shebang: a script may end with exit
@@ -284,24 +310,37 @@ merlin_preflight() {
 }
 
 # check env
+banner 'Install & update'
+step '1/6' 'Firmware and running services'
 merlin_preflight || fail "native WebUI preflight: $MERLIN_PREFLIGHT_ERROR"
-if [ ! -x "$EXODUS_OPT/bin/opkg" ]; then
-	fail "Entware is not installed: install it with amtm on a USB drive first"
-fi
-for tool in iptables iptables-save iptables-restore ipset; do
-	[ -x "/usr/sbin/$tool" ] || have "$tool" || fail "$tool of the firmware is not found"
-done
 # other transparent proxies intercept the same traffic
 for name in xray sing-box v2ray clash; do
 	if pidof "$name" > /dev/null 2>&1; then
-		echo "warning: $name is running: if it intercepts the traffic (XRAYUI and similar addons), stop it and disable its autostart"
+		warn "$name is running: if it intercepts the traffic (XRAYUI and similar addons), stop it and disable its autostart"
 	fi
 done
 for pid in $(pidof mihomo 2> /dev/null); do
-	[ "$(readlink "/proc/$pid/exe" 2> /dev/null)" = "$core_path" ] && continue
-	echo "warning: another mihomo is running: if it intercepts the traffic, stop it and disable its autostart"
+	executable=$(readlink "${EXODUS_INSTALL_PROC:-/proc}/$pid/exe" 2> /dev/null)
+	executable=${executable% (deleted)}
+	[ "$executable" = "$(readlink -f "$core_path" 2> /dev/null)" ] && continue
+	confirm_mihomo
 	break
 done
+done_message 'Firmware preflight complete.'
+
+# No dependency probing or downloading happens before Mihomo confirmation.
+step '2/6' 'Dependencies and architecture'
+[ -x "$EXODUS_OPT/bin/opkg" ] || fail 'Entware is not installed: install it with amtm on a USB drive first'
+for tool in iptables iptables-save iptables-restore ipset; do
+	[ -x "/usr/sbin/$tool" ] || have "$tool" || fail "$tool of the firmware is not found"
+done
+# Firmware OpenSSL provides checksums when BusyBox does not.
+if ! printf '' | sha256sum > /dev/null 2>&1; then
+	sha256sum() { openssl dgst -sha256 -r "$@" | sed 's/ \*/  /'; }
+fi
+if ! printf '' | md5sum > /dev/null 2>&1; then
+	md5sum() { openssl dgst -md5 -r "$@" | sed 's/ \*/  /'; }
+fi
 
 # the core and yq are static builds, they follow the cpu and the kernel: an arm64 kernel runs arm64 builds whatever entware is
 arch=$(opkg print-architecture | awk '$2 != "all" && $2 != "noarch" { arch = $2 } END { print arch }')
@@ -326,7 +365,7 @@ case "$machine" in
 	x86_64*) core_arch="amd64-compatible"; yq_arch="amd64" ;;
 	*) fail "unsupported architecture: $machine" ;;
 esac
-echo "architecture: $machine, core builds: $core_arch, entware: $arch"
+info "Architecture: $machine; core: $core_arch; Entware: $arch"
 
 # temp dir
 temp_dir="$EXODUS_OPT/tmp/exodus-install"
@@ -350,8 +389,9 @@ trap 'fail "installation interrupted by TERM"' TERM
 
 # dependencies from entware, curl and jq are needed by the installer itself
 # iptables and ipset are of the firmware, they match its kernel
-echo "install packages"
-opkg update > /dev/null 2>&1 || echo "warning: opkg update failed"
+info 'Updating Entware package index...'
+opkg update > /dev/null 2>&1 || warn 'opkg update failed; trying the available package index.'
+info 'Installing packages: curl, jq, ca-bundle, coreutils-base64'
 opkg install curl jq ca-bundle coreutils-base64 || fail "package install failed"
 have base64 || fail "base64 is unavailable after installing coreutils-base64"
 [ "$(printf 'Exodus' | base64 2> /dev/null | tr -d '\n')" = RXhvZHVz ] || fail "base64 encoding failed; check coreutils-base64"
@@ -359,6 +399,8 @@ have base64 || fail "base64 is unavailable after installing coreutils-base64"
 # secrets, the password and the update check need sha-256: sha256sum or openssl of the firmware
 printf '' | sha256sum 2> /dev/null | grep -q '^[0-9a-f]\{64\}' || fail "sha256sum is not found and openssl can not compute sha-256"
 [ ! -f "$config" ] || jq -e 'type == "object"' "$config" > /dev/null 2>&1 || fail "existing config.json is not a valid JSON object"
+done_message 'Dependencies and checksum/base64 tools verified.'
+step '3/6' 'Download source and select core'
 
 # access to github: through the given or the saved gh-proxy, then directly
 version_url="https://github.com/$repository/raw/$ref/asuswrt/opt/share/exodus/VERSION"
@@ -373,7 +415,7 @@ if [ "${GH_PROXY+set}" = "set" ]; then
 else
 	routes="$saved_gh_proxy direct"
 fi
-echo "check access to github"
+info 'Checking access to GitHub...'
 github_status=1
 for route in $routes; do
 	gh_proxy="${route%/}"
@@ -391,15 +433,15 @@ if [ "$github_status" = 22 ]; then
 fi
 if [ "$github_status" != 0 ]; then
 	[ -n "$GH_PROXY" ] && fail "gh-proxy does not work: check the address and the token"
-	[ -n "$saved_gh_proxy" ] && echo "the saved gh-proxy does not work"
+	[ -n "$saved_gh_proxy" ] && warn 'The saved gh-proxy does not work.'
 	# jsDelivr tells a blocked github from a router without internet, it does not serve release files, so it can not replace github
 	if curl -s -f -m 15 -o /dev/null "https://cdn.jsdelivr.net/gh/$repository@$ref/install.sh" 2> /dev/null; then
-		echo "github.com is unreachable, but cdn.jsdelivr.net is reachable: GitHub is blocked by the provider"
+		warn 'github.com is unreachable, but cdn.jsdelivr.net is reachable: the router cannot reach GitHub directly.'
 	else
-		echo "github.com and cdn.jsdelivr.net are unreachable: check the internet connection and DNS of the router, or the provider blocks both"
+		warn 'github.com and cdn.jsdelivr.net are unreachable: check router connectivity and DNS.'
 	fi
-	echo "the core and yq are published only in GitHub releases, jsDelivr does not serve them"
-	echo "deploy gh-proxy on a server with access to GitHub and install through it: https://github.com/prettyleaf/gh-proxy"
+	info 'The core and yq are published only in GitHub releases; jsDelivr does not serve them.'
+	info 'Use a gh-proxy server with access to GitHub: https://github.com/prettyleaf/gh-proxy'
 	interactive || fail "github is unreachable, run the installer with GH_PROXY=https://<gh-proxy address>/<token>, see README"
 	for _ in 1 2 3; do
 		ask "gh-proxy address with the token, e.g. https://example.com/ghproxy/TOKEN (empty to exit): "
@@ -407,7 +449,7 @@ if [ "$github_status" != 0 ]; then
 		case "$answer" in
 			http://*|https://*) ;;
 			*)
-				echo "the address must start with https://"
+				warn 'The address must start with https://'
 				continue
 				;;
 		esac
@@ -417,14 +459,14 @@ if [ "$github_status" != 0 ]; then
 			save_gh_proxy=1
 			break
 		fi
-		echo "gh-proxy does not work: check the address and the token"
+		warn 'gh-proxy does not work: check the address and the token.'
 	done
 	[ "$github_status" = 0 ] || fail "github is unreachable"
 fi
 if [ -n "$gh_proxy" ]; then
 	# the token is a part of the address, only the host is shown
 	gh_proxy_host="${gh_proxy#*://}"
-	echo "download through gh-proxy at ${gh_proxy_host%%/*}"
+	info "Downloading through gh-proxy at ${gh_proxy_host%%/*}"
 fi
 
 # choose the core, the current one is saved in the config
@@ -438,18 +480,20 @@ fi
 core="$CORE"
 if [ -z "$core" ] && interactive; then
 	{
-		echo "choose the core:"
-		echo "  1) Mihomo Meta   latest stable release of MetaCubeX/mihomo"
-		echo "  2) Mihomo Alpha  development build of MetaCubeX/mihomo"
-		echo "  3) Prizrak-Core  mihomo fork by legiz-ru"
+	printf '\n%bChoose the core%b\n' "$ui_bold$ui_accent" "$ui_reset"
+	printf '  %b1%b  Mihomo Meta    Latest stable release\n' "$ui_accent" "$ui_reset"
+	printf '  %b2%b  Mihomo Alpha   Development build\n' "$ui_accent" "$ui_reset"
+	printf '  %b3%b  Prizrak-Core   Mihomo fork by legiz-ru\n' "$ui_accent" "$ui_reset"
+	printf '\n  Current: %b%s%b\n' "$ui_bold" "$(core_title "$current_core")" "$ui_reset"
 	} > /dev/tty
 	while [ -z "$core" ]; do
-		ask "core [1-3], Enter keeps $(core_title "$current_core"): "
+		ask "Select [1-3], Enter keeps $(core_title "$current_core"): " || fail 'core selection cancelled'
 		case "$answer" in
 			"") core="$current_core" ;;
 			1|meta) core="meta" ;;
 			2|alpha) core="alpha" ;;
 			3|prizrak) core="prizrak" ;;
+			*) warn 'Choose 1, 2 or 3, or press Enter to keep the current core.' ;;
 		esac
 	done
 fi
@@ -469,14 +513,14 @@ case "$core" in
 		;;
 	*) fail "unknown core: $core, use meta, alpha or prizrak" ;;
 esac
-echo "core: $(core_title "$core")"
+info "Selected core: $(core_title "$core")"
 
 # the releases publish their version in version.txt, it is a part of the file names
 core_latest=$(curl -s -f -L -m 30 "$(gh_url "$core_release/version.txt")" 2> /dev/null | head -n 1 | tr -d '\r')
 if ! echo "$core_latest" | grep -q -E '^[A-Za-z0-9._-]+$'; then
 	fail "failed to get the latest version of $(core_title "$core") from $core_release"
 fi
-echo "latest $(core_title "$core"): $core_latest"
+info "Latest $(core_title "$core"): $core_latest"
 if [ "$core" = "meta" ]; then
 	# stable releases are in their own tag, the latest redirect does not serve the versioned file names through every gh-proxy
 	core_release="https://github.com/MetaCubeX/mihomo/releases/download/$core_latest"
@@ -485,10 +529,10 @@ fi
 if [ -n "$SOURCE_DIR" ]; then
  src=$(cd "$SOURCE_DIR" 2>/dev/null && pwd -P) || fail "SOURCE_DIR is not readable"
  case "$src/" in "$temp_dir/"*) fail "SOURCE_DIR must be outside installer staging" ;; esac
- echo "local exodus source: $src"
+ info "Local Exodus source: $src"
 else
  # The application archive is small and staged on Entware storage.
- echo "download exodus ($ref)"
+ info "Downloading Exodus ($ref)..."
  mkdir -p "$temp_dir/app" || fail "can not stage application"
  download "https://github.com/$repository/archive/$ref.tar.gz" "$temp_dir/app.tar.gz" 300 || fail "application download failed"
  tar -xzf "$temp_dir/app.tar.gz" -C "$temp_dir/app" 2> /dev/null || fail "application extraction failed"
@@ -506,7 +550,7 @@ for file in "$src/install.sh" "$src/uninstall.sh" "$src/asuswrt/opt/share/exodus
  sh -n "$file" || fail "invalid shell payload: $file"
 done
 jq -e 'type == "object"' "$src/asuswrt/opt/etc/exodus/config.json" > /dev/null || fail "invalid default config"
-echo "exodus $(cat "$src/asuswrt/opt/share/exodus/VERSION")${commit:+ ($(echo "$commit" | cut -c 1-7))}"
+done_message "Exodus $(cat "$src/asuswrt/opt/share/exodus/VERSION")${commit:+ ($(echo "$commit" | cut -c 1-7))} payload verified."
 code=$(code_hash "$src")
 
 was_running=0
@@ -538,7 +582,8 @@ for name in firewall-start nat-start unmount services-start service-event; do
 done
 [ ! -f "$EXODUS_OPT/etc/init.d/S99exodus" ] || cp -p "$EXODUS_OPT/etc/init.d/S99exodus" "$temp_dir/backup/S99exodus" || fail "init backup failed"
 # code is replaced, settings and profiles are kept
-echo "install exodus"
+step '4/6' 'Install Exodus and migrate settings'
+info 'Preserving existing settings and staging application files...'
 rm -rf "$share_dir.new"
 mkdir -p "$share_dir.new" || fail "can not create $share_dir"
 cp -R "$src/asuswrt/opt/share/exodus/." "$share_dir.new/" || fail "install failed, not enough free space?"
@@ -581,7 +626,7 @@ ln -sf "$share_dir/exodus" "$EXODUS_OPT/bin/exodus" || fail "CLI link install fa
 # they run only with "Enable JFFS custom scripts and configs" (Administration - System)
 if [ -d "$EXODUS_JFFS" ] && [ -n "$(nvram get productid 2> /dev/null)" ]; then
 	if [ "$(nvram get jffs2_scripts)" != "1" ]; then
-		echo "enable JFFS custom scripts and configs"
+		info 'Enabling JFFS custom scripts and configs...'
 		nvram set jffs2_scripts=1
 		nvram commit
 	fi
@@ -592,7 +637,7 @@ if [ -d "$EXODUS_JFFS" ] && [ -n "$(nvram get productid 2> /dev/null)" ]; then
 	hook_add services-start "[ ! -x \"$EXODUS_JFFS/addons/exodus/boot.sh\" ] || \"$EXODUS_JFFS/addons/exodus/boot.sh\" > /dev/null 2>&1 &" || fail "boot hook install failed"
 	hook_add service-event "[ ! -x \"$EXODUS_JFFS/addons/exodus/boot.sh\" ] || \"$EXODUS_JFFS/addons/exodus/boot.sh\" event \"\$1\" \"\$2\"" || fail "service event hook install failed"
 else
-	echo "warning: /jffs is not available, the rules are restored only by the watcher"
+	warn '/jffs is not available; rules are restored only by the watcher.'
 fi
 [ -f "$home_dir/mixin.yaml" ] || cp -f "$src/asuswrt/opt/etc/exodus/mixin.yaml" "$home_dir/mixin.yaml" || fail "mixin install failed"
 # new options get their defaults, the values of the user win, options removed from exodus are dropped
@@ -632,17 +677,21 @@ else
 fi
 chmod 600 "$config" || fail "config permissions failed"
 rm -rf "$temp_dir/app"
+done_message 'Exodus files, hooks and settings installed.'
+step '5/6' 'Verify yq and Mihomo'
 
 # yq merges the settings into the profile, it is installed once
 if [ -z "$("$yq_path" --version 2> /dev/null)" ]; then
 	install_yq
+else
+	done_message 'yq is already installed and working.'
 fi
 
 # the core
 if [ "$current_core" != "$core" ] || [ "$(core_binary_version "$core_path")" != "$core_latest" ]; then
 	install_core "$core_release/$core_asset-$core_latest.gz"
 else
-	echo "$(core_title "$core") $core_latest is already installed"
+	done_message "$(core_title "$core") $core_latest is already installed."
 fi
 
 # remember the core and the gh-proxy for the next runs and the update page
@@ -654,13 +703,14 @@ fi
 mv -f "$config.new" "$config" || fail "update settings activation failed"
 
 # secrets of the core api and the proxy ports, the hwid
+step '6/6' 'Activate and check services'
 "$share_dir/exodus" init || fail "Exodus initialization failed"
 
 # the web ui and the service run the new code
-echo "restart web ui"
+info 'Registering WebUI and starting its cache...'
 "$share_dir/exodus" web restart || fail "native WebUI registration failed"
 if [ "$was_running" = 1 ] || [ "$(config_get .config.enabled)" = "true" ]; then
-	echo "restart service"
+	info 'Restarting Exodus service...'
 	service_attempted=1
 	"$share_dir/exodus" restart || fail "service activation failed"
 	"$share_dir/exodus" status > /dev/null 2>&1 || fail "service is not running after activation"
@@ -668,7 +718,8 @@ fi
 
 web_url=$("$share_dir/exodus" web url) || fail "native WebUI URL unavailable"
 [ -n "$web_url" ] || fail "native WebUI URL unavailable"
-echo "web ui: $web_url"
+done_message "WebUI: $web_url"
 migration_pending=0
 rm -rf "$share_dir.old"
+done_message 'Installation complete.'
 echo "success"

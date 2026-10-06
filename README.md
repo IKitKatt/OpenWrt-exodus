@@ -48,8 +48,11 @@ curl -fsSL https://raw.githubusercontent.com/IKitKatt/openwrt-exodus/asuswrt-nat
 | `CORE` | `meta` (stable Mihomo), `alpha` (Mihomo Alpha) or `prizrak` ([Prizrak-Core](https://github.com/legiz-ru/Prizrak-Core)), asked otherwise |
 | `GH_PROXY` | download from GitHub through [gh-proxy](https://github.com/prettyleaf/gh-proxy): `https://example.com/ghproxy/TOKEN` |
 | `LOW_SPACE=1` | remove the current core before writing the new one |
+| `ALLOW_RUNNING_MIHOMO=1` | explicitly allow installation with another Mihomo running when no terminal is available |
 | `REF` | another branch or tag; default: `asuswrt-native` |
 | `REPOSITORY` | application fork as `owner/repo`; default: `IKitKatt/openwrt-exodus` |
+
+When another Mihomo is running, the installer asks whether to continue. Yes continues; No or Enter cancels before dependency checks or downloads. Exodus's own core does not trigger this warning. Terminal output highlights stages, success, warnings and errors. Update logs stay plain; `NO_COLOR=1` disables terminal colors too.
 
 ### Versions
 
@@ -87,6 +90,8 @@ The **Dashboard** button opens Zashboard, the core downloads it on the first sta
 Updating an existing installation keeps profiles, subscriptions, mixin, API/proxy secrets and device ID. Legacy `.web.port` and `web.auth` are retained for a possible manual downgrade; they do not control native Web Admin. The installer stops only the verified Exodus Lighttpd process and no longer installs Lighttpd packages. Registration failure restores the previous Exodus code and settings instead of reporting success.
 
 The `services-start` recovery stub waits for Entware in the background, and `S99exodus` registers the page when USB storage becomes available. Status and logs refresh from RAM every five seconds. Navigation also reads RAM caches; WebUI writes refresh them before confirming completion, and CLI changes appear within about 30 seconds. Network update checks run separately. Stopping the proxy leaves administration available; `exodus web stop` stops both workers and removes the Exodus page. Request IDs, chunk acknowledgements and stable workers preserve responses while an update replaces scripts.
+
+Cache freshness uses the router's HTTP clock rather than the computer's clock. A stale or missing cache triggers one recovery event: it starts a stopped cache worker and restarts a verified worker whose heartbeat has not advanced for over a minute of router uptime. Recovery does not write Addons API settings or restart Mihomo. Cache refresh errors appear in the App and Web logs. If recovery fails, run `exodus web restart` over SSH and save these logs before rebooting the router.
 
 Exodus uses English unless Merlin's interface language is Russian (`preferred_lang=RU`). There is no separate language selector. Its gray canvas extends to the sidebar and viewport height, including loading and error states.
 
