@@ -6,6 +6,7 @@ import os
 import pty
 import select
 import time
+import re
 from shell_support import ROOT
 import test_webui
 
@@ -62,6 +63,7 @@ case "$url" in
  */VERSION) if [ -n "$out" ]; then printf '1.27.4\\n' > "$out"; else printf '1.27.4\\n'; fi ;;
  */version.txt) printf '%s\\n' "${FIXTURE_CORE_VERSION:-v1.19.15}" ;;
  */mihomo-*.gz) cp "$FIXTURE_CORE_GZ" "$out" ;;
+ */yq_linux_*.tar.gz) cp "$FIXTURE_YQ_TAR" "$out" ;;
  *) exit 1 ;;
 esac''')
 
@@ -73,6 +75,48 @@ esac''')
         proc=self.root/'proc/12345';proc.mkdir(parents=True)
         (proc/'exe').symlink_to('/another-addon/mihomo')
         self.env['EXODUS_INSTALL_PROC']=str(proc.parent)
+
+    def test_yq_is_verified_with_dependencies_and_completion_is_one_line(self):
+        self.bundle()
+        result=self.install()
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertLess(result.stdout.index('yq is already installed and working.'),
+                        result.stdout.index('3/6'))
+        self.assertEqual(result.stdout.strip().splitlines()[-1].strip(),'[ OK ] Installation complete.')
+        self.assertNotIn('\nsuccess\n',result.stdout)
+
+    def test_yq_download_failure_keeps_old_code_and_binary(self):
+        self.bundle()
+        yq=self.opt/'libexec/exodus/yq'
+        previous=b'#!/bin/sh\nexit 1\n'
+        yq.write_bytes(previous)
+        build=(self.share/'BUILD').read_bytes()
+        result=self.install()
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('yq download failed',result.stdout)
+        self.assertEqual(yq.read_bytes(),previous)
+        self.assertEqual((self.share/'BUILD').read_bytes(),build)
+        self.assertNotIn('/archive/',(self.jffs/'curl.calls').read_text())
+
+    def test_staged_yq_restores_old_binary_if_registration_fails(self):
+        self.bundle()
+        yq=self.opt/'libexec/exodus/yq'
+        previous=b'#!/bin/sh\nexit 1\n'
+        yq.write_bytes(previous)
+        candidate=self.root/'candidate-yq'
+        candidate.write_bytes(b'#!/bin/sh\necho "yq mikefarah v4.99"\n')
+        archive=self.root/'yq.tar.gz'
+        with tarfile.open(archive,'w:gz') as tar:
+            for arch in ('amd64','arm64','arm','mips','mipsle'):
+                tar.add(candidate,arcname='yq_linux_'+arch)
+        self.env['FIXTURE_YQ_TAR']=str(archive)
+        for i in range(1,21): (self.www/f'user/user{i}.asp').write_text('foreign')
+        result=self.install()
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('native WebUI registration failed',result.stdout)
+        self.assertEqual(yq.read_bytes(),previous)
+        self.assertLess(result.stdout.index('Downloading and validating yq...'),
+                        result.stdout.index('3/6'))
 
     def test_foreign_mihomo_requires_confirmation_before_dependencies(self):
         self.foreign_mihomo()
@@ -87,7 +131,7 @@ esac''')
         self.foreign_mihomo();self.bundle();self.env['ALLOW_RUNNING_MIHOMO']='1'
         result=self.install()
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-        self.assertEqual(result.stdout.strip().splitlines()[-1],'success')
+        self.assertEqual(result.stdout.strip().splitlines()[-1].strip(),'[ OK ] Installation complete.')
         self.assertNotIn('\x1b',result.stdout)
 
     def test_owned_mihomo_resolves_entware_symlinks_before_warning(self):
@@ -145,7 +189,8 @@ esac''')
         self.assertEqual(status,0,output)
         self.assertIn('Enter Yes / Да',output)
         self.assertLess(output.index('[WARN]'),output.index('Dependencies and architecture'))
-        self.assertEqual(output.strip().splitlines()[-1],'success')
+        last=re.sub(r'\x1b\[[0-9;]*m','',output.strip().splitlines()[-1]).strip()
+        self.assertEqual(last,'[ OK ] Installation complete.')
         self.assertTrue((self.jffs/'opkg.calls').exists())
 
     def test_native_health_event_restarts_dead_cache_without_proxy_or_jffs_changes(self):
@@ -196,16 +241,16 @@ esac''')
         self.assertTrue(state.returncode!=0 or 'State:\tZ' in state.stdout,'foreground child survived')
         self.assertFalse((webui/'cache.pid').exists())
 
-    def test_native_branch_is_default_download_source(self):
+    def test_pr_target_branch_is_default_download_source(self):
         self.bundle()
         result=self.install()
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         build=json.loads((self.share/'BUILD').read_text())
-        self.assertEqual(build['ref'],'asuswrt-native')
+        self.assertEqual(build['ref'],'asuswrt')
         self.assertEqual(build['repository'],'IKitKatt/openwrt-exodus')
         calls=(self.jffs/'curl.calls').read_text()
-        self.assertIn('/archive/asuswrt-native.tar.gz',calls)
-        self.assertNotIn('/archive/asuswrt.tar.gz',calls)
+        self.assertIn('/archive/asuswrt.tar.gz',calls)
+        self.assertNotIn('/archive/asuswrt-native.tar.gz',calls)
         self.assertIn('coreutils-base64',(self.jffs/'opkg.calls').read_text())
 
     def test_installer_rejects_unusable_base64_before_replacing_code(self):
@@ -224,8 +269,8 @@ esac''')
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         build=json.loads((self.share/'BUILD').read_text())
         self.assertEqual(build.get('repository'),'router-owner/Exodus-fork')
-        self.assertEqual(build['ref'],'asuswrt-native')
-        self.assertIn('https://github.com/router-owner/Exodus-fork/archive/asuswrt-native.tar.gz',(self.jffs/'curl.calls').read_text())
+        self.assertEqual(build['ref'],'asuswrt')
+        self.assertIn('https://github.com/router-owner/Exodus-fork/archive/asuswrt.tar.gz',(self.jffs/'curl.calls').read_text())
 
     def test_ax86u_3004_388_12_2_installs_native_ui(self):
         self.bundle()
@@ -468,18 +513,6 @@ esac''')
         self.assertNotEqual(result.returncode,0)
         self.assertTrue(self.share.exists())
 
-    def test_generated_bundle_installs_with_local_entrypoint(self):
-        import sys
-        self.bundle()
-        subprocess.run([sys.executable,str(ROOT/'scripts/package-asuswrt.py'),'--output',str(self.root/'dist')],check=True,capture_output=True)
-        archive=next((self.root/'dist').glob('*.tar.gz'))
-        with tarfile.open(archive) as bundle: bundle.extractall(self.root/'extracted',filter='data')
-        entry=self.root/'extracted/exodus-native/install-local.sh'
-        result=subprocess.run(['sh',str(entry)],env=self.env,capture_output=True,text=True,timeout=30,start_new_session=True)
-        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-        self.assertEqual((self.share/'www/app.js').read_bytes(),(ROOT/'asuswrt/opt/share/exodus/www/app.js').read_bytes().replace(b'\r\n',b'\n'))
-        self.assertTrue((self.share/'uninstall.sh').is_file())
-
     def test_preflight_failure_keeps_old_install(self):
         self.nv['extendno']='0'; self.write_nv()
         before=(self.home/'config.json').read_bytes()
@@ -632,6 +665,7 @@ touch "$EXODUS_JFFS/curl-finished"''')
         self.assertNotEqual(result.returncode,0)
         self.assertNotIn('\nsuccess\n',result.stdout)
         self.assertEqual((self.home/'config.json').read_bytes(),before)
+        self.assertNotIn('[ OK ] Installation complete.',result.stdout)
         self.assertTrue((self.share/'BUILD').read_text().startswith('{"code":"fixture"}'))
 
     def test_staging_failure_keeps_previous_webui_running(self):

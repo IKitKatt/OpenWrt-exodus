@@ -3,17 +3,17 @@
 # Exodus for Asuswrt-Merlin installer and updater
 # installs into entware: the service, the web ui, the mihomo core and yq, settings and profiles are kept
 # adds a line to the user scripts firewall-start, nat-start and unmount in /jffs/scripts, other lines there are kept
-# REF=<branch|tag>  install another version, the asuswrt-native branch by default
+# REF=<branch|tag>  install another version, the asuswrt branch by default
 # REPOSITORY=<owner/repo> download application files from this fork
 # LOW_SPACE=1       remove the current core before installing the new one, for routers with little free space
 # CORE=<core>       install this core without asking: meta (stable), alpha (Mihomo Alpha) or prizrak (Prizrak-Core)
 # ALLOW_RUNNING_MIHOMO=1 confirm a conflicting Mihomo without a terminal (automation only)
 # GH_PROXY=<url>    download from GitHub through gh-proxy (https://github.com/prettyleaf/gh-proxy), e.g. https://example.com/ghproxy/TOKEN, empty to download directly
-# SOURCE_DIR=<dir>  install application files from an extracted local bundle; dependencies still need internet
+# SOURCE_DIR=<dir>  install application files from a local source tree; dependencies still need internet
 # the core and GH_PROXY are saved in $EXODUS_OPT/etc/exodus/config.json, the next runs and the update page use them
 
 repository="${REPOSITORY:-IKitKatt/openwrt-exodus}"
-ref="${REF:-asuswrt-native}"
+ref="${REF:-asuswrt}"
 
 EXODUS_OPT="${EXODUS_OPT:-/opt}"
 EXODUS_JFFS="${EXODUS_JFFS:-/jffs}"
@@ -38,7 +38,7 @@ have() {
 # Logs and the updater stay plain; terminal output follows the Exodus palette.
 ui_reset='' ui_bold='' ui_accent='' ui_info='' ui_ok='' ui_warn='' ui_error='' ui_muted=''
 if [ -t 1 ] && [ "${TERM:-dumb}" != dumb ] && [ "${NO_COLOR+set}" != set ]; then
-	ui_reset='\033[0m'; ui_bold='\033[1m'; ui_accent='\033[95m'
+	ui_reset='\033[0m'; ui_bold='\033[1m'; ui_accent='\033[96m'
 	ui_info='\033[96m'; ui_ok='\033[92m'; ui_warn='\033[93m'; ui_error='\033[91m'; ui_muted='\033[90m'
 fi
 info() { printf '  %b[INFO]%b %s\n' "$ui_info" "$ui_reset" "$1"; }
@@ -57,7 +57,7 @@ config="$home_dir/config.json"
 core_path="$libexec_dir/mihomo"
 yq_path="$libexec_dir/yq"
 
-# the last line is "success" or starts with "error:", the update page relies on it
+# The update page recognizes the final completion message or an "error:" line.
 fail() {
 	rollback
 	[ -z "$ui_error" ] || printf '  %b[FAIL]%b %s\n' "$ui_error" "$ui_reset" "$1"
@@ -232,13 +232,13 @@ install_core() {
 	done_message "$(core_title "$core") installed and verified."
 }
 
-install_yq() {
+prepare_yq() {
 	local file="$temp_dir/yq.tar.gz"
 	info 'Downloading and validating yq...'
 	if ! download "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_$yq_arch.tar.gz" "$file" || ! gzip -t "$file" 2> /dev/null; then
 		fail "yq download failed"
 	fi
-	mkdir -p "$temp_dir/yq" "$libexec_dir"
+	mkdir -p "$temp_dir/yq" || fail "can not stage yq"
 	tar -xzf "$file" -C "$temp_dir/yq" || fail "yq install failed, not enough free space?"
 	rm -f "$file"
 	[ -f "$temp_dir/yq/yq_linux_$yq_arch" ] || fail "yq archive has no yq_linux_$yq_arch"
@@ -247,16 +247,16 @@ install_yq() {
 		rm -rf "$temp_dir/yq"
 		# the release of yq for arm needs an fpu, a yq of entware would be built for the cpu
 		if [ "$core_arch" = "armv5" ] && opkg install yq > /dev/null 2>&1 && "$EXODUS_OPT/bin/yq" --version 2> /dev/null | grep -q mikefarah; then
-			backup_binary yq
-			ln -sf "$EXODUS_OPT/bin/yq" "$yq_path" || fail "yq activation failed"
+			mkdir -p "$temp_dir/yq" || fail "can not stage yq"
+			staged_yq_path="$temp_dir/yq/yq_linux_$yq_arch"
+			ln -sf "$EXODUS_OPT/bin/yq" "$staged_yq_path" || fail "yq staging failed"
+			done_message 'Entware yq verified and ready.'
 			return
 		fi
 		fail "yq does not run on this router"
 	fi
-	backup_binary yq
-	mv -f "$temp_dir/yq/yq_linux_$yq_arch" "$yq_path" || fail "yq install failed, not enough free space?"
-	rm -rf "$temp_dir/yq"
-	done_message 'yq installed and verified.'
+	staged_yq_path="$temp_dir/yq/yq_linux_$yq_arch"
+	done_message 'yq downloaded and verified.'
 }
 
 # a line of exodus in a user script of asuswrt-merlin, right after the shebang: a script may end with exit
@@ -399,8 +399,7 @@ have base64 || fail "base64 is unavailable after installing coreutils-base64"
 # secrets, the password and the update check need sha-256: sha256sum or openssl of the firmware
 printf '' | sha256sum 2> /dev/null | grep -q '^[0-9a-f]\{64\}' || fail "sha256sum is not found and openssl can not compute sha-256"
 [ ! -f "$config" ] || jq -e 'type == "object"' "$config" > /dev/null 2>&1 || fail "existing config.json is not a valid JSON object"
-done_message 'Dependencies and checksum/base64 tools verified.'
-step '3/6' 'Download source and select core'
+done_message 'Entware and checksum/base64 tools verified.'
 
 # access to github: through the given or the saved gh-proxy, then directly
 version_url="https://github.com/$repository/raw/$ref/asuswrt/opt/share/exodus/VERSION"
@@ -468,6 +467,16 @@ if [ -n "$gh_proxy" ]; then
 	gh_proxy_host="${gh_proxy#*://}"
 	info "Downloading through gh-proxy at ${gh_proxy_host%%/*}"
 fi
+
+# Stage yq with the dependencies; activate it only inside the rollback transaction.
+staged_yq_path=''
+if [ -z "$("$yq_path" --version 2> /dev/null)" ]; then
+	prepare_yq
+else
+	done_message 'yq is already installed and working.'
+fi
+done_message 'Dependencies verified.'
+step '3/6' 'Download source and select core'
 
 # choose the core, the current one is saved in the config
 current_core=$(config_get .update.core)
@@ -677,15 +686,14 @@ else
 fi
 chmod 600 "$config" || fail "config permissions failed"
 rm -rf "$temp_dir/app"
-done_message 'Exodus files, hooks and settings installed.'
-step '5/6' 'Verify yq and Mihomo'
-
-# yq merges the settings into the profile, it is installed once
-if [ -z "$("$yq_path" --version 2> /dev/null)" ]; then
-	install_yq
-else
-	done_message 'yq is already installed and working.'
+# The previous yq stays in place until all source and migration checks pass.
+if [ -n "$staged_yq_path" ]; then
+	backup_binary yq
+	mv -f "$staged_yq_path" "$yq_path" || fail "yq activation failed"
+	done_message 'yq activated.'
 fi
+done_message 'Exodus files, hooks and settings installed.'
+step '5/6' 'Verify Mihomo'
 
 # the core
 if [ "$current_core" != "$core" ] || [ "$(core_binary_version "$core_path")" != "$core_latest" ]; then
@@ -722,4 +730,3 @@ done_message "WebUI: $web_url"
 migration_pending=0
 rm -rf "$share_dir.old"
 done_message 'Installation complete.'
-echo "success"

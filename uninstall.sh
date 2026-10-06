@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Native Exodus for Asuswrt-Merlin uninstaller (asuswrt-native)
+# Native Exodus for Asuswrt-Merlin uninstaller
 # Works both from the fork's raw URL piped into sh and as a saved local file.
 # KEEP_CONFIG=1 keeps /opt/etc/exodus (settings, profiles and subscriptions)
 # packages of entware (curl, jq, lighttpd) are kept, other applications may use them
@@ -15,7 +15,7 @@ export PATH="$EXODUS_OPT/bin:$EXODUS_OPT/sbin:/sbin:/bin:/usr/sbin:/usr/bin"
 # Standalone entrypoint, including when piped into sh. Keep logs ANSI-free.
 ui_reset='' ui_bold='' ui_accent='' ui_info='' ui_ok='' ui_warn='' ui_error='' ui_muted=''
 if [ -t 1 ] && [ "${TERM:-dumb}" != dumb ] && [ "${NO_COLOR+set}" != set ]; then
-	ui_reset='\033[0m'; ui_bold='\033[1m'; ui_accent='\033[95m'
+	ui_reset='\033[0m'; ui_bold='\033[1m'; ui_accent='\033[96m'
 	ui_info='\033[96m'; ui_ok='\033[92m'; ui_warn='\033[93m'; ui_error='\033[91m'; ui_muted='\033[90m'
 fi
 info() { printf '  %b[INFO]%b %s\n' "$ui_info" "$ui_reset" "$1"; }

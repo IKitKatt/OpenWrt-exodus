@@ -26,7 +26,9 @@ class ShellCase(unittest.TestCase):
         self.www = self.root / 'www'
         for path in (self.opt / 'bin', self.jffs / 'addons', self.www / 'user'):
             path.mkdir(parents=True, exist_ok=True)
-        jq = shutil.which('jq') or str(ROOT / 'docs/tools/jq')
+        jq = shutil.which('jq')
+        if jq is None:
+            raise RuntimeError('Shell tests require jq on PATH.')
         (self.opt / 'bin/jq').symlink_to(jq)
         self.env = {**os.environ, 'EXODUS_OPT': str(self.opt), 'EXODUS_TMP': str(self.ram),
                     'EXODUS_JFFS': str(self.jffs), 'EXODUS_WWW': str(self.www),

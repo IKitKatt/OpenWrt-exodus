@@ -1275,7 +1275,7 @@ function pageStatus() {
             switchField(_('Autostart'), _('Start the service when the router boots.'), ref('config.enabled'), null, true)]),
         E('div', {class: 'service-actions'}, live(() => [
             btn(status().running ? _('Restart') : _('Start'), {icon: status().running ? 'rotate-cw' : 'play', onClick: () => serviceOp(status().running ? 'restart' : 'start')}),
-            btn(_('Stop'), {variant: 'outline', icon: 'square', disabled: !status().running, onClick: () => serviceOp('stop')}),
+            btn(_('Stop'), {variant: 'destructive', icon: 'square', disabled: !status().running, onClick: () => serviceOp('stop')}),
             btn(_('Dashboard'), {variant: 'outline', icon: 'external-link', disabled: !status().running, onClick: openDashboard})
         ], () => [status().running]))
     ]});
@@ -2147,8 +2147,8 @@ function pageUpdates() {
             logView.scrollTop = logView.scrollHeight;
             logStatus.textContent = data.content.length ? _('Updated at %s', new Date().toLocaleTimeString(lang === 'ru' ? 'ru-RU' : 'en-US')) : _('No log entries yet.');
             const lines = data.content.trim().split('\n');
-            const last = lines[lines.length - 1] || '';
-            return last === 'success' || last.startsWith('error:');
+            const last = (lines[lines.length - 1] || '').trim();
+            return last === 'success' || last === '[ OK ] Installation complete.' || last.startsWith('error:');
         } catch (error) {
             if (pageToken === renderToken) {
                 logStatus.textContent = logLoaded ? _('Could not refresh. Previous log is retained. %s', error.message) : _('Could not load the log. %s', error.message);
@@ -2420,7 +2420,7 @@ async function openAbout() {
             ])) : null,
             E('div', { class: 'build-links' }, [
                 E('a', { class: 'btn btn-outline', href: `${repo}/issues`, target: '_blank', rel: 'noopener' }, [icon('bug'), _('Issues')]),
-                E('a', { class: 'btn btn-outline', href: `${repo}/tree/${info.ref || 'asuswrt-native'}`, target: '_blank', rel: 'noopener' }, [icon('github'), 'GitHub'])
+                E('a', { class: 'btn btn-outline', href: `${repo}/tree/${info.ref || 'asuswrt'}`, target: '_blank', rel: 'noopener' }, [icon('github'), 'GitHub'])
             ])
         ]
     });

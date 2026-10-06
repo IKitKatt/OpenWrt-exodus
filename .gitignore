@@ -1,10 +1,2 @@
-docs/
-tests/
-.superpowers/
-.impeccable/
-
-DESIGN.md
-INSTALL-ASUSWRT.RU.md
-PRODUCT.md
-MERLIN-SMOKE.md
-PRODUCT.md
+__pycache__/
+*.py[cod]

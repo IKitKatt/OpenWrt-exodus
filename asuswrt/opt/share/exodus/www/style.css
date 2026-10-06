@@ -1,26 +1,32 @@
 /* Exodus owns this canvas. All firmware navigation remains outside these rules. */
 #exodus-root {
-    --surface: #282a36;
-    --surface-raised: #30323f;
-    --surface-subtle: #383b4d;
-    --text: #f8f8f2;
-    --muted: #b3b1c4;
-    --line: #44475a;
-    --control-line: #8588a2;
-    --accent: #bd93f9;
-    --accent-hover: #caa7fc;
-    --accent-soft: #3c344f;
-    --success: #50fa7b;
-    --success-soft: #243c32;
-    --warning: #ffb86c;
-    --warning-soft: #433a31;
-    --danger: #ff7979;
-    --danger-soft: #462f38;
-    --surface-input: #242631;
-    --on-accent: #282a36;
-    --accent-line: #9c82bd;
-    --link: #8be9fd;
-    --code: #ff79c6;
+    --surface: #4d595d;
+    --surface-raised: #2f3a3e;
+    --surface-subtle: #475a5f;
+    --text: #ffffff;
+    --muted: #c5d2d6;
+    --line: #66757c;
+    --control-line: #92a0a5;
+    --control-hover: #b9d8e6;
+    --accent: #77a5c6;
+    --accent-hover: #b9d8e6;
+    --accent-soft: #2c4b60;
+    --accent-soft-hover: #365c74;
+    --success: #8bda75;
+    --success-soft: #2d4437;
+    --warning: #ffcc00;
+    --warning-soft: #514b29;
+    --warning-line: #b99c47;
+    --danger: #ff8080;
+    --danger-soft: #4b3031;
+    --danger-line: #c96868;
+    --danger-button: #b83333;
+    --danger-button-hover: #cb3d3d;
+    --surface-input: #1f2d35;
+    --on-accent: #1f2d35;
+    --accent-line: #77a5c6;
+    --link: #b9d8e6;
+    --code: #ffcc00;
     --radius: 8px;
     --status-block-width: 168px;
     --status-block-min-height: 72px;
@@ -63,7 +69,7 @@
 #exodus-root .profile-actions .btn { min-height: 32px; min-width: 32px; padding: 6px; }
 #exodus-root .profile-import { display: flex; align-items: center; gap: 12px; padding-top: 16px; border-top: 1px solid var(--line); }
 #exodus-root .picker-mode { margin: 0; padding: 12px 16px; background: var(--accent-soft); border-radius: 8px; color: var(--accent-hover); }
-#exodus-root ::selection { color: var(--text); background: #44475a; }
+#exodus-root ::selection { color: var(--text); background: var(--accent-soft); }
 #exodus-root :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 #exodus-root :is(input, select, textarea, button, a, summary) { scroll-margin-block: 110px 24px; }
 #exodus-root svg { width: 18px; height: 18px; flex-shrink: 0; vertical-align: middle; }
@@ -143,7 +149,7 @@
 /* Controls use a single scale; secondary actions do not compete with Save or Start. */
 #exodus-root .btn, #exodus-root .version-chip { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; min-width: 40px; max-width: 100%; padding: 8px 14px; border: 1px solid transparent; border-radius: var(--radius); color: var(--on-accent); background: var(--accent); font: inherit; font-weight: 600; line-height: 1.4; text-decoration: none; text-align: center; cursor: pointer; overflow-wrap: anywhere; }
 #exodus-root :is(.btn-outline, .btn-secondary, .version-chip) { color: var(--text); background: var(--surface-raised); border-color: var(--control-line); }
-#exodus-root .btn-destructive { color: var(--on-accent); background: var(--danger); }
+#exodus-root .btn-destructive { color: var(--text); background: var(--danger-button); }
 #exodus-root .btn-destructive-outline { color: var(--danger); background: transparent; border-color: var(--danger); }
 #exodus-root .btn-icon { padding: 8px; }
 #exodus-root .btn-ghost { color: var(--muted); background: transparent; }
@@ -151,7 +157,7 @@
 #exodus-root .btn:disabled, #exodus-root :is(input, select, textarea):disabled { color: var(--muted); background: var(--surface-subtle); border-color: var(--line); cursor: not-allowed; }
 #exodus-root .btn.loading { cursor: wait; }
 #exodus-root .version-chip { padding-inline: 10px; font-size: 12px; font-weight: 500; }
-#exodus-root .version-chip.update { color: var(--warning); background: var(--warning-soft); border-color: #c69460; }
+#exodus-root .version-chip.update { color: var(--warning); background: var(--warning-soft); border-color: var(--warning-line); }
 #exodus-root .help-tip { display: inline-flex; align-items: center; flex-shrink: 0; }
 #exodus-root .info-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; min-width: 28px; min-height: 28px; margin: 0; padding: 4px; background: transparent; color: var(--muted); border: 0; border-radius: 6px; cursor: help; }
 #exodus-root .info-btn:hover, #exodus-root .info-btn[aria-expanded=true] { color: var(--accent-hover); background: var(--accent-soft); }
@@ -165,7 +171,7 @@
     appearance: none;
     -webkit-appearance: none;
     padding-inline-end: 40px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='m4 6 4 4 4-4' stroke='%23b3b1c4' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='m4 6 4 4 4-4' stroke='%23c5d2d6' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 12px center;
     background-size: 16px 16px;
@@ -198,11 +204,11 @@
 #exodus-root .badge-destructive { color: var(--danger); background: var(--danger-soft); }
 #exodus-root .status-block { justify-content: center; width: var(--status-block-width); min-height: var(--status-block-min-height); padding: 12px; border-radius: var(--radius); font-size: 13px; font-weight: 500; line-height: 1.4; text-align: center; overflow-wrap: anywhere; }
 #exodus-root .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
-#exodus-root .alert { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin: 0; padding: 16px; border: 1px solid var(--accent-line); border-radius: var(--radius); color: var(--accent-hover); background: #3c344f; overflow-wrap: anywhere; }
+#exodus-root .alert { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin: 0; padding: 16px; border: 1px solid var(--accent-line); border-radius: var(--radius); color: var(--accent-hover); background: var(--accent-soft); overflow-wrap: anywhere; }
 #exodus-root .alert-title { font-weight: 650; }
 #exodus-root .alert-body { min-width: 0; width: 100%; }
-#exodus-root .alert-destructive { color: var(--danger); background: var(--danger-soft); border-color: #c75c6c; }
-#exodus-root .alert-warning { color: var(--warning); background: var(--warning-soft); border-color: #c69460; }
+#exodus-root .alert-destructive { color: var(--danger); background: var(--danger-soft); border-color: var(--danger-line); }
+#exodus-root .alert-warning { color: var(--warning); background: var(--warning-soft); border-color: var(--warning-line); }
 #exodus-root .alert .description, #exodus-root .alert .muted { color: inherit; }
 #exodus-root .info-list { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 0 16px; margin: 0; }
 #exodus-root .info-list dt, #exodus-root .info-list dd { padding: 10px 0; margin: 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
@@ -214,7 +220,7 @@
 #exodus-root .table-wrap { min-width: 0; width: 100%; max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
 #exodus-root .table { width: 100%; border-collapse: collapse; color: var(--text); font: inherit; }
 #exodus-root .table th, #exodus-root .table td { padding: 12px 8px; border-bottom: 1px solid var(--line); text-align: start; vertical-align: middle; overflow-wrap: anywhere; }
-#exodus-root .table th { color: var(--muted); background: #242631; font-size: 12px; font-weight: 650; white-space: nowrap; }
+#exodus-root .table th { color: var(--muted); background: var(--surface-input); font-size: 12px; font-weight: 650; white-space: nowrap; }
 #exodus-root .table td:first-child, #exodus-root .table th:first-child { padding-inline-start: 0; }
 #exodus-root .table td:last-child, #exodus-root .table th:last-child { padding-inline-end: 0; }
 #exodus-root .table tbody tr:last-child td { border-bottom: 0; }
@@ -363,19 +369,19 @@
 #exodus-root .toast > div { min-width: 0; }
 #exodus-root .toast-error { background: var(--danger-soft); color: var(--danger); }
 #exodus-root .toast .btn { margin-inline-start: auto; margin-top: -4px; color: inherit; flex-shrink: 0; }
-#exodus-root .savebar { position: sticky; top: 8px; z-index: 30; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 20px; padding: 12px 16px; color: var(--accent-hover); background: #3c344f; border: 1px solid var(--accent-line); border-radius: var(--radius); box-shadow: 0 4px 12px rgb(0 0 0 / 20%); }
+#exodus-root .savebar { position: sticky; top: 8px; z-index: 30; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 20px; padding: 12px 16px; color: var(--accent-hover); background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: var(--radius); box-shadow: 0 4px 12px rgb(0 0 0 / 20%); }
 #exodus-root .savebar-text { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; font-weight: 600; }
 
 @media (hover: hover) {
     #exodus-root .btn:hover { background: var(--accent-hover); }
-    #exodus-root :is(.btn-outline, .btn-secondary, .version-chip):hover { color: var(--text); background: var(--surface-subtle); border-color: #a5a8bf; }
-    #exodus-root .btn-destructive:hover { background: #ff9292; }
+    #exodus-root :is(.btn-outline, .btn-secondary, .version-chip):hover { color: var(--text); background: var(--surface-subtle); border-color: var(--control-hover); }
+    #exodus-root .btn-destructive:hover { background: var(--danger-button-hover); }
     #exodus-root .btn-destructive-outline:hover { color: var(--danger); background: var(--danger-soft); }
     #exodus-root :is(.btn-ghost, .btn-link):hover { color: var(--accent-hover); background: var(--accent-soft); }
     #exodus-root .nav a:hover, #exodus-root .tabs-trigger:hover { color: var(--accent-hover); background: var(--accent-soft); }
-    #exodus-root .picker-item:hover { background: #383b4d; }
-    #exodus-root .picker-item.selected:hover { background: #49405f; }
-    #exodus-root .tag button:hover { background: #49405f; }
+    #exodus-root .picker-item:hover { background: var(--surface-subtle); }
+    #exodus-root .picker-item.selected:hover { background: var(--accent-soft-hover); }
+    #exodus-root .tag button:hover { background: var(--accent-soft-hover); }
     #exodus-root .toast .btn:hover { color: inherit; background: rgb(255 255 255 / 12%); }
     #exodus-root .btn:disabled:hover { color: var(--muted); background: var(--surface-subtle); border-color: var(--line); }
 }
