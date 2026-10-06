@@ -22,6 +22,8 @@
     --link: #8be9fd;
     --code: #ff79c6;
     --radius: 8px;
+    --status-block-width: 168px;
+    --status-block-min-height: 72px;
     box-sizing: border-box;
     container-type: inline-size;
     width: 100%;
@@ -159,7 +161,16 @@
 #exodus-root .help-popover .info-text { gap: 8px; }
 #exodus-root :is(.input, .select, .textarea) { display: block; margin: 0; min-height: 40px; max-width: 100%; min-width: 0; padding: 8px 12px; color: var(--text); background: var(--surface-input); border: 1px solid var(--control-line); border-radius: var(--radius); font: inherit; caret-color: var(--accent); }
 #exodus-root :is(.input, .textarea)::placeholder { color: var(--muted); opacity: 1; }
-#exodus-root .select { padding-inline-end: 28px; }
+#exodus-root .select {
+    appearance: none;
+    -webkit-appearance: none;
+    padding-inline-end: 40px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='m4 6 4 4 4-4' stroke='%23b3b1c4' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 16px 16px;
+}
+#exodus-root[dir=rtl] .select { background-position: left 12px center; }
 #exodus-root .select option { color: var(--text); background: var(--surface-raised); }
 #exodus-root .textarea { width: 100%; min-height: 220px; resize: vertical; font: 13px/1.65 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; tab-size: 2; overflow: auto; }
 #exodus-root .textarea.log { min-height: 380px; }
@@ -185,6 +196,7 @@
 #exodus-root .badge-success { color: var(--success); background: var(--success-soft); }
 #exodus-root .badge-warning { color: var(--warning); background: var(--warning-soft); }
 #exodus-root .badge-destructive { color: var(--danger); background: var(--danger-soft); }
+#exodus-root .status-block { justify-content: center; width: var(--status-block-width); min-height: var(--status-block-min-height); padding: 12px; border-radius: var(--radius); font-size: 13px; font-weight: 500; line-height: 1.4; text-align: center; overflow-wrap: anywhere; }
 #exodus-root .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
 #exodus-root .alert { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin: 0; padding: 16px; border: 1px solid var(--accent-line); border-radius: var(--radius); color: var(--accent-hover); background: #3c344f; overflow-wrap: anywhere; }
 #exodus-root .alert-title { font-weight: 650; }
@@ -208,21 +220,27 @@
 #exodus-root .table tbody tr:last-child td { border-bottom: 0; }
 #exodus-root .updates-panel { font-family: inherit; font-size: 14px; font-weight: 400; }
 #exodus-root .update-components { min-width: 0; }
-#exodus-root .update-component { min-width: 0; padding: 16px 0; }
-#exodus-root .update-component:first-child { padding-top: 4px; }
+#exodus-root .update-component { display: grid; grid-template-columns: minmax(0,1fr) var(--status-block-width); align-items: center; gap: 12px 24px; min-width: 0; padding: 16px 0; }
 #exodus-root .update-component + .update-component { border-top: 1px solid var(--line); }
-#exodus-root .update-component-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; min-width: 0; }
+#exodus-root .update-component-header { grid-column: 1; min-width: 0; }
 #exodus-root .update-component-name { min-width: 0; }
-#exodus-root .update-component-title { font: inherit; font-size: 15px; font-weight: 600; }
-#exodus-root .update-component-subtitle { color: var(--muted); font: inherit; margin-top: 2px; }
-#exodus-root .update-status { font: inherit; font-size: 13px; white-space: nowrap; flex-shrink: 0; }
-#exodus-root .update-versions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 24px; margin: 0; }
-#exodus-root .update-versions > div, #exodus-root .update-environment > div { min-width: 0; }
+#exodus-root .update-component-main { display: contents; }
+#exodus-root .update-component-title { font: inherit; font-size: 17px; font-weight: 650; line-height: 1.4; }
+#exodus-root .update-component-subtitle { font: inherit; }
+#exodus-root .updates-panel .status-block { min-height: 48px; padding: 4px 12px; }
+#exodus-root .update-status { grid-column: 2; grid-row: 2; white-space: normal; }
+#exodus-root .update-versions { grid-column: 1; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 24px; margin: 0; }
+#exodus-root .update-versions > div, #exodus-root .update-environment-details > div { min-width: 0; }
 #exodus-root :is(.update-versions,.update-environment) dt { color: var(--muted); font: inherit; font-size: 13px; margin-bottom: 6px; }
+#exodus-root :is(.update-versions,.update-environment-details) dt { line-height: 1.4; }
 #exodus-root :is(.update-versions,.update-environment) dd { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin: 0; font: inherit; overflow-wrap: anywhere; }
 #exodus-root .version-value { font: inherit; font-size: 14px; font-weight: 400; font-variant-numeric: normal; overflow-wrap: anywhere; }
 #exodus-root .version-commit, #exodus-root .update-space-note { color: var(--muted); font: inherit; font-size: 13px; }
-#exodus-root .update-environment { display: grid; grid-template-columns: minmax(0,2fr) minmax(0,1fr) minmax(0,1fr); gap: 24px; margin: 0; padding: 16px 0; border-block: 1px solid var(--line); }
+#exodus-root .update-environment { margin: 0; padding: 16px 0; border-block: 1px solid var(--line); }
+#exodus-root .update-environment > .update-component-title { margin-bottom: 12px; }
+#exodus-root .update-environment-details { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)) var(--status-block-width); align-items: center; gap: 24px; margin: 0; }
+#exodus-root .update-source { padding-top: calc(13px * 1.4 + 6px); }
+#exodus-root .update-environment .update-space-summary { align-items: center; line-height: 1.3; background: var(--surface-input); }
 #exodus-root .table .actions { min-width: 96px; }
 #exodus-root .table .actions .row { flex-wrap: nowrap; justify-content: flex-end; }
 #exodus-root .table :is(.input, .select) { width: 100%; }
@@ -258,12 +276,13 @@
 /* Device workbench: selected scope stays visible next to discoverable network devices. */
 #exodus-root .picker, #exodus-root .picker-column { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 #exodus-root .picker > .card, #exodus-root .discovery-grid > .card { margin-bottom: 0; }
-#exodus-root .service-facts { display: grid; grid-template-columns: minmax(0,2fr) minmax(0,1fr); gap: 16px; margin: 0; }
-#exodus-root .service-facts dt { margin-bottom: 4px; color: var(--muted); font-size: 12px; }
-#exodus-root .service-facts dd { margin: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#exodus-root .service-facts { display: grid; grid-template-columns: minmax(0,2fr) minmax(180px,1fr); gap: 20px; margin: 0; }
+#exodus-root .service-facts > div { display: grid; grid-template-rows: auto 1fr; min-width: 0; }
+#exodus-root .service-facts dt { margin-bottom: 8px; color: var(--text); font-size: 17px; font-weight: 650; line-height: 1.4; }
+#exodus-root .service-facts dd { min-height: var(--status-block-min-height); margin: 0; display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap; }
+#exodus-root .service-facts .service-core-details { flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; }
+#exodus-root .service-core-type, #exodus-root .service-facts .fact-meta { font-size: 13px; font-weight: 400; overflow-wrap: anywhere; }
 #exodus-root .fact-meta { font-size: 12px; color: var(--muted); }
-#exodus-root .service-facts .service-active { color: var(--success); }
-#exodus-root .service-facts .service-inactive { color: var(--muted); }
 #exodus-root .service-settings { display: grid; grid-template-columns: minmax(0,2fr) minmax(180px,1fr); gap: 20px; align-items: end; }
 #exodus-root .service-settings .field-switch { padding-bottom: 6px; }
 #exodus-root .service-actions { display: flex; align-items: center; flex-wrap: nowrap; gap: 8px; padding-top: 16px; border-top: 1px solid var(--line); }
@@ -364,6 +383,9 @@
     #exodus-root .btn { transition: background-color 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out; }
     #exodus-root .spin { animation: exodus-spin 1s linear infinite; }
     @keyframes exodus-spin { to { transform: rotate(360deg); } }
+}
+@media (forced-colors: active) {
+    #exodus-root .select { appearance: auto; -webkit-appearance: auto; background-image: none; padding-inline-end: 12px; }
 }
 @container (min-width: 640px) {
     #exodus-root :is(.grid-2, .grid-3, .grid-4, .service-grid, .service-workbench, .picker-columns, .build-tiles) { grid-template-columns: repeat(2, minmax(0, 1fr)); }

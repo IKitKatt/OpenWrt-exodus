@@ -250,6 +250,8 @@ Button color transitions last (140ms) with `ease-out` when reduced motion is not
 
 ### Inputs / Fields
 
+Native selects retain browser keyboard behavior. Their chevron is inset 12px from the trailing edge, with 40px reserved for it. Forced colors restores the native arrow.
+
 Dark inset fields with a control-lilac boundary, violet caret and the control radius. Shared field padding and the body role come from the frontmatter. An icon with an accessible name opens contextual help beside the relevant setting on hover or keyboard focus; Escape dismisses it. Invalid fields use the danger boundary with an extra thin outline. Configuration and log textareas resize vertically, retain local overflow and have minimum heights (220px) and (380px) respectively. Read-only textareas use the inset surface (`#242631`). Native checkboxes retain visible checked state.
 
 ### Cards / Containers
@@ -266,9 +268,13 @@ Removable selections use dark-violet tags with explicit remove actions. Small st
 
 ### Device List
 
+Service uses 17px headings at weight 650 for Core and Proxy. Core type and version use regular 13px text on separate lines. Proxy status shares the Updates status block: 168px wide, at least 72px tall, with an 8px radius. Core details and Proxy status share their top edge and height; the Proxy column aligns with Autostart.
+
 Selected contains access mode, removable chosen values and manual addresses above discovery. Networks appears first across the full width, followed by Devices. Each panel has its own heading and list. Device rows have a minimum height (56px), a checkbox, a clear name and metadata in its consistent supporting role without italic styling for offline records. Related statuses stay grouped at the trailing edge. Selected rows use dark violet. Search fields and refresh actions stay with their discovery panel; bounded lists prevent large inventories from extending the whole page. Counts use the interface locale, and a single device has singular English copy.
 
 ### Updates
+
+Exodus, Core and Downloads headings share the 17px size and weight 650. The core type follows its heading inline as `Core | Mihomo Meta` with the same typography and color. Status blocks are centered on the complete Installed/Latest label-and-value groups. Architecture follows the same lower label-and-value arrangement. The free-space label is available to screen readers only, and its block is centered on the Architecture group. Status blocks share a 168px trailing column and a 48px minimum height with the neutral free-space block; long content expands the blocks without clipping.
 
 Versions are presented as two flat component rows for Exodus and the core. Each has a clear component name, a trailing semantic status and equally sized Installed/Latest fields. Version values share the body family at 14px and regular weight; optional commits appear separately as supporting text. Static versions do not force tabular numeral shapes. Long releases wrap without losing their suffix. Download source, architecture and free space use a compact definition list, with normal-weight values. The low-space explanation belongs to its help icon. Missing metadata uses an explicit placeholder or omits an optional line, without orphan labels. The check action keeps its circular arrow and busy feedback without shifting its size.
 

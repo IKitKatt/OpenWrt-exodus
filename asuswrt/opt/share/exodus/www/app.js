@@ -1264,8 +1264,8 @@ function pageStatus() {
             const s = status();
             const proxy = !state.status ? _('Unknown') : !s.running ? _('Stopped') : !state.config.proxy.enabled ? _('Off') : s.hijack ? _('Active') : _('Inactive');
             return E('dl', {class: 'service-facts'}, [
-                E('div', {}, [E('dt', {}, _('Core')), E('dd', {}, [E('span', {}, CORE_TITLES[s.core_type] || s.core_type || 'Mihomo'), E('span', {class: 'fact-meta'}, s.core_version || '—')])]),
-                E('div', {}, [E('dt', {}, _('Proxy')), E('dd', {id: 'service-status', class: s.running && s.hijack ? 'service-active' : 'service-inactive'}, proxy)])]);
+                E('div', {}, [E('dt', {}, _('Core')), E('dd', {class: 'service-core-details'}, [E('span', {class: 'service-core-type'}, CORE_TITLES[s.core_type] || s.core_type || 'Mihomo'), E('span', {class: 'fact-meta'}, s.core_version || '—')])]),
+                E('div', {}, [E('dt', {}, _('Proxy')), E('dd', {}, E('span', {id: 'service-status', class: `badge status-block ${s.running && s.hijack && state.config.proxy.enabled ? 'badge-success' : 'badge-secondary'}`}, proxy))])]);
         }, () => [status().core_version, status().core_type, status().running, status().hijack, !!state.status, state.config.proxy.enabled]),
         E('div', {class: 'service-settings'}, [
             field(_('Profile'), select(ref('config.profile'), profileChoices(), {optional: true, placeholder: _('Not selected')}), null, null, [
@@ -2180,21 +2180,25 @@ function pageUpdates() {
             E('span', {class: 'version-value'}, value || '—'),
             value && commit ? E('span', {class: 'version-commit'}, `${_('Commit')} ${commit.substring(0, 7)}`) : null])]);
         const component = (name, subtitle, current, next, badgeEl, currentCommit, nextCommit) => {
-            badgeEl.classList.add('update-status');
+            badgeEl.classList.add('update-status', 'status-block');
             return E('article', {class: 'update-component', 'aria-label': name}, [
-                E('div', {class: 'update-component-header'}, [E('div', {class: 'update-component-name'}, [
-                    E('h3', {class: 'update-component-title'}, name), subtitle ? E('p', {class: 'update-component-subtitle'}, subtitle) : null]), badgeEl]),
-                E('dl', {class: 'update-versions'}, [version(_('Installed'), current, currentCommit), version(_('Latest'), next, nextCommit)])]);
+                E('div', {class: 'update-component-main'}, [
+                    E('div', {class: 'update-component-header'}, E('div', {class: 'update-component-name'}, [
+                        E('h3', {class: 'update-component-title'}, [name, subtitle ? E('span', {class: 'update-component-subtitle'}, ` | ${subtitle}`) : null])])),
+                    E('dl', {class: 'update-versions'}, [version(_('Installed'), current, currentCommit), version(_('Latest'), next, nextCommit)])]),
+                badgeEl]);
         };
         const components = E('div', {class: 'update-components'}, [
             component('Exodus', null, info.app, info.app_latest, status(info.app_update, info.app), info.app_commit, info.app_latest_commit),
             component(_('Core'), CORE_TITLES[info.core_type] || info.core_type, info.core, info.core_latest,
                 status(info.core_latest == null ? null : newer(info.core, info.core_latest), info.core))]);
-        const environment = E('dl', {class: 'update-environment'}, [
-            E('div', {}, [E('dt', {}, _('Downloads')), E('dd', {}, info.gh_proxy ? _('through gh-proxy at %s', info.gh_proxy) : _('directly from GitHub'))]),
-            E('div', {}, [E('dt', {}, _('Architecture')), E('dd', {}, info.arch || '—')]),
-            E('div', {}, [E('dt', {}, _('Free space')), E('dd', {}, [formatSize(info.free_space), info.core_size != null
-                ? E('span', {class: 'update-space-note'}, `${_('Core')}: ${formatSize(info.core_size)}`) : null])])]);
+        const environment = E('div', {class: 'update-environment'}, [
+            E('h3', {class: 'update-component-title'}, _('Downloads')),
+            E('dl', {class: 'update-environment-details'}, [
+                E('div', {class: 'update-source'}, [E('dt', {class: 'visually-hidden'}, _('Downloads')), E('dd', {}, info.gh_proxy ? _('through gh-proxy at %s', info.gh_proxy) : _('directly from GitHub'))]),
+                E('div', {class: 'update-architecture'}, [E('dt', {}, _('Architecture')), E('dd', {}, info.arch || '—')]),
+                E('div', {}, [E('dt', {class: 'visually-hidden'}, _('Free space')), E('dd', {class: 'status-block update-space-summary'}, [formatSize(info.free_space), info.core_size != null
+                    ? E('span', {class: 'update-space-note'}, `${_('Core')}: ${formatSize(info.core_size)}`) : null])])])]);
         if (lowSpace.value === null) {
             lowSpace.value = info.free_space != null && info.core_size != null && info.free_space < info.core_size * 1.2;
         }
