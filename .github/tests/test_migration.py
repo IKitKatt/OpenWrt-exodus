@@ -36,6 +36,7 @@ class MigrationTests(test_webui.WebuiTests):
         (self.share/'BUILD').write_text('{"code":"fixture"}')
         self.installer=self.root/'install.sh'
         self.installer.write_text((ROOT/'install.sh').read_text())
+        (self.opt/'etc/opkg.conf').write_text('src/gz entware https://bin.entware.net/aarch64-k3.10\n')
 
     def stop_cache(self):
         if (self.share/'exodus').is_file():
@@ -98,6 +99,53 @@ esac''')
         self.assertEqual(yq.read_bytes(),previous)
         self.assertEqual((self.share/'BUILD').read_bytes(),build)
         self.assertNotIn('/archive/',(self.jffs/'curl.calls').read_text())
+
+    def test_installed_dependencies_skip_entware_network_operations(self):
+        self.bundle()
+        self.mock('opkg', '''echo "$*" >> "$EXODUS_JFFS/opkg.calls"
+case "$1" in
+ print-architecture) echo 'arch aarch64 10' ;;
+ list-installed) printf '%s\n' 'curl - 8.0' 'jq - 1.7' 'ca-bundle - 1' 'coreutils-base64 - 9.0' ;;
+ *) echo 'unexpected Entware network operation' >&2; exit 1 ;;
+esac''')
+        result=self.install()
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertEqual(set((self.jffs/'opkg.calls').read_text().splitlines()),
+                         {'print-architecture','list-installed'})
+
+    def test_missing_dependencies_use_temporary_download_timeout(self):
+        self.bundle()
+        config=self.opt/'etc/opkg.conf'
+        original='option http_timeout 999\nsrc/gz entware https://bin.entware.net/aarch64-k3.10\n'
+        config.write_text(original)
+        self.mock('opkg', '''if [ "$1" = -f ]; then
+ cp "$2" "$EXODUS_JFFS/used-opkg.conf"
+ shift 2
+fi
+echo "$*" >> "$EXODUS_JFFS/opkg.calls"
+case "$1" in
+ print-architecture) echo 'arch aarch64 10' ;;
+ list-installed) printf '%s\n' 'curl - 8.0' 'jq - 1.7' 'ca-bundle - 1' ;;
+esac''')
+        result=self.install()
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        used=self.jffs/'used-opkg.conf'
+        self.assertTrue(used.exists(),'package downloads did not receive a bounded timeout')
+        self.assertEqual(used.read_text(),
+                         'option http_timeout 30\nsrc/gz entware https://bin.entware.net/aarch64-k3.10\n')
+        self.assertEqual(config.read_text(),original)
+        self.assertIn('install coreutils-base64',(self.jffs/'opkg.calls').read_text().splitlines())
+
+    def test_entware_index_failure_is_visible_when_using_cached_index(self):
+        self.bundle()
+        self.mock('opkg', '''[ "$1" != -f ] || shift 2
+case "$1" in
+ print-architecture) echo 'arch aarch64 10' ;;
+ update) echo 'fixture: Entware download failed' >&2; exit 1 ;;
+esac''')
+        result=self.install()
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('fixture: Entware download failed',result.stdout+result.stderr)
 
     def test_staged_yq_restores_old_binary_if_registration_fails(self):
         self.bundle()

@@ -487,7 +487,17 @@ action_about() {
 }
 
 action_update() {
-	local low_space build repository ref
+	local low_space build repository ref owner
+	# Reject before copying the running script or truncating its progress log.
+	owner=$(cat "$EXODUS_OPT/tmp/exodus-install.lock/pid" 2>/dev/null)
+	case "$owner" in
+		''|*[!0-9]*|0) ;;
+		*)
+			if kill -0 "$owner" 2>/dev/null && ! grep -q '^State:.*Z' "$EXODUS_PROC/$owner/status" 2>/dev/null; then
+				fail "409 Conflict" "an installation is already running (PID $owner); wait for it to finish"
+			fi
+			;;
+	esac
 	low_space=0
 	[ "$(arg low_space)" = "true" ] && low_space=1
 	build=$(cat "$BUILD_PATH" 2> /dev/null)

@@ -1,4 +1,5 @@
 import json
+import os
 from shell_support import ShellCase
 
 
@@ -53,6 +54,20 @@ class ApiTests(ShellCase):
         request.write_text('{"action":"update"}')
         self.sh(f'daemonize() {{ "$@"; }}; api_run "{request}" "{response}"',('api',))
         self.assertEqual((self.jffs/'update-source').read_text(),'router-owner/Exodus-fork|native-test-tag')
+
+    def test_running_installer_keeps_update_log_and_script(self):
+        lock=self.opt/'tmp/exodus-install.lock'; lock.mkdir(parents=True)
+        (lock/'pid').write_text(str(os.getpid()))
+        log=self.ram/'log/update.log'; log.write_text('existing update progress\n')
+        running=self.ram/'run/exodus-update.sh'; running.write_text('running installer\n')
+        (self.share/'install.sh').write_text('#!/bin/sh\nexit 0\n')
+        request=self.root/'request.json'; response=self.root/'response.json'
+        request.write_text('{"action":"update"}')
+        self.sh(f'daemonize() {{ touch "$EXODUS_JFFS/launched"; }}; api_run "{request}" "{response}"',('api',))
+        self.assertEqual(json.loads(response.read_text())['status'],409)
+        self.assertEqual(log.read_text(),'existing update progress\n')
+        self.assertEqual(running.read_text(),'running installer\n')
+        self.assertFalse((self.jffs/'launched').exists())
 
     def test_update_check_uses_installed_fork_and_separates_cache(self):
         (self.share/'BUILD').write_text(json.dumps({'repository':'router-owner/Exodus-fork','ref':'asuswrt-native'}))

@@ -156,6 +156,18 @@ download() {
 	curl -s -f -L --connect-timeout 15 -m "${3:-600}" -o "$2" "$(gh_url "$1")"
 }
 
+# Bound wget's network waits through opkg's native option. Keep the user's
+# feeds, destinations and proxy settings; never rewrite the Entware config.
+opkg_download() {
+	local file="$temp_dir/opkg.conf"
+	if [ ! -f "$file" ]; then
+		{ printf 'option http_timeout 30\n';
+		  awk '$1 != "option" || $2 != "http_timeout"' "$EXODUS_OPT/etc/opkg.conf";
+		} > "$file" || fail "can not prepare Entware download configuration"
+	fi
+	opkg -f "$file" "$@"
+}
+
 # fetch the version file of the branch to check access to github
 # returns 0 on success, 22 if github answered with an error (a wrong ref or token), other codes if it is unreachable
 check_github() {
@@ -246,7 +258,7 @@ prepare_yq() {
 	if ! "$temp_dir/yq/yq_linux_$yq_arch" --version > /dev/null 2>&1; then
 		rm -rf "$temp_dir/yq"
 		# the release of yq for arm needs an fpu, a yq of entware would be built for the cpu
-		if [ "$core_arch" = "armv5" ] && opkg install yq > /dev/null 2>&1 && "$EXODUS_OPT/bin/yq" --version 2> /dev/null | grep -q mikefarah; then
+		if [ "$core_arch" = "armv5" ] && opkg_download install yq && "$EXODUS_OPT/bin/yq" --version 2> /dev/null | grep -q mikefarah; then
 			mkdir -p "$temp_dir/yq" || fail "can not stage yq"
 			staged_yq_path="$temp_dir/yq/yq_linux_$yq_arch"
 			ln -sf "$EXODUS_OPT/bin/yq" "$staged_yq_path" || fail "yq staging failed"
@@ -421,10 +433,23 @@ info "Architecture: $machine; core: $core_arch; Entware: $arch"
 
 # dependencies from entware, curl and jq are needed by the installer itself
 # iptables and ipset are of the firmware, they match its kernel
-info 'Updating Entware package index...'
-opkg update > /dev/null 2>&1 || warn 'opkg update failed; trying the available package index.'
-info 'Installing packages: curl, jq, ca-bundle, coreutils-base64'
-opkg install curl jq ca-bundle coreutils-base64 || fail "package install failed"
+installed_packages=$(opkg list-installed) || fail "can not read installed Entware packages; wait for any other opkg operation to finish and retry"
+missing_packages=''
+for package in curl jq ca-bundle coreutils-base64; do
+	if ! printf '%s\n' "$installed_packages" | awk '{ print $1 }' | grep -qx "$package"; then
+		missing_packages="${missing_packages:+$missing_packages }$package"
+	fi
+done
+if [ -n "$missing_packages" ]; then
+	info 'Updating Entware package index (30-second network timeout)...'
+	opkg_download update || warn 'opkg update failed; trying the available package index.'
+	info "Installing missing packages: $missing_packages"
+	# Package names come only from the fixed list above.
+	# shellcheck disable=SC2086
+	opkg_download install $missing_packages || fail "package install failed"
+else
+	done_message 'Entware dependencies are already installed; package downloads skipped.'
+fi
 have base64 || fail "base64 is unavailable after installing coreutils-base64"
 [ "$(printf 'Exodus' | base64 2> /dev/null | tr -d '\n')" = RXhvZHVz ] || fail "base64 encoding failed; check coreutils-base64"
 [ "$(printf RXhvZHVz | base64 -d 2> /dev/null)" = Exodus ] || fail "base64 decoding failed; check coreutils-base64"
