@@ -547,11 +547,98 @@ esac''')
         (lock/'pid').write_text(str(os.getpid()))
         result=self.install()
         self.assertNotEqual(result.returncode,0)
-        self.assertEqual((self.jffs/'opkg.calls').read_text().strip(),'print-architecture')
+        self.assertFalse((self.jffs/'opkg.calls').exists())
+        self.assertEqual((lock/'pid').read_text(),str(os.getpid()))
         script=self.root/'uninstall.sh'; script.write_text((ROOT/'uninstall.sh').read_text())
         result=subprocess.run(['sh',str(script)],env=self.env,capture_output=True,text=True,timeout=20)
         self.assertNotEqual(result.returncode,0)
         self.assertTrue(self.share.exists())
+
+    def test_dead_installer_lock_is_recovered_before_packages(self):
+        self.bundle()
+        owner=subprocess.run(['sh','-c','echo $$'],capture_output=True,text=True,check=True)
+        lock=self.opt/'tmp/exodus-install.lock'; lock.mkdir(parents=True)
+        (lock/'pid').write_text(owner.stdout)
+        result=self.install()
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertFalse(lock.exists())
+        self.assertEqual(json.loads((self.home/'config.json').read_text())['mixin']['api_secret'],
+                         'keep-api-secret')
+
+    def test_recovery_backup_created_during_lock_acquisition_is_kept(self):
+        self.bundle()
+        self.mock('mkdir', '''/bin/mkdir "$@" || exit 1
+if [ "$1" = "$EXODUS_OPT/tmp/exodus-install.lock" ]; then
+ /bin/mkdir -p "$EXODUS_OPT/tmp/exodus-install/backup"
+ echo 'recovery fixture' > "$EXODUS_OPT/tmp/exodus-install/backup/config.json"
+ touch "$EXODUS_OPT/tmp/exodus-install/recovery-required"
+fi''')
+        result=self.install()
+        self.assertNotEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertEqual((self.opt/'tmp/exodus-install/backup/config.json').read_text(),
+                         'recovery fixture\n')
+        self.assertFalse((self.jffs/'opkg.calls').exists())
+        self.assertFalse((self.opt/'tmp/exodus-install.lock').exists())
+
+    def test_delayed_reclaimer_does_not_obstruct_replacement_owner_cleanup(self):
+        owner=subprocess.run(['sh','-c','echo $$'],capture_output=True,text=True,check=True)
+        lock=self.opt/'tmp/exodus-install.lock'; lock.mkdir(parents=True)
+        (lock/'pid').write_text(owner.stdout)
+        self.mock('mkdir', '''lock="$EXODUS_OPT/tmp/exodus-install.lock"
+case "$1" in
+ "$lock/reclaim"|"$lock.reclaim")
+  # A replacement owner acquires and exits while this reclaimer is delayed.
+  rm -f "$lock/pid"; rmdir "$lock" || exit 1
+  /bin/mkdir "$lock" || exit 1
+  echo "$$" > "$lock/pid"
+  /bin/mkdir "$@" || exit 1
+  rm -f "$lock/pid"; rmdir "$lock"
+  exit 0 ;;
+esac
+/bin/mkdir "$@"''')
+        result=self.install()
+        self.assertNotEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertFalse(lock.exists(),'reclaimer obstructed replacement owner cleanup')
+        self.assertFalse((self.jffs/'opkg.calls').exists())
+
+    def test_unverifiable_installer_lock_is_kept_without_package_calls(self):
+        lock=self.opt/'tmp/exodus-install.lock'; lock.mkdir(parents=True)
+        stage=self.opt/'tmp/exodus-install'; stage.mkdir()
+        marker=stage/'keep'; marker.write_text('previous staging')
+        for pid in (None,'','invalid','-1','0'):
+            with self.subTest(pid=pid):
+                if pid is not None: (lock/'pid').write_text(pid)
+                result=self.install()
+                self.assertNotEqual(result.returncode,0)
+                self.assertFalse((self.jffs/'opkg.calls').exists())
+                self.assertTrue(lock.exists())
+                self.assertEqual(marker.read_text(),'previous staging')
+
+    def test_failed_entware_architecture_stops_before_package_mutations(self):
+        self.bundle()
+        self.mock('opkg', '''echo "$*" >> "$EXODUS_JFFS/opkg.calls"
+if [ "$1" = print-architecture ]; then
+ echo 'opkg_conf_load: Could not lock /opt/tmp/opkg.lock: Resource temporarily unavailable.' >&2
+ exit 1
+fi''')
+        before=(self.home/'config.json').read_bytes()
+        result=self.install()
+        self.assertNotEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('error:',result.stdout)
+        self.assertNotIn('Entware: \n',result.stdout)
+        self.assertEqual((self.jffs/'opkg.calls').read_text().strip(),'print-architecture')
+        self.assertEqual((self.home/'config.json').read_bytes(),before)
+        self.assertFalse((self.opt/'tmp/exodus-install.lock').exists())
+        self.assertFalse((self.jffs/'curl.calls').exists())
+
+    def test_empty_entware_architecture_is_rejected(self):
+        self.bundle()
+        self.mock('opkg', 'exit 0')
+        result=self.install()
+        self.assertNotEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('architecture',result.stdout)
+        self.assertFalse((self.opt/'tmp/exodus-install.lock').exists())
+        self.assertFalse((self.jffs/'curl.calls').exists())
 
     def test_preflight_failure_keeps_old_install(self):
         self.nv['extendno']='0'; self.write_nv()

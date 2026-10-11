@@ -342,8 +342,60 @@ if ! printf '' | md5sum > /dev/null 2>&1; then
 	md5sum() { openssl dgst -md5 -r "$@" | sed 's/ \*/  /'; }
 fi
 
+# Serialize before any opkg call: even print-architecture takes opkg's lock.
+temp_dir="$EXODUS_OPT/tmp/exodus-install"
+install_lock="$EXODUS_OPT/tmp/exodus-install.lock"
+if [ -n "$SOURCE_DIR" ]; then
+ source_path=$(cd "$SOURCE_DIR" 2>/dev/null && pwd -P) || fail "SOURCE_DIR is not readable"
+ stage_path=$(readlink -f "$temp_dir" 2>/dev/null)
+ case "$source_path/" in "$temp_dir/"*|"${stage_path:-$temp_dir}/"*) fail "SOURCE_DIR must be outside installer staging" ;; esac
+fi
+# A failed rollback keeps its backup for manual recovery instead of overwriting it.
+[ ! -f "$temp_dir/recovery-required" ] || fail "resolve the previous recovery backup in $temp_dir first"
+mkdir -p "$EXODUS_OPT/tmp" || fail "can not create installer storage"
+if ! mkdir "$install_lock" 2>/dev/null; then
+ # Only a recorded, dead owner is safe to recover. Missing/invalid PIDs can
+ # belong to an installer between mkdir and writing its PID.
+ owner=$(cat "$install_lock/pid" 2>/dev/null)
+ case "$owner" in ''|*[!0-9]*|0) fail "can not verify owner of $install_lock; inspect the lock before retrying" ;; esac
+ if kill -0 "$owner" 2>/dev/null && ! grep -q '^State:.*Z' "${EXODUS_INSTALL_PROC:-/proc}/$owner/status" 2>/dev/null; then
+  fail "another installation owns $install_lock (PID $owner); wait for it to finish before retrying"
+ fi
+ # Reclaimers must not delete the PID of a new owner racing to acquire the lock.
+ reclaim_lock="$install_lock.reclaim"
+ mkdir "$reclaim_lock" 2>/dev/null || fail "another process is recovering $install_lock; retry later"
+ current_owner=$(cat "$install_lock/pid" 2>/dev/null)
+ if [ "$current_owner" != "$owner" ] || { kill -0 "$owner" 2>/dev/null && ! grep -q '^State:.*Z' "${EXODUS_INSTALL_PROC:-/proc}/$owner/status" 2>/dev/null; }; then
+  rmdir "$reclaim_lock" 2>/dev/null || :
+  fail "owner of $install_lock changed; retry later"
+ fi
+ if ! { rm -f "$install_lock/pid" && rmdir "$install_lock"; }; then
+  rmdir "$reclaim_lock" 2>/dev/null || :
+  fail "can not recover $install_lock; inspect the lock before retrying"
+ fi
+ rmdir "$reclaim_lock" 2>/dev/null || :
+ info "Recovered installer lock from stopped PID $owner."
+ mkdir "$install_lock" 2>/dev/null || fail "another installation owns $install_lock; wait for it to finish before retrying"
+fi
+# A previous owner may have created a recovery marker while we acquired its lock.
+# Check before arming cleanup, which must never remove that owner's backup.
+if [ -f "$temp_dir/recovery-required" ]; then
+ rmdir "$install_lock" 2>/dev/null || :
+ fail "resolve the previous recovery backup in $temp_dir first"
+fi
+trap 'rollback; if [ -n "$rollback_failed" ]; then touch "$temp_dir/recovery-required"; else rm -rf "$temp_dir"; fi; rm -f "$install_lock/pid"; rmdir "$install_lock"' EXIT
+echo "$$" > "$install_lock/pid" || fail "can not write installer lock"
+rm -rf "$temp_dir" || fail "can not clean staging directory"
+mkdir -p "$temp_dir" || fail "can not create $temp_dir"
+trap 'fail "installation interrupted by HUP"' HUP
+trap 'fail "installation interrupted by INT"' INT
+trap 'fail "installation interrupted by TERM"' TERM
+
+# Do not hide opkg's exit status behind awk or proceed with an empty architecture.
+architectures=$(opkg print-architecture) || fail "can not read Entware architecture; wait for any other opkg operation to finish and retry"
+arch=$(printf '%s\n' "$architectures" | awk '$2 != "all" && $2 != "noarch" { arch = $2 } END { print arch }')
+[ -n "$arch" ] || fail "Entware returned no usable architecture"
 # the core and yq are static builds, they follow the cpu and the kernel: an arm64 kernel runs arm64 builds whatever entware is
-arch=$(opkg print-architecture | awk '$2 != "all" && $2 != "noarch" { arch = $2 } END { print arch }')
 machine=$(uname -m)
 case "$machine" in
 	aarch64*) core_arch="arm64"; yq_arch="arm64" ;;
@@ -366,26 +418,6 @@ case "$machine" in
 	*) fail "unsupported architecture: $machine" ;;
 esac
 info "Architecture: $machine; core: $core_arch; Entware: $arch"
-
-# temp dir
-temp_dir="$EXODUS_OPT/tmp/exodus-install"
-install_lock="$EXODUS_OPT/tmp/exodus-install.lock"
-if [ -n "$SOURCE_DIR" ]; then
- source_path=$(cd "$SOURCE_DIR" 2>/dev/null && pwd -P) || fail "SOURCE_DIR is not readable"
- stage_path=$(readlink -f "$temp_dir" 2>/dev/null)
- case "$source_path/" in "$temp_dir/"*|"${stage_path:-$temp_dir}/"*) fail "SOURCE_DIR must be outside installer staging" ;; esac
-fi
-# A failed rollback keeps its backup for manual recovery instead of overwriting it.
-[ ! -f "$temp_dir/recovery-required" ] || fail "resolve the previous recovery backup in $temp_dir first"
-mkdir -p "$EXODUS_OPT/tmp" || fail "can not create installer storage"
-mkdir "$install_lock" 2>/dev/null || fail "another installation owns $install_lock; resolve stale locks before retrying"
-trap 'rollback; if [ -n "$rollback_failed" ]; then touch "$temp_dir/recovery-required"; else rm -rf "$temp_dir"; fi; rm -f "$install_lock/pid"; rmdir "$install_lock"' EXIT
-echo "$$" > "$install_lock/pid" || fail "can not write installer lock"
-rm -rf "$temp_dir" || fail "can not clean staging directory"
-mkdir -p "$temp_dir" || fail "can not create $temp_dir"
-trap 'fail "installation interrupted by HUP"' HUP
-trap 'fail "installation interrupted by INT"' INT
-trap 'fail "installation interrupted by TERM"' TERM
 
 # dependencies from entware, curl and jq are needed by the installer itself
 # iptables and ipset are of the firmware, they match its kernel
