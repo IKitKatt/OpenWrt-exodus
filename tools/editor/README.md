@@ -18,9 +18,11 @@ Commit the source, lockfile and both generated assets:
 - `asuswrt/opt/share/exodus/www/editor.js`
 - `asuswrt/opt/share/exodus/www/editor.LICENSE.txt`
 
+Merlin also template-processes `.js` files. The build escapes `<%` inside parser tables as `\x3c%` to prevent firmware `do_ej` from corrupting the bundle; `assets.test.mjs` and the browser test cover this serving behavior. Do not deploy raw esbuild output without this step.
+
 The build includes the full licenses of all bundled packages. CI rebuilds and checks the output. Update dependency versions intentionally, regenerate the lockfile, rebuild and retest.
 
-Current build: **354978 bytes JS (346.7 KiB)**, **17339 bytes licenses (16.9 KiB)**; JS gzip level 9: **116689 bytes (114.0 KiB)**. HTTP compression is not assumed. Seven pinned direct browser-library dependencies; 15 packages actually contribute code to the bundle. esbuild is build-only. The autocomplete package is installed transitively by language support but its UI is not enabled or included in the bundle.
+Current build: **355056 bytes JS (346.7 KiB)**, **17339 bytes licenses (16.9 KiB)**; JS gzip level 9: **116405 bytes (113.7 KiB)**. HTTP compression is not assumed. Seven pinned direct browser-library dependencies; 15 packages actually contribute code to the bundle. esbuild is build-only. The autocomplete package is installed transitively by language support but its UI is not enabled or included in the bundle.
 
 ## Verify
 

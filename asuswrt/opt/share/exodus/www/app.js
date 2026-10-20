@@ -383,6 +383,11 @@ function btn(label, opts) {
         actionIcon,
         label ? E('span', {}, label) : null
     ]);
+    if (opts.busy) {
+        el.setAttribute('aria-busy', 'true');
+        el.classList.add('loading');
+        if (refreshing) actionIcon.classList.add('spin');
+    }
     if (opts.onClick) {
         el.addEventListener('click', async (ev) => {
             el.disabled = true;
@@ -2387,7 +2392,7 @@ function pageUpdates() {
                 _('The core and the gh-proxy chosen in the installer are kept, run the installer again to change them.'),
                 _('GitHub is asked at most every 6 hours, Check again asks now.')
             ],
-            action: btn(info.checking ? _('Checking…') : _('Check again'), { disabled: !!info.checking, variant: 'outline', size: 'sm', icon: 'refresh-cw', onClick: async () => {
+            action: btn(info.checking ? _('Checking…') : _('Check again'), { busy: !!info.checking, disabled: !!info.checking, variant: 'outline', size: 'sm', icon: 'refresh-cw', onClick: async () => {
                 renderVersions(await run(fetchUpdate(true)));
             } }),
             content: [

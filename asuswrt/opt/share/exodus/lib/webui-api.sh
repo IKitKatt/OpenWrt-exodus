@@ -362,7 +362,7 @@ webui_updates_refresh() {
 
 webui_updates_start() {
 	local last now
-	pid_alive "$WEBUI_DIR/update.pid" && return 0
+	update_checker_running && return 0
 	last=$(cat "$WEBUI_DIR/update-checked" 2>/dev/null); now=$(date +%s)
 	case "$last" in ''|*[!0-9]*) last=0 ;; esac
 	[ ! -f "$WEBUI_DIR/update-force" ] && [ "$((now - last))" -lt 300 ] && [ "$now" -ge "$last" ] && return 0
@@ -370,7 +370,7 @@ webui_updates_start() {
 }
 
 webui_cache_refresh() (
-	local name key req result target fingerprint previous now body path
+	local name key req result target fingerprint previous now body path checking=false
 	umask 077
 	mkdir -p "$WEBUI_DIR/cache" || exit 1
 	trap 'rm -f "$req" "$result" "$result.body" "$body"' EXIT
@@ -410,8 +410,9 @@ webui_cache_refresh() (
 		rm -f "$req" "$result" "$result.body" "$body"
 	done
 	[ -f "$WEBUI_DIR/cache/load.json" ] || webui_cache_views_refresh || exit 1
-	jq -cn --argjson now "$(date +%s)" --argjson uptime "$(awk '{print int($1)}' "$EXODUS_PROC/uptime")" \
-		'{v:1,generated:$now,uptime:$uptime}' > "$WEBUI_DIR/cache/heartbeat.json.tmp" && mv -f "$WEBUI_DIR/cache/heartbeat.json.tmp" "$WEBUI_DIR/cache/heartbeat.json"
+	if update_checker_running || [ -f "$WEBUI_DIR/update-force" ]; then checking=true; fi
+	jq -cn --argjson checking "$checking" --argjson now "$(date +%s)" --argjson uptime "$(awk '{print int($1)}' "$EXODUS_PROC/uptime")" \
+		'{v:1,generated:$now,uptime:$uptime,checking:$checking}' > "$WEBUI_DIR/cache/heartbeat.json.tmp" && mv -f "$WEBUI_DIR/cache/heartbeat.json.tmp" "$WEBUI_DIR/cache/heartbeat.json"
 )
 
 # The cache worker remains active with the proxy stopped, so it owns the bound

@@ -343,6 +343,13 @@ log_path() {
 	esac
 }
 
+update_checker_running() {
+	local pid
+	pid=$(cat "$WEBUI_DIR/update.pid" 2>/dev/null)
+	case "$pid" in ''|*[!0-9]*|0) return 1 ;; esac
+	kill -0 "$pid" 2>/dev/null && ! grep -q '^State:.*Z' "$EXODUS_PROC/$pid/status" 2>/dev/null
+}
+
 update_running() {
 	local file pid
 	for file in "$RUN_TMP/update.pid" "$EXODUS_OPT/tmp/exodus-install.lock/pid"; do
@@ -454,7 +461,7 @@ action_check_update() {
 	free=$(df -k "$EXODUS_OPT" 2> /dev/null | tail -n 1 | awk '{ print $(NF - 2) }')
 	core_size=$(wc -c < "$PROG" 2> /dev/null)
 	proxy_host=$(cfg_get .update.gh_proxy | sed -n 's|^[a-z]*://\([^/]*\).*|\1|p')
-	if pid_alive "$WEBUI_DIR/update.pid" || [ -f "$WEBUI_DIR/update-force" ]; then checking=true; fi
+	if update_checker_running || [ -f "$WEBUI_DIR/update-force" ]; then checking=true; fi
 	jq -n \
 		--argjson checking "$checking" \
 		--argjson latest "$latest" \

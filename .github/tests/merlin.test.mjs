@@ -72,6 +72,24 @@ test('navigation and passive update checks use RAM without apply posts', async()
     for(const action of ['load','files','hosts','interfaces','proxies','hwid','about','check_update']) assert.equal((await f.request(action)).success,true);
     assert.equal(posts,0);
 });
+test('update checking follows live heartbeat, not a stale versions snapshot', async()=>{
+    let checking=true;
+    const f=createTransport({now:()=>100000,submit:async()=>{throw Error('must stay read-only');},
+        fetch:async url=>json(url.includes('heartbeat')?{v:1,generated:100,checking}:
+            {v:1,key:'check_update',generated:100,status:200,body:encode('{"checking":true,"app_latest":"2"}')})});
+    assert.equal((await f.request('check_update')).checking,true);
+    checking=false;
+    const finished=await f.request('check_update');
+    assert.equal(finished.checking,false);
+    assert.equal(finished.app_latest,'2');
+});
+test('older heartbeat cannot overwrite a just-published update status', async()=>{
+    for (const checking of [false,true]) {
+        const f=createTransport({now:()=>100000,fetch:async url=>json(url.includes('heartbeat')?
+            {v:1,generated:100,checking:!checking}:{v:1,key:'check_update',generated:101,status:200,body:encode(JSON.stringify({checking}))})});
+        assert.equal((await f.request('check_update')).checking,checking);
+    }
+});
 test('stale cache is not running', async()=>{
     const f=fixture({fetch:async()=>json({v:1,key:'status',generated:1,status:200,body:encode('{"running":true}')})});
     await assert.rejects(f.transport.request('status'),/stale/i);

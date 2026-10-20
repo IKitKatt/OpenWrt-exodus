@@ -59,7 +59,11 @@
             const routerTime = Number.isFinite(timing.routerTime) ? timing.routerTime : now()/1000 + routerOffset;
             const age = routerTime - live.generated;
             if (live.v !== 1 || typeof live.generated !== 'number' || !Number.isFinite(age) || age < -5 || age > 15) throw Error('Router cache is stale');
-            return unpack(envelope);
+            const body = unpack(envelope);
+            // Version snapshots outlive the checker. Use the newer heartbeat for
+            // liveness, but don't overwrite a just-finished result with an older beat.
+            if (action === 'check_update' && typeof live.checking === 'boolean' && live.generated >= envelope.generated) body.checking = live.checking;
+            return body;
         }
         async function cache(action, params) {
             try { return await readCache(action, params); }

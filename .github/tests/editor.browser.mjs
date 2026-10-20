@@ -19,7 +19,7 @@ try {
                 if (delay) await new Promise(resolve=>setTimeout(resolve,delay));
                 const path = new URL('editor.js', www);
                 if (fail || !existsSync(path)) return route.fulfill({status:404,body:''});
-                return route.fulfill({contentType:'application/javascript',body:readFileSync(path,'utf8')});
+                return route.fulfill({contentType:'application/javascript',body:readFileSync(path,'utf8').replace(/<%[\s\S]*?(?:%>|$)/g,'')});
             }
             return route.fulfill({contentType:'text/html',body:'<button id="about"></button><div id="exodus-root"><div id="content"></div></div><div id="dialog" hidden></div><div id="toaster"></div>'});
         });

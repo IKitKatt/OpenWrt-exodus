@@ -86,6 +86,11 @@ try {
     assert.ok(await page.getByText('Update stopped without a completion message. See the log below.',{exact:true}).isVisible());
     await page.getByRole('button',{name:'Check again',exact:true}).click();
     assert.ok(await page.getByRole('button',{name:'Checking…',exact:true}).isDisabled());
+    const checking=page.getByRole('button',{name:'Checking…',exact:true});
+    assert.equal(await checking.getAttribute('aria-busy'),'true','background checking stays visibly busy');
+    assert.ok(await checking.locator('.refresh-icon.spin').count()>0,'spinner persists after launch response');
+    await page.evaluate(()=>poll());
+    assert.ok(await page.getByRole('button',{name:'Check again',exact:true}).isEnabled(),'finished check restores the button');
     assert.deepEqual(errors, []);
     console.log('PASS Editor selection + Updates launch, stale log, re-entry, error, success, interruption and background check');
 } finally {

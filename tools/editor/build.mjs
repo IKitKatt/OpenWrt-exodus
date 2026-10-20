@@ -20,6 +20,8 @@ for (const name of packages) {
     const info=JSON.parse(await readFile(resolve(folder,'package.json'),'utf8'));
     licenses.push(`${name} ${info.version}\n${await readFile(resolve(folder,'LICENSE'),'utf8')}`);
 }
-await writeFile(resolve(output,'editor.js'),result.outputFiles[0].contents);
+// Merlin runs do_ej on JS too; YAML parser tables must not contain ASP openers.
+const code = result.outputFiles[0].text.replaceAll('<%', '\\x3c%');
+await writeFile(resolve(output,'editor.js'),code);
 await writeFile(resolve(output,'editor.LICENSE.txt'),licenses.join('\n\n--------------------\n\n'));
-console.log(`editor.js: ${result.outputFiles[0].contents.length} bytes; ${packages.length} packages; licenses included`);
+console.log(`editor.js: ${Buffer.byteLength(code)} bytes; ${packages.length} packages; licenses included`);

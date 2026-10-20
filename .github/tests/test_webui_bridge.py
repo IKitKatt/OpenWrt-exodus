@@ -110,6 +110,31 @@ class BridgeTests(ShellCase):
         self.assertTrue(json.loads(base64.b64decode(response['body']))['checking'])
         self.assertIn('web updates',(self.ram/'run/webui/launched').read_text())
 
+    def test_heartbeat_tracks_update_worker_exit_and_stale_snapshot(self):
+        pid=self.ram/'run/webui/update.pid'; pid.parent.mkdir(parents=True,exist_ok=True)
+        pid.write_text(str(os.getpid()))
+        self.sh('webui_cache_refresh',('api','webui-api'))
+        heartbeat=self.ram/'run/webui/cache/heartbeat.json'
+        self.assertTrue(json.loads(heartbeat.read_text())['checking'])
+        snapshot=self.ram/'run/webui/cache/check_update.json'
+        self.assertTrue(json.loads(base64.b64decode(json.loads(snapshot.read_text())['body']))['checking'])
+        pid.unlink()
+        self.sh('webui_cache_refresh',('api','webui-api'))
+        self.assertFalse(json.loads(heartbeat.read_text())['checking'])
+        # Version snapshots update less often than worker liveness.
+        self.assertTrue(json.loads(base64.b64decode(json.loads(snapshot.read_text())['body']))['checking'])
+
+    def test_zombie_update_checker_is_not_running_and_does_not_prevent_restart(self):
+        proc=self.root/'proc'; (proc/str(os.getpid())).mkdir(parents=True)
+        (proc/str(os.getpid())/'status').write_text('State:\tZ (zombie)\n')
+        (proc/'uptime').write_text('100 0\n')
+        self.env['EXODUS_PROC']=str(proc)
+        pid=self.ram/'run/webui/update.pid'; pid.parent.mkdir(parents=True,exist_ok=True)
+        pid.write_text(str(os.getpid()))
+        self.assertFalse(self.api('check_update',cached=True)['data']['checking'])
+        self.sh('daemonize() { echo started > "$WEBUI_DIR/launched"; }; webui_updates_start',('api','webui-api'))
+        self.assertTrue((pid.parent/'launched').exists())
+
     def test_update_log_cache_changes_when_process_stops_without_log_write(self):
         pid=self.ram/'run/update.pid';pid.write_text(str(os.getpid()))
         self.sh('webui_cache_refresh',('api','webui-api'))

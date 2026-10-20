@@ -3,6 +3,7 @@
 <html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ASUS Wireless Router — Exodus</title>
+<link rel="icon" href="/ext/exodus/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/index_style.css"><link rel="stylesheet" href="/form_style.css">
 <link rel="stylesheet" href="/ext/exodus/style.css">
 <!-- Firmware jQuery includes jQuery Migrate: load its UMD bundle before RequireJS. -->
