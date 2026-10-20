@@ -41,6 +41,11 @@
             check();
             return data;
         }
+        async function response(id) {
+            const ready = await get('/ext/exodus/responses/index.json');
+            if (!ready || ready[id] !== true) return null;
+            return get('/ext/exodus/responses/' + id + '.json');
+        }
         function unpack(envelope) {
             const body = JSON.parse(decode(envelope.body));
             if (envelope.status !== 200 || body.error) throw Error(body.error || 'Router operation failed (' + envelope.status + ')');
@@ -118,7 +123,7 @@
             while (now() < deadline) {
                 check(); await sleep(500);
                 let result;
-                try { result = await get('/ext/exodus/responses/' + id + '.json'); }
+                try { result = await response(id); }
                 catch (error) { check(); if (!/HTTP 404|Failed to fetch|network/i.test(error.message)) throw error; }
                 if (result && result.v === 1 && result.id === id && result.seq === 0) {
                     if (result.phase === 'error' || result.phase === 'complete') {
@@ -139,7 +144,7 @@
             while (now() < deadline) {
                 check(); await sleep(Math.min(500,100+100*polls++));
                 let result;
-                try { result = await get('/ext/exodus/responses/' + id + '.json'); }
+                try { result = await response(id); }
                 catch (error) { check(); if (!/HTTP 404|Failed to fetch|network/i.test(error.message)) throw error; }
                 if (result && result.v === 1 && result.id === id && result.seq === 0) {
                     if (result.phase === 'error' || result.status !== 200) return unpack(result);
@@ -173,7 +178,7 @@
                     check();
                     await sleep(Math.min(500,100+100*polls++));
                     let result;
-                    try { result = await get('/ext/exodus/responses/' + id + '.json'); }
+                    try { result = await response(id); }
                     catch (error) { check(); if (!/HTTP 404|Failed to fetch|network/i.test(error.message)) throw error; }
                     if (result && result.v === 1 && result.id === id && result.seq === seq) {
                         if (result.phase === 'error') return unpack(result);

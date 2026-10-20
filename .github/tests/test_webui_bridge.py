@@ -144,6 +144,23 @@ class BridgeTests(ShellCase):
         self.sh('webui_cache_refresh',('api','webui-api'))
         self.assertFalse(json.loads(base64.b64decode(json.loads(path.read_text())['body']))['running'])
 
+    def test_response_index_announces_published_files_and_preserves_other_tabs(self):
+        body=self.root/'body.json'; body.write_text('{}')
+        for ident in ('a'*32,'b'*32):
+            self.sh(f'webui_emit "{ident}" 0 complete 200 "{body}"',('webui-api',))
+        directory=self.ram/'run/webui/responses'
+        index=json.loads((directory/'index.json').read_text())
+        self.assertEqual(set(index),{'a'*32,'b'*32})
+        for ident in index:
+            self.assertTrue((directory/f'{ident}.json').exists())
+
+    def test_replayed_snapshot_restores_readiness_after_index_expiry(self):
+        ident='c'*32
+        self.sh(f'webui_settings_snapshot "{ident}"',('api','webui-api'))
+        path=self.ram/'run/webui/responses/index.json'; path.write_text('{}')
+        self.sh(f'webui_settings_snapshot "{ident}"',('api','webui-api'))
+        self.assertIn(ident,json.loads(path.read_text()))
+
     def test_unicode_roundtrip_and_template_delimiters_encoded(self):
         content = 'Привет 😀 <% evil %>\n' * 200
         path = self.home / 'profiles/test.yaml'

@@ -3,7 +3,17 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
 const require = createRequire(import.meta.url);
-const {createTransport, encode, decode} = require('../../asuswrt/opt/share/exodus/www/merlin.js');
+const {createTransport: nativeTransport, encode, decode} = require('../../asuswrt/opt/share/exodus/www/merlin.js');
+// Existing protocol cases advertise allocated IDs immediately; readiness delays
+// are exercised separately against the unwrapped transport below.
+function createTransport(options={}) {
+    const ids=new Set(); let serial=0;
+    return nativeTransport({...options,id:()=>{
+        const id=options.id ? options.id() : (++serial).toString(16).padStart(32,'0');
+        ids.add(id); return id;
+    },fetch: options.fetch && (async (url,...args)=>url.endsWith('/responses/index.json') ?
+        json(Object.fromEntries([...ids].map(id=>[id,true]))) : options.fetch(url,...args))});
+}
 test('firmware jQuery bundle loads before state.js installs RequireJS', ()=>{
     const asp = readFileSync(new URL('../../asuswrt/opt/share/exodus/www/Exodus.asp', import.meta.url), 'utf8');
     const scripts = [...asp.matchAll(/<script\s+src="([^"]+)"/g)].map(match=>match[1]);
@@ -13,23 +23,42 @@ test('firmware jQuery bundle loads before state.js installs RequireJS', ()=>{
 const json = value => ({ok:true,status:200,headers:{get:()=> 'application/json'},text:async()=>JSON.stringify(value)});
 function fixture(options={}) {
     let packet, snapshot, calls=[], counter=0, settings={other:'initial'}, clock=100000;
-    const transport = createTransport({
+    const transport = nativeTransport({
         now:()=>clock, sleep:async ms=>{clock+=ms;}, id:()=> (++counter).toString(16).padStart(32,'0'),
         submit:async(value,script)=>{
             if(value==null) {snapshot=script.slice('restart_exodus_ui_settings_'.length); return;}
             calls.push(value); packet=JSON.parse(value.exodus_packet); settings.other='new-'+packet.seq;
         },
+        ...options,
         fetch:async url=>{
+            if(url.endsWith('/responses/index.json')) return json({[snapshot]:true,[packet?.id]:true});
+            if(options.fetch) return options.fetch(url);
             if(url.includes('appGet')) return json({get_custom_settings:{...settings}});
             if(url.includes(snapshot+'.json')) return json({v:1,id:snapshot,seq:0,phase:'complete',status:200,body:encode(JSON.stringify(settings))});
             if(url.includes('cache')) return json(url.includes('heartbeat') ? {v:1,generated:clock/1000} :
                 {v:1,key:url.includes('status')?'status':'log-app',generated:clock/1000,status:200,body:encode(JSON.stringify({running:true}))});
             const first=packet.id==='1'.padStart(32,'0');
             return json({v:1,id:packet.id,seq:packet.seq,phase:packet.seq===packet.count-1?'complete':'accepted',status:options.failFirst && first?400:200,body:encode(options.failFirst && first?'{"error":"rejected"}':'{"success":true}')});
-        }, ...options
+        }
     });
     return {transport,calls};
 }
+test('pending native operations poll the existing readiness index before response files', async()=>{
+    let clock=0, serial=0, pending, packet, readyAt=0, responseReads=0, indexReads=0;
+    const f=nativeTransport({now:()=>clock,sleep:async ms=>{clock+=ms;},id:()=> (++serial).toString(16).padStart(32,'0'),
+        submit:async(settings,script)=>{
+            packet=settings ? JSON.parse(settings.exodus_packet) : null;
+            pending=packet?.id || script.split('_settings_')[1]; readyAt=clock+1400;
+        },fetch:async url=>{
+            if(url.endsWith('/responses/index.json')) {indexReads++;return json(clock<readyAt?{}:{[pending]:true});}
+            assert.ok(clock>=readyAt,'must not request a file that has not been published');
+            responseReads++;
+            return json({v:1,id:pending,seq:0,phase:'complete',status:200,body:encode(packet?'{"success":true}':'{}')});
+        }});
+    assert.equal((await f.request('file_read',{path:'/mixin.yaml'})).success,true);
+    assert.equal(responseReads,2,'snapshot and operation each read once');
+    assert.ok(indexReads>responseReads,'wait on a stable existing resource');
+});
 test('unicode codec', ()=>assert.equal(decode(encode('Привет 😀 <% x %>')), 'Привет 😀 <% x %>'));
 test('packet limit and fresh foreign settings before each post', async()=>{
     const f=fixture(), progress=[]; await f.transport.request('file_write',{path:'/opt/etc/exodus/profiles/demo.yaml',content:'Привет 😀'.repeat(400),onProgress:part=>progress.push(part)});

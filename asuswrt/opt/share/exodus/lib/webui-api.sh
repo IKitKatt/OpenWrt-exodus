@@ -11,6 +11,22 @@ webui_encode() (
 	tr -d '\n' < "$encoded"
 )
 
+# Publish only response files that already exist. One atomic index serves all tabs;
+# waiting browsers poll it instead of producing HTTP 404s for not-yet-created files.
+webui_response_index() (
+	local file id
+	mkdir -p "$WEBUI_DIR/responses" || exit 1
+	lock_acquire webui-responses 10 || exit 1
+	trap 'rm -f "$WEBUI_DIR/responses/index.tmp"; lock_release webui-responses' EXIT
+	for file in "$WEBUI_DIR"/responses/*.json; do
+		[ -f "$file" ] || continue
+		id=${file##*/}; id=${id%.json}
+		case "$id" in ''|*[!0-9a-f]*) continue ;; esac
+		[ "${#id}" -eq 32 ] && printf '%s\n' "$id"
+	done | jq -Rn '[inputs | {key:.,value:true}] | from_entries' > "$WEBUI_DIR/responses/index.tmp" &&
+		mv -f "$WEBUI_DIR/responses/index.tmp" "$WEBUI_DIR/responses/index.json"
+)
+
 webui_emit() {
 	local id seq phase status body target
 	id="$1"; seq="$2"; phase="$3"; status="$4"; body="$5"
@@ -23,6 +39,7 @@ webui_emit() {
 		rm -f "$target.body" "$target.tmp"; return 1
 	fi
 	rm -f "$target.body"
+	webui_response_index
 }
 
 webui_error() {
@@ -34,7 +51,7 @@ webui_error() {
 }
 
 webui_gc() (
-	local dir touched now age
+	local dir touched now age changed=0
 	[ -d "$WEBUI_DIR/requests" ] || [ -d "$WEBUI_DIR/snapshots" ] || exit 0
 	lock_acquire webui-transfer 2 || exit 0
 	trap 'lock_release webui-transfer' EXIT
@@ -49,7 +66,9 @@ webui_gc() (
 		if [ -f "$dir/running" ] && pid_alive "$dir/pid"; then continue; fi
 		rm -f "$WEBUI_DIR/responses/${dir##*/}.json"
 		rm -rf "$dir"
+		changed=1
 	done
+	[ "$changed" = 0 ] || webui_response_index
 )
 
 webui_accept() (
@@ -89,9 +108,10 @@ webui_accept() (
 		fi
 		# Only the final chunk can return complete; earlier retries get their own ack.
 		if [ -f "$dir/complete" ] && [ "$seq" -eq "$((count - 1))" ]; then
-			cp "$dir/result.json" "$WEBUI_DIR/responses/$id.json.tmp" && mv -f "$WEBUI_DIR/responses/$id.json.tmp" "$WEBUI_DIR/responses/$id.json"
+			cp "$dir/result.json" "$WEBUI_DIR/responses/$id.json.tmp" && mv -f "$WEBUI_DIR/responses/$id.json.tmp" "$WEBUI_DIR/responses/$id.json" && webui_response_index
 		elif [ -f "$dir/running" ]; then
-			pid_alive "$dir/pid" || webui_error "$id" "$seq" 500 'operation outcome is unknown; inspect state before retrying'
+			if pid_alive "$dir/pid"; then webui_response_index
+			else webui_error "$id" "$seq" 500 'operation outcome is unknown; inspect state before retrying'; fi
 		else
 			printf '{}\n' > "$dir/ack"
 			webui_emit "$id" "$seq" accepted 200 "$dir/ack"
@@ -196,7 +216,7 @@ webui_settings_snapshot() (
 	dir="$WEBUI_DIR/snapshots/$id"
 	if [ -d "$dir" ]; then
 		[ -f "$dir/settings-snapshot" ] && [ -f "$dir/result.json" ] || exit 1
-		cp "$dir/result.json" "$WEBUI_DIR/responses/$id.json.tmp" && mv -f "$WEBUI_DIR/responses/$id.json.tmp" "$WEBUI_DIR/responses/$id.json"
+		cp "$dir/result.json" "$WEBUI_DIR/responses/$id.json.tmp" && mv -f "$WEBUI_DIR/responses/$id.json.tmp" "$WEBUI_DIR/responses/$id.json" && webui_response_index
 		exit
 	fi
 	mkdir "$dir" || exit 1

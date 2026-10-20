@@ -95,6 +95,7 @@ class WebuiTests(ShellCase):
 
     def test_yaml_editor_assets_are_published(self):
         self.web('webui_mount')
+        self.assertEqual(json.loads((self.www/'user/exodus/responses/index.json').read_text()),{})
         for name in ('editor.js','editor.LICENSE.txt'):
             self.assertEqual((self.www/'user/exodus'/name).resolve(),self.share/'www'/name)
             self.assertGreater((self.www/'user/exodus'/name).stat().st_size,0)
