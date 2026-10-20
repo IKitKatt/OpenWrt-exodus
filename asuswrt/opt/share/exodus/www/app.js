@@ -1938,6 +1938,23 @@ function editorSelectionScroll(text) {
     });
 }
 
+let yamlEditorBundle;
+function loadYamlEditor() {
+    if (window.ExodusYamlEditor) return Promise.resolve(window.ExodusYamlEditor);
+    if (!yamlEditorBundle) yamlEditorBundle = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = '/ext/exodus/editor.js';
+        script.onload = () => {
+            script.remove();
+            if (window.ExodusYamlEditor) resolve(window.ExodusYamlEditor);
+            else { yamlEditorBundle = null; reject(new Error('Editor bundle is unavailable')); }
+        };
+        script.onerror = () => { script.remove(); yamlEditorBundle = null; reject(new Error('Editor bundle is unavailable')); };
+        document.head.appendChild(script);
+    });
+    return yamlEditorBundle;
+}
+
 function pageEditor() {
     const files = state.files || {};
     const dirs = files.dirs || {};
@@ -1968,11 +1985,14 @@ function pageEditor() {
     const status = E('p', { class: 'editor-status', role: 'status', id: nextId() }, _('Choose a file to edit.'));
     text.setAttribute('aria-describedby', status.id);
     editorSelectionScroll(text);
+    let editor = null;
+    const setText = value => { text.value = value; editor?.setValue(value); };
     let loadedPath = '', requestToken = 0, loading = false, saving = false, fileError = '';
     const isCurrent = () => pageToken === renderToken;
     const sync = () => {
         const buffer = buffers[loadedPath];
         text.disabled = !buffer || loading;
+        editor?.setDisabled(text.disabled);
         text.setAttribute('aria-busy', String(loading));
         saveButton.disabled = restartButton.disabled = !buffer || loading || saving;
         reloadButton.disabled = !choose.value || loading || saving;
@@ -1987,7 +2007,7 @@ function pageEditor() {
         state.editorSelected = path;
         if (!path) {
             loadedPath = '';
-            text.value = '';
+            setText('');
             loading = false;
             status.textContent = _('Choose a file to edit.');
             sync();
@@ -1995,7 +2015,7 @@ function pageEditor() {
         }
         if (buffers[path] && !reload) {
             loadedPath = path;
-            text.value = buffers[path].content;
+            setText(buffers[path].content);
             loading = false;
             sync();
             return;
@@ -2009,7 +2029,7 @@ function pageEditor() {
             if (token !== requestToken || !isCurrent()) return;
             buffers[path] = { content: result.content, saved: result.content };
             loadedPath = path;
-            text.value = result.content;
+            setText(result.content);
         } catch (error) {
             if (token !== requestToken || !isCurrent()) return;
             choose.value = loadedPath;
@@ -2024,11 +2044,12 @@ function pageEditor() {
         }
     };
     choose.addEventListener('change', () => load());
-    text.addEventListener('input', () => {
-        if (buffers[loadedPath]) buffers[loadedPath].content = text.value;
+    const editFile = value => {
+        if (buffers[loadedPath]) buffers[loadedPath].content = value;
         fileError = '';
         sync();
-    });
+    };
+    text.addEventListener('input', () => editFile(text.value));
     const saveFile = async (restart) => {
         if (!loadedPath || !buffers[loadedPath] || loading || saving) return;
         const path = loadedPath, content = buffers[path].content;
@@ -2062,9 +2083,32 @@ function pageEditor() {
         await load(true);
         setTimeout(sync, 0);
     } });
-    const downloadButton = btn(_('Download'), { variant: 'ghost', icon: 'download', disabled: true, onClick: () => download(loadedPath.split('/').pop(), text.value) });
-    const wrap = E('input', { type: 'checkbox', class: 'checkbox' });
-    wrap.addEventListener('change', () => { text.wrap = wrap.checked ? 'soft' : 'off'; });
+    const downloadButton = btn(_('Download'), { variant: 'ghost', icon: 'download', disabled: true, onClick: () => download(loadedPath.split('/').pop(), buffers[loadedPath].content) });
+    const wrap = E('input', { type: 'checkbox', class: 'checkbox', checked: !!state.editorWrap });
+    text.wrap = wrap.checked ? 'soft' : 'off';
+    wrap.addEventListener('change', () => {
+        state.editorWrap = wrap.checked;
+        text.wrap = wrap.checked ? 'soft' : 'off';
+        editor?.setWrap(wrap.checked);
+    });
+    const findButton = btn(_('Find'), { variant: 'ghost', size: 'sm', disabled: true, onClick: () => editor?.search() });
+    const editorHint = E('p', {class: 'description'}, _('YAML: 2-space indentation · Tab / Shift+Tab · Ctrl+F to find'));
+    loadYamlEditor().then(bundle => {
+        if (!isCurrent() || !text.isConnected) return;
+        // Read the current textarea, not the file content from before the download.
+        editor = bundle.mount(text, {value: buffers[loadedPath]?.content ?? text.value, onChange: editFile,
+            label: _('File contents'), description: status.id, phrases: lang === 'ru' ? {
+            'Find': 'Найти', 'Replace': 'Заменить', 'next': 'далее', 'previous': 'назад',
+            'all': 'все', 'replace': 'заменить', 'replace all': 'заменить всё',
+            'close': 'закрыть', 'match case': 'учитывать регистр', 'regexp': 'регулярное выражение',
+            'by word': 'слово целиком', 'No matches': 'Совпадений нет',
+            'Go to line': 'Перейти к строке', 'go': 'перейти'
+        } : {}});
+        state.destroyEditor = () => { editor.destroy(); editor = null; };
+        findButton.disabled = false;
+    }).catch(() => {
+        if (isCurrent()) editorHint.textContent = _('Syntax highlighting is unavailable. The plain text editor still works.');
+    });
     if (state.editorFile === 'mixin' && files.mixin) {
         choose.value = files.mixin;
         load();
@@ -2077,8 +2121,8 @@ function pageEditor() {
     return [
         pageHeader(_('Editor'), _('Edit configuration files. File drafts stay in this tab until you reload the page.')),
         card({
-            content: [field(_('File'), choose), E('div', { class: 'editor-toolbar row wrap' }, [reloadButton, downloadButton, E('label', { class: 'checkbox-label' }, [wrap, _('Wrap lines')])]), status,
-                field(_('File contents'), E('div', { class: 'text-surface' }, text))],
+            content: [field(_('File'), choose), E('div', { class: 'editor-toolbar row wrap' }, [reloadButton, downloadButton, findButton, E('label', { class: 'checkbox-label' }, [wrap, _('Wrap lines')])]), status,
+                field(_('File contents'), E('div', { class: 'text-surface' }, text)), editorHint],
             footer: E('div', { class: 'row end', style: { width: '100%' } }, [
                 saveButton, restartButton
             ])
@@ -2588,6 +2632,8 @@ async function render() {
         return;
     }
     const token = ++renderToken;
+    state.destroyEditor?.();
+    state.destroyEditor = null;
     state.timers.forEach((t) => clearInterval(t));
     state.timers = [];
     state.pagePollers = [];

@@ -1,5 +1,8 @@
 // russian translation of the web ui, keys are the english strings of app.js
 window.I18N_RU = {
+    'Find': 'Найти',
+    'YAML: 2-space indentation · Tab / Shift+Tab · Ctrl+F to find': 'YAML: отступ 2 пробела · Tab / Shift+Tab · Ctrl+F — поиск',
+    'Syntax highlighting is unavailable. The plain text editor still works.': 'Подсветка синтаксиса недоступна. Обычный текстовый редактор продолжает работать.',
     'Help: %s': 'Справка: %s',
     'Networks': 'Сети',
     'No networks': 'Нет сетей',

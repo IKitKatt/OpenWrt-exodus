@@ -86,7 +86,7 @@ webui_mount() (
 		rm -f "$file" "$EXODUS_WWW/user/${page%.asp}.title"
 		exit 1
 	fi
-	for file in app.js merlin.js i18n.js style.css favicon.svg; do
+	for file in app.js merlin.js i18n.js style.css favicon.svg editor.js editor.LICENSE.txt; do
 		[ ! -f "$SHARE_DIR/www/$file" ] || ln -sf "$SHARE_DIR/www/$file" "$WEBUI_PUBLIC/$file" || exit 1
 	done
 	mkdir -p "$WEBUI_DIR/responses" "$WEBUI_DIR/cache"

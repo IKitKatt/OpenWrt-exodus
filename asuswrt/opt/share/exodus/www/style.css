@@ -181,6 +181,28 @@
 #exodus-root .textarea { width: 100%; min-height: 220px; resize: vertical; font: 13px/1.65 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; tab-size: 2; overflow: auto; }
 #exodus-root .textarea.log { min-height: 380px; }
 #exodus-root .editor-text { height: 60vh; min-height: 420px; overscroll-behavior: contain; }
+/* CodeMirror remains inside the Merlin canvas and shares its control colors. */
+#exodus-root .cm-editor { width: 100%; height: 60vh; min-height: 420px; min-width: 0; background: var(--surface-input); color: var(--text); border: 1px solid var(--control-line); border-radius: var(--radius); overflow: hidden; }
+#exodus-root .cm-editor.cm-focused { outline: 2px solid var(--accent); outline-offset: 2px; }
+#exodus-root .cm-scroller { overflow: auto; overscroll-behavior: contain; font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; }
+#exodus-root .cm-content { padding: 10px 0; caret-color: var(--text); white-space: pre; overflow-wrap: normal; }
+#exodus-root .cm-content.cm-lineWrapping { white-space: pre-wrap; overflow-wrap: anywhere; }
+#exodus-root .cm-content:focus-visible { outline: none; }
+#exodus-root .cm-line { padding: 0 12px; }
+#exodus-root .cm-gutters { background: var(--surface-raised); color: var(--muted); border-right: 1px solid var(--line); }
+#exodus-root .cm-gutterElement { padding: 0 8px; }
+#exodus-root .cm-cursor { border-left-color: var(--text); }
+#exodus-root .cm-selectionBackground { background: var(--accent-soft) !important; }
+#exodus-root .cm-searchMatch { background: var(--warning-soft); outline: 1px solid var(--warning-line); }
+#exodus-root .cm-searchMatch-selected { background: var(--accent-soft-hover); }
+#exodus-root .cm-panels { background: var(--surface-raised); color: var(--text); border-color: var(--line); }
+#exodus-root .cm-search { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 30px 8px 10px; font: 12px/1.5 system-ui, sans-serif; }
+#exodus-root .cm-search label { display: inline-flex; align-items: center; gap: 4px; }
+#exodus-root .cm-textfield, #exodus-root .cm-button { padding: 4px 8px; border: 1px solid var(--control-line); border-radius: 4px; color: var(--text); background: var(--surface-input); font: inherit; }
+#exodus-root .cm-button { cursor: pointer; background: var(--accent-soft); }
+#exodus-root .cm-button:hover { background: var(--accent-soft-hover); }
+#exodus-root .cm-search button[name="close"] { color: var(--muted); }
+#exodus-root .cm-placeholder { color: var(--muted); }
 #exodus-root .textarea[readonly] { background: var(--surface-input); }
 #exodus-root .invalid { border-color: var(--danger); outline: 1px solid var(--danger); }
 #exodus-root .checkbox { width: 20px; height: 20px; min-width: 20px; margin: 2px 0; accent-color: var(--accent); cursor: pointer; }

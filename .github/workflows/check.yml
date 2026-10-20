@@ -26,11 +26,18 @@ jobs:
             asuswrt/opt/share/exodus/lib/*.sh \
             asuswrt/opt/etc/init.d/S99exodus
 
+      - name: Reproducible YAML editor bundle
+        run: |
+          npm ci --prefix tools/editor --ignore-scripts --no-audit --no-fund
+          npm run --prefix tools/editor build
+          git diff --exit-code -- asuswrt/opt/share/exodus/www/editor.js asuswrt/opt/share/exodus/www/editor.LICENSE.txt
+
       - name: Web UI syntax
         run: |
           node --check asuswrt/opt/share/exodus/www/app.js
           node --check asuswrt/opt/share/exodus/www/i18n.js
           node --check asuswrt/opt/share/exodus/www/merlin.js
+          node --check asuswrt/opt/share/exodus/www/editor.js
 
       - name: Native Merlin transport and lifecycle
         run: |
