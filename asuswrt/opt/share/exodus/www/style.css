@@ -180,6 +180,7 @@
 #exodus-root .select option { color: var(--text); background: var(--surface-raised); }
 #exodus-root .textarea { width: 100%; min-height: 220px; resize: vertical; font: 13px/1.65 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; tab-size: 2; overflow: auto; }
 #exodus-root .textarea.log { min-height: 380px; }
+#exodus-root .editor-text { height: 60vh; min-height: 420px; overscroll-behavior: contain; }
 #exodus-root .textarea[readonly] { background: var(--surface-input); }
 #exodus-root .invalid { border-color: var(--danger); outline: 1px solid var(--danger); }
 #exodus-root .checkbox { width: 20px; height: 20px; min-width: 20px; margin: 2px 0; accent-color: var(--accent); cursor: pointer; }

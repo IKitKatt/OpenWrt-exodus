@@ -154,6 +154,17 @@ webui_accept() (
 			fi
 			trap 'lock_release webui-operation' EXIT ;;
 	esac
+	# A forced GitHub check must not hold the browser's mutation queue for network I/O.
+	if [ "$action" = check_update ] && [ "$(jq -r '.force // false' "$dir/request")" = true ]; then
+		touch "$WEBUI_DIR/update-force"
+		if ! webui_updates_start; then
+			rm -f "$WEBUI_DIR/update-force"
+			webui_error "$id" "$seq" 503 'could not start update check'
+			cp "$WEBUI_DIR/responses/$id.json" "$dir/result.json"
+			touch "$dir/complete"; rm -f "$dir/running"; exit 1
+		fi
+		jq '.force=false | .cached=true' "$dir/request" > "$dir/request.tmp" && mv -f "$dir/request.tmp" "$dir/request"
+	fi
 	# All library functions are already loaded into this stable worker process.
 	if ! api_run "$dir/request" "$dir/api-result"; then
 		webui_error "$id" "$seq" 500 'operation failed internally'
@@ -327,7 +338,7 @@ webui_updates_cancel() {
 # This function runs in the owning CLI, so $$ is the actual registered PID.
 # Keep wait interruptible and cancel network descendants before releasing it.
 webui_updates_refresh() {
-	local req result update_child
+	local req result update_child force=false
 	lock_acquire webui-updates 2 || return 0
 	req="$WEBUI_DIR/update-request.$$"; result="$WEBUI_DIR/update-result.$$"
 	update_child=
@@ -335,10 +346,12 @@ webui_updates_refresh() {
 	trap 'webui_updates_cancel "$update_child"; wait "$update_child" 2>/dev/null; rm -f "$req" "$result" "$result.tmp" "$WEBUI_DIR/update.pid" "$WEBUI_DIR/cache/check_update.json.body.$$" "$WEBUI_DIR/cache/check_update.json.body.$$.base64" "$WEBUI_DIR/cache/check_update.json.tmp.$$"; rm -rf "$RUN_TMP/latest.$$"; lock_release webui-updates' EXIT
 	trap 'exit 0' TERM INT HUP
 	date +%s > "$WEBUI_DIR/update-checked"
-	printf '{"action":"check_update"}\n' > "$req"
+	if [ -f "$WEBUI_DIR/update-force" ]; then force=true; rm -f "$WEBUI_DIR/update-force"; fi
+	jq -cn --argjson force "$force" '{action:"check_update",force:$force}' > "$req"
 	api_run "$req" "$result" &
 	update_child=$!
 	if wait "$update_child"; then
+		jq '.data.checking=false' "$result" > "$result.tmp" && mv -f "$result.tmp" "$result" || exit 1
 		webui_cache_write check_update "$result" &
 		update_child=$!
 		wait "$update_child"
@@ -352,7 +365,7 @@ webui_updates_start() {
 	pid_alive "$WEBUI_DIR/update.pid" && return 0
 	last=$(cat "$WEBUI_DIR/update-checked" 2>/dev/null); now=$(date +%s)
 	case "$last" in ''|*[!0-9]*) last=0 ;; esac
-	[ "$((now - last))" -lt 300 ] && [ "$now" -ge "$last" ] && return 0
+	[ ! -f "$WEBUI_DIR/update-force" ] && [ "$((now - last))" -lt 300 ] && [ "$now" -ge "$last" ] && return 0
 	daemonize "$EXODUS" web updates
 }
 
@@ -373,6 +386,9 @@ webui_cache_refresh() (
 				fingerprint=$(stat -c '%i:%s:%Y' "$path" 2> /dev/null) || fingerprint=
 			else
 				fingerprint=absent
+			fi
+			if [ "$name" = update ]; then
+				fingerprint="$fingerprint:$(update_running && echo running || echo stopped):$(cat "$RUN_TMP/update.id" 2>/dev/null)"
 			fi
 			previous=$(cat "$target.fingerprint" 2> /dev/null)
 			if [ -n "$fingerprint" ] && [ "$fingerprint" = "$previous" ] && [ -f "$target" ] &&

@@ -1871,6 +1871,73 @@ function hasEditorChanges() {
     return Object.values(state.editorBuffers || {}).some(buffer => buffer.content !== buffer.saved);
 }
 
+// Native textarea drag scrolling varies by browser and direction. Keep click/keyboard
+// editing native, but use one fixed speed for single-click mouse selection drags.
+function editorSelectionScroll(text) {
+    text.addEventListener('mousedown', (event) => {
+        if (event.button !== 0 || event.detail !== 1 || text.disabled || event.ctrlKey || event.metaKey || event.altKey) return;
+        if (!document.caretPositionFromPoint && !document.caretRangeFromPoint) return;
+        const bounds = text.getBoundingClientRect();
+        // Leave scrollbar clicks/drags to the browser.
+        if (event.clientX >= bounds.left + text.clientLeft + text.clientWidth || event.clientY >= bounds.top + text.clientTop + text.clientHeight) return;
+        event.preventDefault();
+        const style = getComputedStyle(text);
+        const mirror = document.createElement('div');
+        for (const key of ['font', 'lineHeight', 'letterSpacing', 'padding', 'border', 'boxSizing', 'tabSize', 'textIndent']) mirror.style[key] = style[key];
+        Object.assign(mirror.style, { position: 'fixed', zIndex: '2147483647', opacity: '0', overflow: 'hidden', whiteSpace: text.wrap === 'off' ? 'pre' : 'pre-wrap', overflowWrap: 'break-word', pointerEvents: 'none' });
+        mirror.textContent = text.value + '\n';
+        document.body.appendChild(mirror);
+        let x = event.clientX, y = event.clientY, frame, previous = performance.now();
+        const offset = () => {
+            const rect = text.getBoundingClientRect();
+            Object.assign(mirror.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${text.clientWidth + 2 * text.clientLeft}px`, height: `${text.clientHeight + 2 * text.clientTop}px`, pointerEvents: 'auto' });
+            mirror.scrollTop = text.scrollTop;
+            mirror.scrollLeft = text.scrollLeft;
+            const px = Math.max(rect.left + text.clientLeft + 1, Math.min(x, rect.left + text.clientLeft + text.clientWidth - 1));
+            const py = Math.max(rect.top + text.clientTop + 1, Math.min(y, rect.top + text.clientTop + text.clientHeight - 1));
+            const caret = document.caretPositionFromPoint ? document.caretPositionFromPoint(px, py) : document.caretRangeFromPoint(px, py);
+            mirror.style.pointerEvents = 'none';
+            const node = caret && (caret.offsetNode || caret.startContainer);
+            return node === mirror.firstChild ? Math.min(text.value.length, caret.offset ?? caret.startOffset) : null;
+        };
+        const start = offset();
+        if (start === null) { mirror.remove(); return; }
+        const anchor = event.shiftKey ? (text.selectionDirection === 'backward' ? text.selectionEnd : text.selectionStart) : start;
+        text.focus({ preventScroll: true });
+        const select = () => {
+            const end = offset();
+            if (end !== null) text.setSelectionRange(Math.min(anchor, end), Math.max(anchor, end), end < anchor ? 'backward' : 'forward');
+        };
+        select();
+        const move = (e) => { x = e.clientX; y = e.clientY; select(); };
+        const stop = () => {
+            cancelAnimationFrame(frame);
+            document.removeEventListener('mousemove', move);
+            document.removeEventListener('mouseup', stop);
+            window.removeEventListener('blur', stop);
+            mirror.remove();
+        };
+        const tick = (now) => {
+            if (!text.isConnected || text.disabled) { stop(); return; }
+            const rect = text.getBoundingClientRect();
+            const step = 90 * Math.min(now - previous, 40) / 1000;
+            previous = now;
+            const vertical = y < rect.top ? -1 : y > rect.bottom ? 1 : 0;
+            const horizontal = x < rect.left ? -1 : x > rect.right ? 1 : 0;
+            if (vertical || horizontal) {
+                text.scrollTop += vertical * step;
+                text.scrollLeft += horizontal * step;
+                select();
+            }
+            frame = requestAnimationFrame(tick);
+        };
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', stop);
+        window.addEventListener('blur', stop);
+        frame = requestAnimationFrame(tick);
+    });
+}
+
 function pageEditor() {
     const files = state.files || {};
     const dirs = files.dirs || {};
@@ -1897,9 +1964,10 @@ function pageEditor() {
 
     const buffers = state.editorBuffers || (state.editorBuffers = Object.create(null));
     const pageToken = renderToken;
-    const text = E('textarea', { class: 'textarea log', wrap: 'off', spellcheck: 'false', disabled: true, placeholder: _('Choose a file to edit.') });
+    const text = E('textarea', { class: 'textarea editor-text', wrap: 'off', spellcheck: 'false', disabled: true, placeholder: _('Choose a file to edit.') });
     const status = E('p', { class: 'editor-status', role: 'status', id: nextId() }, _('Choose a file to edit.'));
     text.setAttribute('aria-describedby', status.id);
+    editorSelectionScroll(text);
     let loadedPath = '', requestToken = 0, loading = false, saving = false, fileError = '';
     const isCurrent = () => pageToken === renderToken;
     const sync = () => {
@@ -2127,14 +2195,34 @@ function pageLogs() {
     ];
 }
 
+function updateLogState(data) {
+    if (data.running) return 'running';
+    const last = (data.content.trim().split('\n').pop() || '').trim();
+    if (last.startsWith('error:')) return 'error';
+    if (last === 'success' || last === '[ OK ] Installation complete.') return 'success';
+    return data.content.trim() ? 'interrupted' : 'idle';
+}
+
 function pageUpdates() {
     const pageToken = renderToken;
     const container = E('div', { class: 'contents' });
     const lowSpace = { value: null };
     const logStatus = E('p', { class: 'log-status', role: 'status', id: nextId() }, _('Loading log…'));
     const logView = E('textarea', { class: 'textarea', 'aria-label': _('Update log'), 'aria-describedby': logStatus.id, placeholder: _('Loading log…'), rows: 10, wrap: 'off', readonly: true, spellcheck: 'false' });
-    let logLoaded = false;
+    let logLoaded = false, logPending = false, launching = false, running = !!state.updateRunning, expectedRunId = null, updateButton, notified = false;
+    const activity = E('p', { class: 'log-status', role: 'status' });
+    const syncActivity = () => {
+        if (updateButton) {
+            updateButton.disabled = running || !updateAvailable(state.update);
+            updateButton.querySelector('span').textContent = running ? _('Updating…') : _('Update');
+            updateButton.setAttribute('aria-busy', String(running));
+            updateButton.classList.toggle('loading', running);
+            updateButton.querySelector('.refresh-icon')?.classList.toggle('spin', running);
+        }
+    };
     const pollLog = async () => {
+        if (logPending || pageToken !== renderToken || state.sessionExpired) return;
+        logPending = true;
         logView.setAttribute('aria-busy', 'true');
         logStatus.textContent = _('Refreshing log…');
         try {
@@ -2146,20 +2234,36 @@ function pageUpdates() {
             logView.placeholder = _('No log entries yet.');
             logView.scrollTop = logView.scrollHeight;
             logStatus.textContent = data.content.length ? _('Updated at %s', new Date().toLocaleTimeString(lang === 'ru' ? 'ru-RU' : 'en-US')) : _('No log entries yet.');
-            const lines = data.content.trim().split('\n');
-            const last = (lines[lines.length - 1] || '').trim();
-            return last === 'success' || last === '[ OK ] Installation complete.' || last.startsWith('error:');
+            // Cached text from the previous run must never finish the new one.
+            if (launching || (expectedRunId && data.id && data.id !== expectedRunId && !data.running)) return;
+            expectedRunId = null;
+            const result = !data.content && !data.running && running ? 'interrupted' : updateLogState(data);
+            const wasRunning = running;
+            running = result === 'running';
+            if (running && !wasRunning) notified = false;
+            state.updateRunning = running;
+            activity.textContent = ({ running: _('Updating… You can leave this page; installation continues on the router.'), success: _('Update finished.'), error: _('Update failed. See the log below.'), interrupted: _('Update stopped without a completion message. See the log below.'), idle: '' })[result];
+            syncActivity();
+            if (wasRunning && !running && !notified) {
+                notified = true;
+                if (result === 'success') {
+                    toast(E('span', {}, [_('Update finished.'), ' ', E('a', { href: '#', onclick: (ev) => { ev.preventDefault(); location.reload(); } }, _('Reload the page'))]));
+                    checkUpdates();
+                } else toast(activity.textContent, 'error');
+            }
         } catch (error) {
             if (pageToken === renderToken) {
                 logStatus.textContent = logLoaded ? _('Could not refresh. Previous log is retained. %s', error.message) : _('Could not load the log. %s', error.message);
                 logView.placeholder = logStatus.textContent;
             }
-            throw error;
+            if (running) activity.textContent = _('Updating… Waiting for the router to reconnect.');
         } finally {
+            logPending = false;
             logView.setAttribute('aria-busy', 'false');
         }
     };
-    pollLog().catch(() => {});
+    setTimeout(pollLog, 0);
+    pollPage(pollLog);
 
     let shown = null;
     const renderVersions = (info) => {
@@ -2202,26 +2306,33 @@ function pageUpdates() {
         if (lowSpace.value === null) {
             lowSpace.value = info.free_space != null && info.core_size != null && info.free_space < info.core_size * 1.2;
         }
-        const updateButton = btn(_('Update'), { icon: 'download', disabled: !available, onClick: async () => {
+        updateButton = btn(running ? _('Updating…') : _('Update'), { icon: 'download', disabled: !available, onClick: async () => {
             const message = lowSpace.value
                 ? _('The current core is removed before the new one is installed. If the update fails, the proxy does not work until the update is done again.')
                 : _('The proxy restarts during the update.');
             if (!await confirmDialog(_('Update now?'), message, { confirm: _('Update') })) {
                 return;
             }
-            await run(api('update', { low_space: lowSpace.value }));
-            logView.value = '';
-            const timer = setInterval(async () => {
-                try {
-                    if (await pollLog()) {
-                        clearInterval(timer);
-                        toast(E('span', {}, [_('Update finished.'), ' ', E('a', { href: '#', onclick: (ev) => { ev.preventDefault(); location.reload(); } }, _('Reload the page'))]));
-                    }
-                } catch (e) {
-                    /* the web ui restarts during the update */
-                }
-            }, 2000);
-            state.timers.push(timer);
+            launching = true;
+            running = state.updateRunning = true;
+            activity.textContent = _('Starting update…');
+            syncActivity();
+            try {
+                const result = await run(api('update', { low_space: lowSpace.value }));
+                expectedRunId = result.id;
+                launching = false;
+                notified = false;
+                logView.value = '';
+                await pollLog();
+            } catch (error) {
+                // A lost launch response may still mean the installer started.
+                expectedRunId = null;
+                launching = false;
+                await pollLog();
+                throw error;
+            } finally {
+                setTimeout(syncActivity, 0);
+            }
         } });
         append(container, card({
             class: 'updates-panel',
@@ -2232,7 +2343,7 @@ function pageUpdates() {
                 _('The core and the gh-proxy chosen in the installer are kept, run the installer again to change them.'),
                 _('GitHub is asked at most every 6 hours, Check again asks now.')
             ],
-            action: btn(_('Check again'), { variant: 'outline', size: 'sm', icon: 'refresh-cw', onClick: async () => {
+            action: btn(info.checking ? _('Checking…') : _('Check again'), { disabled: !!info.checking, variant: 'outline', size: 'sm', icon: 'refresh-cw', onClick: async () => {
                 renderVersions(await run(fetchUpdate(true)));
             } }),
             content: [
@@ -2242,6 +2353,7 @@ function pageUpdates() {
             ],
             footer: E('div', { class: 'row end', style: { width: '100%' } }, updateButton)
         }));
+        syncActivity();
     };
 
     // the last answer is shown at once, the router answers again from its cache unless GitHub has to be asked
@@ -2269,7 +2381,7 @@ function pageUpdates() {
 
     return [
         pageHeader(_('Updates'), _('Check available versions and update Exodus or the core. Profiles and settings are kept.')),
-        E('div', { class: 'stack' }, [container, card({ title: _('Update log'), content: [logStatus, E('div', { class: 'text-surface' }, logView)] })])
+        E('div', { class: 'stack' }, [container, card({ title: _('Update log'), content: [activity, logStatus, E('div', { class: 'text-surface' }, logView)] })])
     ];
 }
 

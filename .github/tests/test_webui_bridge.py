@@ -100,6 +100,25 @@ class BridgeTests(ShellCase):
         self.assertTrue(response.exists(), result.stderr)
         return json.loads(response.read_text())
 
+    def test_forced_check_is_deferred_without_network_in_request(self):
+        self.mock('curl','echo called > "$EXODUS_JFFS/network.calls"; exit 1')
+        packet=self.packets(dict(action='check_update',force=True))[0]
+        path=self.root/'packet.json';path.write_text(json.dumps(packet))
+        self.sh(f'daemonize() {{ printf "%s\\n" "$*" > "$WEBUI_DIR/launched"; }}; webui_accept "{path}"',('api','webui-api'))
+        self.assertFalse((self.jffs/'network.calls').exists())
+        response=json.loads((self.ram/f'run/webui/responses/{packet["id"]}.json').read_text())
+        self.assertTrue(json.loads(base64.b64decode(response['body']))['checking'])
+        self.assertIn('web updates',(self.ram/'run/webui/launched').read_text())
+
+    def test_update_log_cache_changes_when_process_stops_without_log_write(self):
+        pid=self.ram/'run/update.pid';pid.write_text(str(os.getpid()))
+        self.sh('webui_cache_refresh',('api','webui-api'))
+        path=self.ram/'run/webui/cache/log-update.json'
+        self.assertTrue(json.loads(base64.b64decode(json.loads(path.read_text())['body']))['running'])
+        pid.unlink()
+        self.sh('webui_cache_refresh',('api','webui-api'))
+        self.assertFalse(json.loads(base64.b64decode(json.loads(path.read_text())['body']))['running'])
+
     def test_unicode_roundtrip_and_template_delimiters_encoded(self):
         content = 'Привет 😀 <% evil %>\n' * 200
         path = self.home / 'profiles/test.yaml'

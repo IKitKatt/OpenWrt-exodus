@@ -55,6 +55,38 @@ class ApiTests(ShellCase):
         self.sh(f'daemonize() {{ "$@"; }}; api_run "{request}" "{response}"',('api',))
         self.assertEqual((self.jffs/'update-source').read_text(),'router-owner/Exodus-fork|native-test-tag')
 
+    def test_update_log_reports_process_liveness(self):
+        pid=self.ram/'run/update.pid'; pid.write_text(str(os.getpid()))
+        running=self.api('log_read',name='update')['data']
+        self.assertTrue(running['running'])
+        pid.write_text('99999999')
+        self.assertFalse(self.api('log_read',name='update')['data']['running'])
+
+    def test_zombie_supervisor_does_not_block_update(self):
+        proc=self.root/'proc'; (proc/str(os.getpid())).mkdir(parents=True)
+        (proc/str(os.getpid())/'status').write_text('State:\tZ (zombie)\n')
+        self.env['EXODUS_PROC']=str(proc)
+        (self.ram/'run/update.pid').write_text(str(os.getpid()))
+        self.assertFalse(self.api('log_read',name='update')['data']['running'])
+        (self.share/'install.sh').write_text('#!/bin/sh\nexit 0\n')
+        self.assertEqual(self.api('update')['status'],200)
+
+    def test_update_launch_failure_is_reported(self):
+        (self.share/'install.sh').write_text('#!/bin/sh\nexit 0\n')
+        request=self.root/'request.json'; response=self.root/'response.json'
+        request.write_text('{"action":"update"}')
+        self.sh(f'daemonize() {{ return 1; }}; api_run "{request}" "{response}"',('api',))
+        self.assertEqual(json.loads(response.read_text())['status'],500)
+        self.assertIn('error:',(self.ram/'log/update.log').read_text())
+
+    def test_installer_exit_failure_is_terminal_in_log(self):
+        (self.share/'install.sh').write_text('#!/bin/sh\necho downloading\nexit 7\n')
+        request=self.root/'request.json'; response=self.root/'response.json'
+        request.write_text('{"action":"update"}')
+        self.sh(f'daemonize() {{ "$@"; }}; api_run "{request}" "{response}"',('api',))
+        self.assertIn('error:',(self.ram/'log/update.log').read_text())
+        self.assertFalse(self.api('log_read',name='update')['data']['running'])
+
     def test_running_installer_keeps_update_log_and_script(self):
         lock=self.opt/'tmp/exodus-install.lock'; lock.mkdir(parents=True)
         (lock/'pid').write_text(str(os.getpid()))
