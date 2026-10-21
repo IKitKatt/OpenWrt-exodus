@@ -3,11 +3,25 @@
 <html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ASUS Wireless Router — Exodus</title>
+<link rel="icon" href="/images/favicon.png" type="image/png">
 <link rel="stylesheet" href="/index_style.css"><link rel="stylesheet" href="/form_style.css">
 <link rel="stylesheet" href="/ext/exodus/style.css">
 <!-- Firmware jQuery includes jQuery Migrate: load its UMD bundle before RequireJS. -->
 <script src="/js/jquery.js"></script>
-<script src="/state.js"></script><script src="/general.js"></script>
+<!-- Firmware Session.Save uses unload; pagehide also works with modern permissions policy and BFCache.
+     Limit the compatibility shim to synchronous state.js loading, then restore the native method. -->
+<script>
+window.exodusRestoreEvents = (function () {
+    const add = window.addEventListener;
+    window.addEventListener = function (type, listener, options) {
+        return add.call(this, type === 'unload' ? 'pagehide' : type, listener, options);
+    };
+    return function () { window.addEventListener = add; delete window.exodusRestoreEvents; };
+})();
+</script>
+<script src="/state.js"></script>
+<script>window.exodusRestoreEvents();</script>
+<script src="/general.js"></script>
 <script src="/popup.js"></script><script src="/help.js"></script>
 <script src="/js/httpApi.js"></script>
 <script>window.ExodusBootstrap = {lang: '<% nvram_get("preferred_lang"); %>'}; function done_validating() { /* Responses are polled; preserve the draft. */ }</script>

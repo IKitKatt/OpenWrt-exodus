@@ -100,6 +100,67 @@ class BridgeTests(ShellCase):
         self.assertTrue(response.exists(), result.stderr)
         return json.loads(response.read_text())
 
+    def test_forced_check_is_deferred_without_network_in_request(self):
+        self.mock('curl','echo called > "$EXODUS_JFFS/network.calls"; exit 1')
+        packet=self.packets(dict(action='check_update',force=True))[0]
+        path=self.root/'packet.json';path.write_text(json.dumps(packet))
+        self.sh(f'daemonize() {{ printf "%s\\n" "$*" > "$WEBUI_DIR/launched"; }}; webui_accept "{path}"',('api','webui-api'))
+        self.assertFalse((self.jffs/'network.calls').exists())
+        response=json.loads((self.ram/f'run/webui/responses/{packet["id"]}.json').read_text())
+        self.assertTrue(json.loads(base64.b64decode(response['body']))['checking'])
+        self.assertIn('web updates',(self.ram/'run/webui/launched').read_text())
+
+    def test_heartbeat_tracks_update_worker_exit_and_stale_snapshot(self):
+        pid=self.ram/'run/webui/update.pid'; pid.parent.mkdir(parents=True,exist_ok=True)
+        pid.write_text(str(os.getpid()))
+        self.sh('webui_cache_refresh',('api','webui-api'))
+        heartbeat=self.ram/'run/webui/cache/heartbeat.json'
+        self.assertTrue(json.loads(heartbeat.read_text())['checking'])
+        snapshot=self.ram/'run/webui/cache/check_update.json'
+        self.assertTrue(json.loads(base64.b64decode(json.loads(snapshot.read_text())['body']))['checking'])
+        pid.unlink()
+        self.sh('webui_cache_refresh',('api','webui-api'))
+        self.assertFalse(json.loads(heartbeat.read_text())['checking'])
+        # Version snapshots update less often than worker liveness.
+        self.assertTrue(json.loads(base64.b64decode(json.loads(snapshot.read_text())['body']))['checking'])
+
+    def test_zombie_update_checker_is_not_running_and_does_not_prevent_restart(self):
+        proc=self.root/'proc'; (proc/str(os.getpid())).mkdir(parents=True)
+        (proc/str(os.getpid())/'status').write_text('State:\tZ (zombie)\n')
+        (proc/'uptime').write_text('100 0\n')
+        self.env['EXODUS_PROC']=str(proc)
+        pid=self.ram/'run/webui/update.pid'; pid.parent.mkdir(parents=True,exist_ok=True)
+        pid.write_text(str(os.getpid()))
+        self.assertFalse(self.api('check_update',cached=True)['data']['checking'])
+        self.sh('daemonize() { echo started > "$WEBUI_DIR/launched"; }; webui_updates_start',('api','webui-api'))
+        self.assertTrue((pid.parent/'launched').exists())
+
+    def test_update_log_cache_changes_when_process_stops_without_log_write(self):
+        pid=self.ram/'run/update.pid';pid.write_text(str(os.getpid()))
+        self.sh('webui_cache_refresh',('api','webui-api'))
+        path=self.ram/'run/webui/cache/log-update.json'
+        self.assertTrue(json.loads(base64.b64decode(json.loads(path.read_text())['body']))['running'])
+        pid.unlink()
+        self.sh('webui_cache_refresh',('api','webui-api'))
+        self.assertFalse(json.loads(base64.b64decode(json.loads(path.read_text())['body']))['running'])
+
+    def test_response_index_announces_published_files_and_preserves_other_tabs(self):
+        body=self.root/'body.json'; body.write_text('{}')
+        for ident in ('a'*32,'b'*32):
+            self.sh(f'webui_emit "{ident}" 0 complete 200 "{body}"',('webui-api',))
+        directory=self.ram/'run/webui/responses'
+        index=json.loads((directory/'index.json').read_text())
+        self.assertEqual(set(index),{'a'*32,'b'*32})
+        for ident in index:
+            self.assertTrue((directory/f'{ident}.json').exists())
+
+    def test_replayed_snapshot_restores_readiness_after_index_expiry(self):
+        ident='c'*32
+        self.sh(f'webui_settings_snapshot "{ident}"',('api','webui-api'))
+        path=self.ram/'run/webui/responses/index.json'; path.write_text('{}')
+        self.sh(f'webui_settings_snapshot "{ident}"',('api','webui-api'))
+        self.assertIn(ident,json.loads(path.read_text()))
+
     def test_unicode_roundtrip_and_template_delimiters_encoded(self):
         content = 'Привет 😀 <% evil %>\n' * 200
         path = self.home / 'profiles/test.yaml'

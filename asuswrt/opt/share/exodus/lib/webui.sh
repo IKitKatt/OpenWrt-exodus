@@ -90,6 +90,7 @@ webui_mount() (
 		[ ! -f "$SHARE_DIR/www/$file" ] || ln -sf "$SHARE_DIR/www/$file" "$WEBUI_PUBLIC/$file" || exit 1
 	done
 	mkdir -p "$WEBUI_DIR/responses" "$WEBUI_DIR/cache"
+	[ -f "$WEBUI_DIR/responses/index.json" ] || printf '{}\n' > "$WEBUI_DIR/responses/index.json"
 	chmod 700 "$WEBUI_DIR"
 	ln -sf "$WEBUI_DIR/responses" "$WEBUI_PUBLIC/responses"
 	ln -sf "$WEBUI_DIR/cache" "$WEBUI_PUBLIC/cache"

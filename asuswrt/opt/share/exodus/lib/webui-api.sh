@@ -11,6 +11,22 @@ webui_encode() (
 	tr -d '\n' < "$encoded"
 )
 
+# Publish only response files that already exist. One atomic index serves all tabs;
+# waiting browsers poll it instead of producing HTTP 404s for not-yet-created files.
+webui_response_index() (
+	local file id
+	mkdir -p "$WEBUI_DIR/responses" || exit 1
+	lock_acquire webui-responses 10 || exit 1
+	trap 'rm -f "$WEBUI_DIR/responses/index.tmp"; lock_release webui-responses' EXIT
+	for file in "$WEBUI_DIR"/responses/*.json; do
+		[ -f "$file" ] || continue
+		id=${file##*/}; id=${id%.json}
+		case "$id" in ''|*[!0-9a-f]*) continue ;; esac
+		[ "${#id}" -eq 32 ] && printf '%s\n' "$id"
+	done | jq -Rn '[inputs | {key:.,value:true}] | from_entries' > "$WEBUI_DIR/responses/index.tmp" &&
+		mv -f "$WEBUI_DIR/responses/index.tmp" "$WEBUI_DIR/responses/index.json"
+)
+
 webui_emit() {
 	local id seq phase status body target
 	id="$1"; seq="$2"; phase="$3"; status="$4"; body="$5"
@@ -23,6 +39,7 @@ webui_emit() {
 		rm -f "$target.body" "$target.tmp"; return 1
 	fi
 	rm -f "$target.body"
+	webui_response_index
 }
 
 webui_error() {
@@ -34,7 +51,7 @@ webui_error() {
 }
 
 webui_gc() (
-	local dir touched now age
+	local dir touched now age changed=0
 	[ -d "$WEBUI_DIR/requests" ] || [ -d "$WEBUI_DIR/snapshots" ] || exit 0
 	lock_acquire webui-transfer 2 || exit 0
 	trap 'lock_release webui-transfer' EXIT
@@ -49,7 +66,9 @@ webui_gc() (
 		if [ -f "$dir/running" ] && pid_alive "$dir/pid"; then continue; fi
 		rm -f "$WEBUI_DIR/responses/${dir##*/}.json"
 		rm -rf "$dir"
+		changed=1
 	done
+	[ "$changed" = 0 ] || webui_response_index
 )
 
 webui_accept() (
@@ -89,9 +108,10 @@ webui_accept() (
 		fi
 		# Only the final chunk can return complete; earlier retries get their own ack.
 		if [ -f "$dir/complete" ] && [ "$seq" -eq "$((count - 1))" ]; then
-			cp "$dir/result.json" "$WEBUI_DIR/responses/$id.json.tmp" && mv -f "$WEBUI_DIR/responses/$id.json.tmp" "$WEBUI_DIR/responses/$id.json"
+			cp "$dir/result.json" "$WEBUI_DIR/responses/$id.json.tmp" && mv -f "$WEBUI_DIR/responses/$id.json.tmp" "$WEBUI_DIR/responses/$id.json" && webui_response_index
 		elif [ -f "$dir/running" ]; then
-			pid_alive "$dir/pid" || webui_error "$id" "$seq" 500 'operation outcome is unknown; inspect state before retrying'
+			if pid_alive "$dir/pid"; then webui_response_index
+			else webui_error "$id" "$seq" 500 'operation outcome is unknown; inspect state before retrying'; fi
 		else
 			printf '{}\n' > "$dir/ack"
 			webui_emit "$id" "$seq" accepted 200 "$dir/ack"
@@ -154,6 +174,17 @@ webui_accept() (
 			fi
 			trap 'lock_release webui-operation' EXIT ;;
 	esac
+	# A forced GitHub check must not hold the browser's mutation queue for network I/O.
+	if [ "$action" = check_update ] && [ "$(jq -r '.force // false' "$dir/request")" = true ]; then
+		touch "$WEBUI_DIR/update-force"
+		if ! webui_updates_start; then
+			rm -f "$WEBUI_DIR/update-force"
+			webui_error "$id" "$seq" 503 'could not start update check'
+			cp "$WEBUI_DIR/responses/$id.json" "$dir/result.json"
+			touch "$dir/complete"; rm -f "$dir/running"; exit 1
+		fi
+		jq '.force=false | .cached=true' "$dir/request" > "$dir/request.tmp" && mv -f "$dir/request.tmp" "$dir/request"
+	fi
 	# All library functions are already loaded into this stable worker process.
 	if ! api_run "$dir/request" "$dir/api-result"; then
 		webui_error "$id" "$seq" 500 'operation failed internally'
@@ -185,7 +216,7 @@ webui_settings_snapshot() (
 	dir="$WEBUI_DIR/snapshots/$id"
 	if [ -d "$dir" ]; then
 		[ -f "$dir/settings-snapshot" ] && [ -f "$dir/result.json" ] || exit 1
-		cp "$dir/result.json" "$WEBUI_DIR/responses/$id.json.tmp" && mv -f "$WEBUI_DIR/responses/$id.json.tmp" "$WEBUI_DIR/responses/$id.json"
+		cp "$dir/result.json" "$WEBUI_DIR/responses/$id.json.tmp" && mv -f "$WEBUI_DIR/responses/$id.json.tmp" "$WEBUI_DIR/responses/$id.json" && webui_response_index
 		exit
 	fi
 	mkdir "$dir" || exit 1
@@ -327,7 +358,7 @@ webui_updates_cancel() {
 # This function runs in the owning CLI, so $$ is the actual registered PID.
 # Keep wait interruptible and cancel network descendants before releasing it.
 webui_updates_refresh() {
-	local req result update_child
+	local req result update_child force=false
 	lock_acquire webui-updates 2 || return 0
 	req="$WEBUI_DIR/update-request.$$"; result="$WEBUI_DIR/update-result.$$"
 	update_child=
@@ -335,10 +366,12 @@ webui_updates_refresh() {
 	trap 'webui_updates_cancel "$update_child"; wait "$update_child" 2>/dev/null; rm -f "$req" "$result" "$result.tmp" "$WEBUI_DIR/update.pid" "$WEBUI_DIR/cache/check_update.json.body.$$" "$WEBUI_DIR/cache/check_update.json.body.$$.base64" "$WEBUI_DIR/cache/check_update.json.tmp.$$"; rm -rf "$RUN_TMP/latest.$$"; lock_release webui-updates' EXIT
 	trap 'exit 0' TERM INT HUP
 	date +%s > "$WEBUI_DIR/update-checked"
-	printf '{"action":"check_update"}\n' > "$req"
+	if [ -f "$WEBUI_DIR/update-force" ]; then force=true; rm -f "$WEBUI_DIR/update-force"; fi
+	jq -cn --argjson force "$force" '{action:"check_update",force:$force}' > "$req"
 	api_run "$req" "$result" &
 	update_child=$!
 	if wait "$update_child"; then
+		jq '.data.checking=false' "$result" > "$result.tmp" && mv -f "$result.tmp" "$result" || exit 1
 		webui_cache_write check_update "$result" &
 		update_child=$!
 		wait "$update_child"
@@ -349,15 +382,15 @@ webui_updates_refresh() {
 
 webui_updates_start() {
 	local last now
-	pid_alive "$WEBUI_DIR/update.pid" && return 0
+	update_checker_running && return 0
 	last=$(cat "$WEBUI_DIR/update-checked" 2>/dev/null); now=$(date +%s)
 	case "$last" in ''|*[!0-9]*) last=0 ;; esac
-	[ "$((now - last))" -lt 300 ] && [ "$now" -ge "$last" ] && return 0
+	[ ! -f "$WEBUI_DIR/update-force" ] && [ "$((now - last))" -lt 300 ] && [ "$now" -ge "$last" ] && return 0
 	daemonize "$EXODUS" web updates
 }
 
 webui_cache_refresh() (
-	local name key req result target fingerprint previous now body path
+	local name key req result target fingerprint previous now body path checking=false
 	umask 077
 	mkdir -p "$WEBUI_DIR/cache" || exit 1
 	trap 'rm -f "$req" "$result" "$result.body" "$body"' EXIT
@@ -373,6 +406,9 @@ webui_cache_refresh() (
 				fingerprint=$(stat -c '%i:%s:%Y' "$path" 2> /dev/null) || fingerprint=
 			else
 				fingerprint=absent
+			fi
+			if [ "$name" = update ]; then
+				fingerprint="$fingerprint:$(update_running && echo running || echo stopped):$(cat "$RUN_TMP/update.id" 2>/dev/null)"
 			fi
 			previous=$(cat "$target.fingerprint" 2> /dev/null)
 			if [ -n "$fingerprint" ] && [ "$fingerprint" = "$previous" ] && [ -f "$target" ] &&
@@ -394,8 +430,9 @@ webui_cache_refresh() (
 		rm -f "$req" "$result" "$result.body" "$body"
 	done
 	[ -f "$WEBUI_DIR/cache/load.json" ] || webui_cache_views_refresh || exit 1
-	jq -cn --argjson now "$(date +%s)" --argjson uptime "$(awk '{print int($1)}' "$EXODUS_PROC/uptime")" \
-		'{v:1,generated:$now,uptime:$uptime}' > "$WEBUI_DIR/cache/heartbeat.json.tmp" && mv -f "$WEBUI_DIR/cache/heartbeat.json.tmp" "$WEBUI_DIR/cache/heartbeat.json"
+	if update_checker_running || [ -f "$WEBUI_DIR/update-force" ]; then checking=true; fi
+	jq -cn --argjson checking "$checking" --argjson now "$(date +%s)" --argjson uptime "$(awk '{print int($1)}' "$EXODUS_PROC/uptime")" \
+		'{v:1,generated:$now,uptime:$uptime,checking:$checking}' > "$WEBUI_DIR/cache/heartbeat.json.tmp" && mv -f "$WEBUI_DIR/cache/heartbeat.json.tmp" "$WEBUI_DIR/cache/heartbeat.json"
 )
 
 # The cache worker remains active with the proxy stopped, so it owns the bound

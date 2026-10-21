@@ -1,4 +1,5 @@
 import json
+import os
 from shell_support import ShellCase
 
 
@@ -45,6 +46,27 @@ class ApiTests(ShellCase):
         self.assertEqual(info['repository'],'router-owner/Exodus-fork')
         self.assertEqual(info['ref'],'asuswrt-native')
 
+    def test_update_defaults_to_original_repository_and_asuswrt(self):
+        (self.share/'BUILD').unlink(missing_ok=True)
+        (self.share/'install.sh').write_text('#!/bin/sh\nprintf "%s|%s" "$REPOSITORY" "$REF" > "$EXODUS_JFFS/update-source"\n')
+        request=self.root/'request.json'; response=self.root/'response.json'
+        request.write_text('{"action":"update"}')
+        self.sh(f'daemonize() {{ "$@"; }}; api_run "{request}" "{response}"',('api',))
+        self.assertEqual(json.loads(response.read_text())['status'],200)
+        self.assertEqual((self.jffs/'update-source').read_text(),'prettyleaf/openwrt-exodus|asuswrt')
+
+    def test_update_check_defaults_to_original_repository_and_asuswrt(self):
+        (self.share/'BUILD').unlink(missing_ok=True)
+        self.mock('curl','''for arg do
+ case "$arg" in https://*) echo "$arg" >> "$EXODUS_JFFS/curl.calls" ;; esac
+done
+exit 1''')
+        self.assertEqual(self.api('check_update',force=True)['status'],200)
+        urls=(self.jffs/'curl.calls').read_text().splitlines()
+        self.assertEqual(urls,[
+            'https://github.com/prettyleaf/openwrt-exodus/archive/asuswrt.tar.gz',
+            'https://github.com/MetaCubeX/mihomo/releases/latest/download/version.txt'])
+
     def test_update_passes_installed_fork_and_ref_to_installer(self):
         (self.share/'BUILD').write_text(json.dumps({'repository':'router-owner/Exodus-fork','ref':'native-test-tag'}))
         installer=self.share/'install.sh'
@@ -53,6 +75,52 @@ class ApiTests(ShellCase):
         request.write_text('{"action":"update"}')
         self.sh(f'daemonize() {{ "$@"; }}; api_run "{request}" "{response}"',('api',))
         self.assertEqual((self.jffs/'update-source').read_text(),'router-owner/Exodus-fork|native-test-tag')
+
+    def test_update_log_reports_process_liveness(self):
+        pid=self.ram/'run/update.pid'; pid.write_text(str(os.getpid()))
+        running=self.api('log_read',name='update')['data']
+        self.assertTrue(running['running'])
+        pid.write_text('99999999')
+        self.assertFalse(self.api('log_read',name='update')['data']['running'])
+
+    def test_zombie_supervisor_does_not_block_update(self):
+        proc=self.root/'proc'; (proc/str(os.getpid())).mkdir(parents=True)
+        (proc/str(os.getpid())/'status').write_text('State:\tZ (zombie)\n')
+        self.env['EXODUS_PROC']=str(proc)
+        (self.ram/'run/update.pid').write_text(str(os.getpid()))
+        self.assertFalse(self.api('log_read',name='update')['data']['running'])
+        (self.share/'install.sh').write_text('#!/bin/sh\nexit 0\n')
+        self.assertEqual(self.api('update')['status'],200)
+
+    def test_update_launch_failure_is_reported(self):
+        (self.share/'install.sh').write_text('#!/bin/sh\nexit 0\n')
+        request=self.root/'request.json'; response=self.root/'response.json'
+        request.write_text('{"action":"update"}')
+        self.sh(f'daemonize() {{ return 1; }}; api_run "{request}" "{response}"',('api',))
+        self.assertEqual(json.loads(response.read_text())['status'],500)
+        self.assertIn('error:',(self.ram/'log/update.log').read_text())
+
+    def test_installer_exit_failure_is_terminal_in_log(self):
+        (self.share/'install.sh').write_text('#!/bin/sh\necho downloading\nexit 7\n')
+        request=self.root/'request.json'; response=self.root/'response.json'
+        request.write_text('{"action":"update"}')
+        self.sh(f'daemonize() {{ "$@"; }}; api_run "{request}" "{response}"',('api',))
+        self.assertIn('error:',(self.ram/'log/update.log').read_text())
+        self.assertFalse(self.api('log_read',name='update')['data']['running'])
+
+    def test_running_installer_keeps_update_log_and_script(self):
+        lock=self.opt/'tmp/exodus-install.lock'; lock.mkdir(parents=True)
+        (lock/'pid').write_text(str(os.getpid()))
+        log=self.ram/'log/update.log'; log.write_text('existing update progress\n')
+        running=self.ram/'run/exodus-update.sh'; running.write_text('running installer\n')
+        (self.share/'install.sh').write_text('#!/bin/sh\nexit 0\n')
+        request=self.root/'request.json'; response=self.root/'response.json'
+        request.write_text('{"action":"update"}')
+        self.sh(f'daemonize() {{ touch "$EXODUS_JFFS/launched"; }}; api_run "{request}" "{response}"',('api',))
+        self.assertEqual(json.loads(response.read_text())['status'],409)
+        self.assertEqual(log.read_text(),'existing update progress\n')
+        self.assertEqual(running.read_text(),'running installer\n')
+        self.assertFalse((self.jffs/'launched').exists())
 
     def test_update_check_uses_installed_fork_and_separates_cache(self):
         (self.share/'BUILD').write_text(json.dumps({'repository':'router-owner/Exodus-fork','ref':'asuswrt-native'}))
