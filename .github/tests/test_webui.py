@@ -31,6 +31,10 @@ FIRMWARE_CASES = [
 
 
 class WebuiTests(ShellCase):
+    def test_native_response_index_is_published(self):
+        self.web('webui_mount')
+        self.assertEqual(json.loads((self.www/'user/exodus/responses/index.json').read_text()),{})
+
     def test_native_banner_form_target_exists(self):
         asp=(self.share/'www/Exodus.asp').read_text()
         self.assertIn('name="hidden_frame"',asp)

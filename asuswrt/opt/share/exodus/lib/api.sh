@@ -343,15 +343,33 @@ log_path() {
 	esac
 }
 
+update_checker_running() {
+	local pid
+	pid=$(cat "$WEBUI_DIR/update.pid" 2>/dev/null)
+	case "$pid" in ''|*[!0-9]*|0) return 1 ;; esac
+	kill -0 "$pid" 2>/dev/null && ! grep -q '^State:.*Z' "$EXODUS_PROC/$pid/status" 2>/dev/null
+}
+
+update_running() {
+	local file pid
+	for file in "$RUN_TMP/update.pid" "$EXODUS_OPT/tmp/exodus-install.lock/pid"; do
+		pid=$(cat "$file" 2>/dev/null)
+		case "$pid" in ''|*[!0-9]*|0) continue ;; esac
+		if kill -0 "$pid" 2>/dev/null && ! grep -q '^State:.*Z' "$EXODUS_PROC/$pid/status" 2>/dev/null; then return 0; fi
+	done
+	return 1
+}
+
 action_log_read() {
-	local path
+	local path running=false id=
 	path=$(log_path "$(arg name)")
 	[ -n "$path" ] || fail "400 Bad Request" "unknown log"
-	if [ -f "$path" ]; then
-		tail -c 1048576 "$path" | jq -R -s '{content: .}' | ok
-	else
-		echo '{"content": ""}' | ok
+	if [ "$(arg name)" = update ]; then
+		update_running && running=true
+		id=$(cat "$RUN_TMP/update.id" 2>/dev/null)
 	fi
+	{ [ ! -f "$path" ] || tail -c 1048576 "$path"; } |
+		jq -R -s --argjson running "$running" --arg id "$id" '{content: ., running:$running, id:$id}' | ok
 }
 
 action_log_clear() {
@@ -408,7 +426,7 @@ latest_code() {
 # there is no versioning of the branch: exodus is up to date when its code equals the code of the branch
 # github is asked at most every 6 hours, force asks now; failed checks are not kept
 action_check_update() {
-	local core_type release build repository ref cache now latest app core_latest free core_size proxy_host
+	local core_type release build repository ref cache now latest app core_latest free core_size proxy_host checking=false
 	core_type=$(cfg_get .update.core)
 	case "$core_type" in
 		alpha) release="https://github.com/MetaCubeX/mihomo/releases/download/Prerelease-Alpha" ;;
@@ -443,7 +461,9 @@ action_check_update() {
 	free=$(df -k "$EXODUS_OPT" 2> /dev/null | tail -n 1 | awk '{ print $(NF - 2) }')
 	core_size=$(wc -c < "$PROG" 2> /dev/null)
 	proxy_host=$(cfg_get .update.gh_proxy | sed -n 's|^[a-z]*://\([^/]*\).*|\1|p')
+	if update_checker_running || [ -f "$WEBUI_DIR/update-force" ]; then checking=true; fi
 	jq -n \
+		--argjson checking "$checking" \
 		--argjson latest "$latest" \
 		--argjson build "$build" \
 		--arg app "$(app_version)" \
@@ -454,7 +474,7 @@ action_check_update() {
 		--arg core_size "$core_size" \
 		--arg gh_proxy "$proxy_host" \
 		'def text: if . == null or . == "" then null else . end;
-		{app: $app, app_commit: ($build.commit | text), app_latest: ($latest.app_latest | text), app_latest_commit: ($latest.app_latest_commit | text),
+		{checking:$checking, app: $app, app_commit: ($build.commit | text), app_latest: ($latest.app_latest | text), app_latest_commit: ($latest.app_latest_commit | text),
 		  app_update: (
 			if ($latest.app_latest_code // "") == "" then null
 			elif ($build.code // "") != "" then $build.code != $latest.app_latest_code
@@ -487,7 +507,9 @@ action_about() {
 }
 
 action_update() {
-	local low_space build repository ref
+	local low_space build repository ref id
+	# Reject before copying the running script or truncating its progress log.
+	update_running && fail "409 Conflict" "an installation is already running; wait for it to finish"
 	low_space=0
 	[ "$(arg low_space)" = "true" ] && low_space=1
 	build=$(cat "$BUILD_PATH" 2> /dev/null)
@@ -496,10 +518,22 @@ action_update() {
 	ref=$(printf '%s' "$build" | jq -r '.ref // empty' 2> /dev/null)
 	[ -n "$ref" ] || ref="$BRANCH"
 	cp -f "$SHARE_DIR/install.sh" "$RUN_TMP/exodus-update.sh" || fail "500 Internal Server Error" "installer not found"
-	: > "$UPDATE_LOG_PATH"
+	id="$(date +%s)-$$"
+	printf '%s\n' "$id" > "$RUN_TMP/update.id"
+	printf '%s\n' 'Starting update…' > "$UPDATE_LOG_PATH"
 	export LOW_SPACE="$low_space" REPOSITORY="$repository" REF="$ref"
-	daemonize sh -c "exec sh '$RUN_TMP/exodus-update.sh' >> '$UPDATE_LOG_PATH' 2>&1"
-	echo '{"success": true}' | ok
+	# Keep a separate supervisor alive across replacement/restart of the installed WebUI.
+	if ! daemonize sh -c '
+		echo "$$" > "$1"
+		trap '\''rm -f "$1"'\'' EXIT
+		sh "$2" >> "$3" 2>&1
+		code=$?
+		if [ "$code" -ne 0 ]; then echo "error: installer exited with code $code" >> "$3"; fi
+	' sh "$RUN_TMP/update.pid" "$RUN_TMP/exodus-update.sh" "$UPDATE_LOG_PATH"; then
+		echo 'error: could not start installer' >> "$UPDATE_LOG_PATH"
+		fail "500 Internal Server Error" "could not start installer"
+	fi
+	jq -n --arg id "$id" '{success:true,id:$id}' | ok
 }
 
 action_update_dashboard() {

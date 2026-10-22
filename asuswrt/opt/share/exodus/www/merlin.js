@@ -41,6 +41,11 @@
             check();
             return data;
         }
+        async function response(id) {
+            const ready = await get('/ext/exodus/responses/index.json');
+            if (!ready || ready[id] !== true) return null;
+            return get('/ext/exodus/responses/' + id + '.json');
+        }
         function unpack(envelope) {
             const body = JSON.parse(decode(envelope.body));
             if (envelope.status !== 200 || body.error) throw Error(body.error || 'Router operation failed (' + envelope.status + ')');
@@ -59,7 +64,11 @@
             const routerTime = Number.isFinite(timing.routerTime) ? timing.routerTime : now()/1000 + routerOffset;
             const age = routerTime - live.generated;
             if (live.v !== 1 || typeof live.generated !== 'number' || !Number.isFinite(age) || age < -5 || age > 15) throw Error('Router cache is stale');
-            return unpack(envelope);
+            const body = unpack(envelope);
+            // Version snapshots outlive the checker. Use the newer heartbeat for
+            // liveness, but don't overwrite a just-finished result with an older beat.
+            if (action === 'check_update' && typeof live.checking === 'boolean' && live.generated >= envelope.generated) body.checking = live.checking;
+            return body;
         }
         async function cache(action, params) {
             try { return await readCache(action, params); }
@@ -114,7 +123,7 @@
             while (now() < deadline) {
                 check(); await sleep(500);
                 let result;
-                try { result = await get('/ext/exodus/responses/' + id + '.json'); }
+                try { result = await response(id); }
                 catch (error) { check(); if (!/HTTP 404|Failed to fetch|network/i.test(error.message)) throw error; }
                 if (result && result.v === 1 && result.id === id && result.seq === 0) {
                     if (result.phase === 'error' || result.phase === 'complete') {
@@ -135,7 +144,7 @@
             while (now() < deadline) {
                 check(); await sleep(Math.min(500,100+100*polls++));
                 let result;
-                try { result = await get('/ext/exodus/responses/' + id + '.json'); }
+                try { result = await response(id); }
                 catch (error) { check(); if (!/HTTP 404|Failed to fetch|network/i.test(error.message)) throw error; }
                 if (result && result.v === 1 && result.id === id && result.seq === 0) {
                     if (result.phase === 'error' || result.status !== 200) return unpack(result);
@@ -169,7 +178,7 @@
                     check();
                     await sleep(Math.min(500,100+100*polls++));
                     let result;
-                    try { result = await get('/ext/exodus/responses/' + id + '.json'); }
+                    try { result = await response(id); }
                     catch (error) { check(); if (!/HTTP 404|Failed to fetch|network/i.test(error.message)) throw error; }
                     if (result && result.v === 1 && result.id === id && result.seq === seq) {
                         if (result.phase === 'error') return unpack(result);
