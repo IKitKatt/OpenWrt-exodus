@@ -26,16 +26,23 @@ jobs:
             asuswrt/opt/share/exodus/lib/*.sh \
             asuswrt/opt/etc/init.d/S99exodus
 
+      - name: Reproducible YAML editor bundle
+        run: |
+          npm ci --prefix tools/editor --ignore-scripts --no-audit --no-fund
+          npm run --prefix tools/editor build
+          git diff --exit-code -- asuswrt/opt/share/exodus/www/editor.js asuswrt/opt/share/exodus/www/editor.LICENSE.txt
+
       - name: Web UI syntax
         run: |
           node --check asuswrt/opt/share/exodus/www/app.js
           node --check asuswrt/opt/share/exodus/www/i18n.js
           node --check asuswrt/opt/share/exodus/www/merlin.js
+          node --check asuswrt/opt/share/exodus/www/editor.js
 
       - name: Native Merlin transport and lifecycle
         run: |
           python3 -m unittest discover -s .github/tests -v
-          node --test .github/tests/merlin.test.mjs
+          node --test .github/tests/*.test.mjs
 
       - name: No regex in jq
         # jq of entware is built without oniguruma: test, match, capture, sub, gsub, splits and split/2 fail there

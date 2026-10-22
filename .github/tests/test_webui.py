@@ -93,6 +93,12 @@ class WebuiTests(ShellCase):
         self.assertEqual((self.ram/'run/webui/page').read_text().strip(),'user10.asp')
         self.assertIn('page:exodus',(self.www/'user/user10.asp').read_text())
 
+    def test_yaml_editor_assets_are_published(self):
+        self.web('webui_mount')
+        for name in ('editor.js','editor.LICENSE.txt'):
+            self.assertEqual((self.www/'user/exodus'/name).resolve(),self.share/'www'/name)
+            self.assertGreater((self.www/'user/exodus'/name).stat().st_size,0)
+
     def test_slot_reused_after_content_update(self):
         self.web('webui_mount')
         asp = self.share / 'www/Exodus.asp'
