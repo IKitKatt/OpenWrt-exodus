@@ -419,6 +419,7 @@ esac''')
         result=self.install()
         self.assertNotEqual(result.returncode,0,result.stdout+result.stderr)
         self.assertIn('base64 encoding failed',result.stderr)
+        self.assertIn('initial views refresh failed',result.stderr)
         self.assertTrue(result.stdout.strip().splitlines()[-1].startswith('error:'))
         self.assertEqual((self.home/'config.json').read_bytes(),previous)
         self.assertEqual(json.loads((self.share/'BUILD').read_text())['code'],'fixture')
@@ -772,6 +773,52 @@ fi''')
         result=subprocess.run(['sh',str(boot)],env=self.env,capture_output=True,text=True,timeout=20)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         self.web('webui_status')
+
+    def start_slow_cache(self):
+        # Merlin has usleep: ten lock retries really last one second, not ten.
+        self.mock('usleep','exec /bin/sleep 0.1')
+        jq=shutil.which('jq')
+        (self.opt/'bin/jq').unlink()
+        self.mock('jq',f'''for arg do
+ if [ "$arg" = load ] && mkdir "$EXODUS_JFFS/cache-preparing" 2>/dev/null; then
+  /bin/sleep 3
+ fi
+done
+exec "{jq}" "$@"''')
+        child=subprocess.Popen([str(self.share/'exodus'),'web','start'],env=self.env,
+                               stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+        def cleanup():
+            if child.poll() is None: child.terminate()
+            child.communicate(timeout=10)
+        self.addCleanup(cleanup)
+        deadline=time.monotonic()+8
+        while not (self.jffs/'cache-preparing').exists():
+            self.assertIsNone(child.poll(),'cache starter exited before preparing views')
+            self.assertLess(time.monotonic(),deadline,'cache starter did not prepare views')
+            time.sleep(0.02)
+        return child
+
+    def test_cache_start_reports_busy_lifecycle_lock(self):
+        result=self.web('lock_acquire() { return 1; }; webui_cache_start',False)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('cache lifecycle is busy',result.stderr)
+
+    def test_second_cache_start_waits_for_initial_refresh(self):
+        child=self.start_slow_cache()
+        result=self.web('webui_cache_start',False)
+        output=child.communicate(timeout=15)[0]
+        self.assertEqual(child.returncode,0,output)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.web('webui_cache_alive')
+
+    def test_cache_stop_waits_for_in_progress_start(self):
+        child=self.start_slow_cache()
+        result=self.web('webui_cache_stop',False)
+        output=child.communicate(timeout=15)[0]
+        self.assertEqual(child.returncode,0,output)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertNotEqual(self.web('webui_cache_alive',False).returncode,0,
+                            'a startup already in progress resurrected the stopped cache')
 
     def test_cache_restart_keeps_current_worker_pid(self):
         result=self.sh(f'"{self.share}/exodus" web start && "{self.share}/exodus" web restart && sleep 6; pid_alive "$WEBUI_DIR/cache.pid"',check=False)
