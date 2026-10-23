@@ -10,6 +10,7 @@
     --control-hover: #b9d8e6;
     --accent: #77a5c6;
     --accent-hover: #b9d8e6;
+    --focus: var(--accent-hover);
     --accent-soft: #2c4b60;
     --accent-soft-hover: #365c74;
     --success: #8bda75;
@@ -70,7 +71,7 @@
 #exodus-root .profile-import { display: flex; align-items: center; gap: 12px; padding-top: 16px; border-top: 1px solid var(--line); }
 #exodus-root .picker-mode { margin: 0; padding: 12px 16px; background: var(--accent-soft); border-radius: 8px; color: var(--accent-hover); }
 #exodus-root ::selection { color: var(--text); background: var(--accent-soft); }
-#exodus-root :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+#exodus-root :focus-visible, #exodus-root .invalid:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 #exodus-root :is(input, select, textarea, button, a, summary) { scroll-margin-block: 110px 24px; }
 #exodus-root svg { width: 18px; height: 18px; flex-shrink: 0; vertical-align: middle; }
 #exodus-root a { color: var(--link); text-underline-offset: 3px; overflow-wrap: anywhere; }
@@ -140,6 +141,9 @@
 #exodus-root .field-switch > .field-control:empty, #exodus-root .field-switch > .field-control:not(:has(:not([hidden]))) { display: none; }
 #exodus-root .field-stacked .row > .input { flex-basis: 150px; }
 #exodus-root .description { font-size: 13px; line-height: 1.5; max-width: 70ch; }
+#exodus-root .validated-control { display: flex; flex-direction: column; gap: 8px; width: 100%; min-width: 0; }
+#exodus-root .validated-control > :is(.input, .input-list, .tags) { width: 100%; }
+#exodus-root .field-error { color: var(--danger); font-size: 13px; line-height: 1.5; max-width: 70ch; overflow-wrap: anywhere; }
 #exodus-root :is(.field-help, .help-content) { color: var(--muted); font-size: 13px; max-width: 70ch; }
 #exodus-root :is(.field-help, .help-content) p + p { margin-top: 8px; }
 #exodus-root details { min-width: 0; }
@@ -183,7 +187,7 @@
 #exodus-root .editor-text { height: 60vh; min-height: 420px; overscroll-behavior: contain; }
 /* CodeMirror remains inside the Merlin canvas and shares its control colors. */
 #exodus-root .cm-editor { width: 100%; height: 60vh; min-height: 420px; min-width: 0; background: var(--surface-input); color: var(--text); border: 1px solid var(--control-line); border-radius: var(--radius); overflow: hidden; }
-#exodus-root .cm-editor.cm-focused { outline: 2px solid var(--accent); outline-offset: 2px; }
+#exodus-root .cm-editor.cm-focused { outline: 2px solid var(--focus); outline-offset: 2px; }
 #exodus-root .cm-scroller { overflow: auto; overscroll-behavior: contain; font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; }
 #exodus-root .cm-content { padding: 10px 0; caret-color: var(--text); white-space: pre; overflow-wrap: normal; }
 #exodus-root .cm-content.cm-lineWrapping { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -212,7 +216,7 @@
 #exodus-root .input-list { width: 100%; min-width: 0; }
 #exodus-root .input-list > .input { width: 100%; }
 #exodus-root .tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 40px; padding: 6px; border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface-raised); }
-#exodus-root .tags:focus-within { outline: 3px solid var(--accent); outline-offset: 3px; }
+#exodus-root .tags:focus-within { outline: 3px solid var(--focus); outline-offset: 3px; }
 #exodus-root .tags input { min-width: 100px; max-width: 100%; flex: 1; padding: 6px; color: var(--text); background: transparent; border: 0; font: inherit; caret-color: var(--accent); }
 #exodus-root .tags input:focus-visible { outline: 0; }
 #exodus-root .tag { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; max-width: 100%; padding: 2px 8px; border-radius: 6px; color: var(--accent-hover); background: var(--accent-soft); font-size: 13px; overflow-wrap: anywhere; }

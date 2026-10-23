@@ -1,5 +1,15 @@
 // russian translation of the web ui, keys are the english strings of app.js
 window.I18N_RU = {
+    ' (required)': ' (обязательно)',
+    'Fill out this field.': 'Заполните это поле.',
+    'Enter a port from 1 to 65535.': 'Введите порт от 1 до 65535.',
+    'Enter a whole number, 0 or greater.': 'Введите целое число не меньше 0.',
+    'Enter a DSCP mark from 0 to 63.': 'Введите метку DSCP от 0 до 63.',
+    'Enter a MAC address, for example 00:11:22:33:44:55.': 'Введите MAC-адрес, например 00:11:22:33:44:55.',
+    'Enter an IPv4 address or network, for example 192.168.1.0/24.': 'Введите IPv4-адрес или сеть, например 192.168.1.0/24.',
+    'Enter an IPv6 address or network, for example 2001:db8::/32.': 'Введите IPv6-адрес или сеть, например 2001:db8::/32.',
+    'Enter five schedule fields: minute, hour, day, month, weekday. For example: 0 3 * * *.': 'Введите пять полей расписания: минуты, часы, день месяца, месяц, день недели. Например: 0 3 * * *.',
+    'Enter ports or ranges separated by spaces, for example 80 443 1000-2000.': 'Введите порты или диапазоны через пробел, например 80 443 1000-2000.',
     'Find': 'Найти',
     'YAML: 2-space indentation · Tab / Shift+Tab · Ctrl+F to find': 'YAML: отступ 2 пробела · Tab / Shift+Tab · Ctrl+F — поиск',
     'Syntax highlighting is unavailable. The plain text editor still works.': 'Подсветка синтаксиса недоступна. Обычный текстовый редактор продолжает работать.',
@@ -219,7 +229,6 @@ window.I18N_RU = {
     "Mode": "Режим",
     "More": "Подробнее",
     "Name": "Название",
-    "Name and URL are required.": "Название и URL обязательны.",
     "Names of devices, Wi-Fi networks and parental control are not available: only devices from the ARP table of the router are listed.": "Имена устройств, сети Wi-Fi и родительский контроль недоступны: показаны только устройства из ARP-таблицы роутера.",
     "Needed by panels with a device limit, the headers are shown in Settings → Service.": "Нужно панелям с ограничением устройств, заголовки показаны в «Настройки» → «Сервис».",
     "Network segments": "Сегменты сети",

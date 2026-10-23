@@ -538,6 +538,7 @@ function closeDialog(result) {
     }
     overlay.hidden = true;
     for (const id of ['content','menu','savebar']) document.getElementById(id).inert = false;
+    overlay.querySelectorAll('[data-wid]').forEach(el => state.invalid.delete(el.dataset.wid));
     clear(overlay);
     if (dialogTrigger && dialogTrigger.isConnected) dialogTrigger.focus();
     dialogTrigger = null;
@@ -584,8 +585,12 @@ function changed() {
 }
 
 function markInvalid(el, id, invalid) {
+    el.dataset.wid = id;
     el.classList.toggle('invalid', invalid);
-    el.setAttribute('aria-invalid', String(invalid));
+    const target = el.matches('input, select, textarea') ? el : el.querySelector('input, select, textarea');
+    if (target) target.setAttribute('aria-invalid', String(invalid));
+    const error = el.closest('.validated-control')?.querySelector('.field-error');
+    if (error) error.hidden = !invalid;
     if (invalid) {
         state.invalid.add(id);
     } else {
@@ -594,6 +599,7 @@ function markInvalid(el, id, invalid) {
 }
 
 const validators = {
+    required: (v) => v.trim() !== '',
     port: (v) => /^\d+$/.test(v) && +v >= 1 && +v <= 65535,
     uinteger: (v) => /^\d+$/.test(v),
     dscp: (v) => /^\d+$/.test(v) && +v <= 63,
@@ -608,12 +614,31 @@ function validate(el, type, value) {
     if (!type) {
         return true;
     }
-    const valid = value === '' || value == null || validators[type](String(value));
+    const valid = value === '' || value == null ? type !== 'required' : validators[type](String(value));
     if (el.dataset.wid == null) {
         el.dataset.wid = nextId();
     }
     markInvalid(el, el.dataset.wid, !valid);
     return valid;
+}
+
+function validationControl(control, type) {
+    if (!type) return control;
+    const messages = {
+        required: _('Fill out this field.'),
+        port: _('Enter a port from 1 to 65535.'),
+        uinteger: _('Enter a whole number, 0 or greater.'),
+        dscp: _('Enter a DSCP mark from 0 to 63.'),
+        mac: _('Enter a MAC address, for example 00:11:22:33:44:55.'),
+        ip4: _('Enter an IPv4 address or network, for example 192.168.1.0/24.'),
+        ip6: _('Enter an IPv6 address or network, for example 2001:db8::/32.'),
+        cron: _('Enter five schedule fields: minute, hour, day, month, weekday. For example: 0 3 * * *.'),
+        portlist: _('Enter ports or ranges separated by spaces, for example 80 443 1000-2000.')
+    };
+    const error = E('p', { id: nextId(), class: 'field-error', role: 'status', hidden: !control.matches('.invalid') && !control.querySelector('.invalid') }, messages[type]);
+    const target = control.matches('input') ? control : control.querySelector('input');
+    target.setAttribute('aria-describedby', error.id);
+    return E('div', { class: 'validated-control' }, [control, error]);
 }
 
 // the control a label points to
@@ -633,11 +658,14 @@ function labelTarget(control) {
 function field(label, control, description, depends, info) {
     if (control.getAttribute('role') === 'radiogroup') control.setAttribute('aria-label', label);
     const title = label ? E('label', { class: 'label', for: labelTarget(control) }, label) : null;
+    if (title && (control.matches('[required]') || control.querySelector('[required]'))) {
+        title.appendChild(E('span', { class: 'muted' }, _(' (required)')));
+    }
     const descriptionId = description ? nextId() : null;
     const targetId = labelTarget(control);
     if (descriptionId && targetId) {
         const target = control.id === targetId ? control : control.querySelector('#' + targetId);
-        if (target) target.setAttribute('aria-describedby', descriptionId);
+        if (target) target.setAttribute('aria-describedby', [target.getAttribute('aria-describedby'), descriptionId].filter(Boolean).join(' '));
     }
     return dependOn(E('div', { class: 'field' }, [E('div', {class: 'label-row'}, [title, info ? infoButton(label, info) : null]),
         E('div', { class: 'field-control' }, [control, description ? E('p', { id: descriptionId, class: 'description', html: description }) : null])
@@ -803,7 +831,8 @@ function input(r, opts) {
         autocomplete: opts.password ? 'new-password' : 'off',
         spellcheck: 'false',
         inputmode: opts.number ? 'numeric' : null,
-        readonly: opts.readonly || null
+        readonly: opts.readonly || null,
+        required: opts.type === 'required' || null
     };
     let list = null;
     if (opts.values) {
@@ -813,7 +842,7 @@ function input(r, opts) {
     const el = E('input', attrs);
     const value = r.get();
     el.value = value == null || (opts.placeholder != null && opts.empty !== undefined && value === opts.empty) ? '' : String(value);
-    validate(el, opts.type, el.value);
+    if (opts.type !== 'required') validate(el, opts.type, el.value);
     el.addEventListener('input', () => {
         const text = el.value.trim();
         if (!validate(el, opts.type, text)) {
@@ -833,7 +862,7 @@ function input(r, opts) {
         const reveal = E('button', { class: 'btn btn-ghost btn-icon', type: 'button', title: _('Show or hide'), onclick: () => { el.type = el.type === 'password' ? 'text' : 'password'; } }, icon('eye'));
         return E('div', { class: 'input-group' }, [el, reveal]);
     }
-    return list ? E('div', { class: 'input-list' }, [el, list.el]) : el;
+    return validationControl(list ? E('div', { class: 'input-list' }, [el, list.el]) : el, opts.type);
 }
 
 // a list of short values as removable tags, Enter, space or comma adds what is typed
@@ -908,7 +937,7 @@ function tags(r, opts) {
     box.addEventListener('click', () => entry.focus());
     append(box, [entry, list && list.el]);
     render();
-    return box;
+    return validationControl(box, opts.type);
 }
 
 // two or three choices like a toggle group
@@ -1009,7 +1038,7 @@ async function save(apply) {
         if (invalid) {
             const pane = invalid.closest('[role="tabpanel"]');
             if (pane?.hidden) document.getElementById(pane.getAttribute('aria-labelledby'))?.click();
-            invalid.focus();
+            (invalid.matches('input, select, textarea') ? invalid : invalid.querySelector('input, select, textarea'))?.focus();
         }
         return;
     }
@@ -1345,8 +1374,8 @@ function subscriptionDialog(subscription, onSave) {
     const saved = dependents;
     dependents = [];
     const content = [
-        field(_('Name'), input(objRef(draft, 'name'), { empty: '' }), _('Replaced with the title of the provider when it sends one.')),
-        field(_('URL'), input(objRef(draft, 'url'), { empty: '', placeholder: 'https://' })),
+        field(_('Name'), input(objRef(draft, 'name'), { empty: '', type: 'required' }), _('Replaced with the title of the provider when it sends one.')),
+        field(_('URL'), input(objRef(draft, 'url'), { empty: '', placeholder: 'https://', type: 'required' })),
         field(_('Info URL'), input(objRef(draft, 'info_url'), { empty: '', placeholder: _('Optional') }), _('Only when traffic and expiry come from another address.')),
         field(_('User agent'), input(objRef(draft, 'user_agent'), { empty: '', values: ['Mihomo/Exodus v{version}', 'clash.meta', 'mihomo', 'clash'] }), _('<code>{version}</code> is replaced with the version of Exodus.')),
         field(_('Update interval, hours'), input(objRef(draft, 'update_interval'), { number: true, type: 'uinteger',
@@ -1361,10 +1390,9 @@ function subscriptionDialog(subscription, onSave) {
         footer: [
             btn(_('Cancel'), { variant: 'outline', onClick: () => closeDialog() }),
             btn(_('Done'), { onClick: () => {
-                if (!draft.name || !draft.url) {
-                    toast(_('Name and URL are required.'), 'error');
-                    return;
-                }
+                document.querySelectorAll('#dialog input[required]').forEach(el => validate(el, 'required', el.value.trim()));
+                const invalid = document.querySelector('#dialog [aria-invalid="true"]');
+                if (invalid) { invalid.focus(); return; }
                 closeDialog();
                 onSave(draft);
             } })
@@ -2715,6 +2743,7 @@ async function render() {
     if (token !== renderToken) {
         return;
     }
+    state.invalid.clear();
     append(clear(content), page[2]());
     changed();
 }
