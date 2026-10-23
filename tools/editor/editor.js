@@ -18,7 +18,16 @@ const colors = HighlightStyle.define([
 ]);
 
 window.ExodusYamlEditor = {
-    mount(text, {value = text.value, onChange, label, description, phrases = {}} = {}) {
+    mount(text, {value = text.value, onChange, onEdit, label, description, phrases = {}} = {}) {
+        let content = value, pending = null, timer;
+        const flush = () => {
+            clearTimeout(timer);
+            timer = undefined;
+            if (!pending) return;
+            content = pending.sliceDoc();
+            pending = null;
+            onChange?.(content);
+        };
         const editable = new Compartment(), wrapping = new Compartment();
         let disabled = text.disabled, wrap = text.wrap !== 'off', stopDrag = () => {};
         const editableExtensions = () => [EditorState.readOnly.of(disabled), EditorView.editable.of(!disabled)];
@@ -81,16 +90,18 @@ window.ExodusYamlEditor = {
             selection,
             EditorView.updateListener.of(update => {
                 if (!update.docChanged) return;
-                const content = update.state.sliceDoc();
-                text.value=content;
-                onChange(content);
+                pending = update.state;
+                clearTimeout(timer);
+                timer = setTimeout(flush, 250);
+                onEdit?.();
             })
         ]});
         const view = new EditorView({state:createState(value)});
         text.after(view.dom);
         text.hidden=true;
         return {
-            setValue(value) { stopDrag(); view.setState(createState(value)); },
+            setValue(value) { flush(); stopDrag(); content = value; view.setState(createState(value)); },
+            flush,
             setDisabled(value) {
                 if (disabled===value) return;
                 disabled=value;
@@ -102,7 +113,7 @@ window.ExodusYamlEditor = {
                 view.dispatch({effects:wrapping.reconfigure(wrap?EditorView.lineWrapping:[])});
             },
             search() { openSearchPanel(view); },
-            destroy() { stopDrag(); view.destroy(); text.hidden=false; }
+            destroy() { flush(); stopDrag(); view.destroy(); text.value=content; text.hidden=false; }
         };
     }
 };

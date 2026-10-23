@@ -1,5 +1,4 @@
-// Optional browser smoke test. Install Playwright outside the project and set
-// PLAYWRIGHT_MODULE to its module entry, or use a locally available playwright.
+// Run all browser suites: npm test --prefix .github/tests
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const {chromium} = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -31,6 +30,17 @@ try {
             append(clear(exodusRoot),pageUpdates());
         };
         window.poll=()=>Promise.all(state.pagePollers.map(p=>p()));
+        window.showSettingsSave=()=>{
+            state.timers.forEach(clearInterval); state.timers=[];
+            state.config={value:'original'}; state.draft=clone(state.config);
+            append(clear(exodusRoot),[E('div',{id:'savebar'}),input(ref('value'))]);
+            renderSavebar(); updateDirty();
+            api=async(action,params)=>{
+                if(action!=='config_set')throw Error(action);
+                window.submitted=clone(params.config);
+                return new Promise((resolve,reject)=>{window.finishSave=resolve;window.failSave=()=>reject(Error('save failed'));});
+            };
+        };
         showUpdates();
     })();`});
     await page.waitForTimeout(100);
@@ -62,6 +72,20 @@ try {
     assert.ok(await checking.locator('.refresh-icon.spin').count()>0,'spinner persists after launch response');
     await page.evaluate(()=>poll());
     assert.ok(await page.getByRole('button',{name:'Check again',exact:true}).isEnabled(),'finished check restores the button');
+    await page.evaluate(()=>showSettingsSave());
+    await page.locator('#exodus-root input').fill('submitted');
+    await page.getByRole('button',{name:'Save',exact:true}).click();
+    await page.waitForFunction(()=>!!window.finishSave);
+    await page.locator('#exodus-root input').fill('later');
+    await page.evaluate(()=>finishSave({}));
+    await page.waitForFunction(()=>document.querySelector('#savebar button[aria-busy="false"]'));
+    assert.equal(await page.evaluate(()=>submitted.value),'submitted');
+    assert.ok(await page.locator('#savebar').isVisible(),'edit during save remains dirty');
+    await page.getByRole('button',{name:'Save',exact:true}).click();
+    await page.evaluate(()=>failSave());
+    await page.waitForFunction(()=>document.querySelector('#savebar button[aria-busy="false"]'));
+    await page.locator('#exodus-root input').fill('submitted');
+    assert.ok(await page.locator('#savebar').isHidden(),'failed save did not advance submitted baseline');
     assert.deepEqual(errors, []);
     console.log('PASS Updates launch, stale log, re-entry, error, success, interruption and background check');
 } finally {

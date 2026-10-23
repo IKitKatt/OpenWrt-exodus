@@ -15,14 +15,16 @@
         const now = options.now || Date.now;
         const sleep = options.sleep || (ms => new Promise(resolve => setTimeout(resolve, ms)));
         const fetcher = options.fetch || root.fetch.bind(root);
+        const httpTimeout = options.httpTimeout ?? 10000;
         const makeId = options.id || (() => Array.from(root.crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join(''));
         let closed = false, login = false, active = false;
-        const queue = [], reads = new Map();
+        const queue = [], reads = new Map(), logs = new Map();
         let recovery = null, routerOffset = 0, lastRecovery = -Infinity;
         let controller = new AbortController();
         const check = () => { if (login) throw Error('Web Admin session expired. Sign in to the router again; your draft is kept in this tab.'); if (closed) throw Error('Transport closed'); };
         function expire() {
             login = true;
+            logs.clear();
             controller.abort();
             if (options.onLogin) options.onLogin();
             else if (root.dispatchEvent) root.dispatchEvent(new Event('exodus-session-expired'));
@@ -30,16 +32,37 @@
         }
         async function get(url, timing) {
             check();
-            const result = await fetcher(url, {credentials:'same-origin', cache:'no-store', signal:controller.signal});
-            const text = await result.text();
-            if (timing) timing.routerTime = Date.parse(result.headers?.get('date')) / 1000;
-            if (result.status === 401 || result.status === 403) expire();
-            if (!result.ok) throw Error('Router HTTP ' + result.status);
-            if (/^\s*</.test(text)) expire();
-            let data;
-            try { data = JSON.parse(text); } catch (_) { throw Error('Invalid router response'); }
-            check();
-            return data;
+            const parent = controller.signal, read = new AbortController();
+            let timer, cancel;
+            // Race explicitly: a stalled fetch/body may ignore AbortSignal.
+            const interrupted = new Promise((_, reject) => {
+                cancel = () => {
+                    try { check(); } catch (error) { reject(error); }
+                    read.abort();
+                };
+                parent.addEventListener('abort', cancel, {once:true});
+                timer = setTimeout(() => {
+                    reject(Error('HTTP read timed out; operation outcome may be unknown. Check router state before retrying.'));
+                    read.abort();
+                }, httpTimeout);
+            });
+            try {
+                return await Promise.race([interrupted, (async () => {
+                    const result = await fetcher(url, {credentials:'same-origin', cache:'no-store', signal:read.signal});
+                    if (result.status === 401 || result.status === 403) expire();
+                    const text = await result.text();
+                    if (timing) timing.routerTime = Date.parse(result.headers?.get('date')) / 1000;
+                    if (!result.ok) throw Error('Router HTTP ' + result.status);
+                    if (/^\s*</.test(text)) expire();
+                    let data;
+                    try { data = JSON.parse(text); } catch (_) { throw Error('Invalid router response'); }
+                    check();
+                    return data;
+                })()]);
+            } finally {
+                clearTimeout(timer);
+                parent.removeEventListener('abort', cancel);
+            }
         }
         async function response(id) {
             const ready = await get('/ext/exodus/responses/index.json');
@@ -51,20 +74,37 @@
             if (envelope.status !== 200 || body.error) throw Error(body.error || 'Router operation failed (' + envelope.status + ')');
             return body;
         }
-        async function readCache(action, params) {
-            const name = params.name;
-            if (action === 'log_read' && !['app','core','update','web','debug'].includes(name)) throw Error('Unknown log');
-            const key = action === 'log_read' ? 'log-' + name : action;
-            const timing = {};
-            const envelope = await get('/ext/exodus/cache/' + key + '.json', timing);
-            if (envelope.v !== 1 || envelope.key !== key) throw Error('Invalid cache response');
-            const live = action === 'status' ? envelope : await get('/ext/exodus/cache/heartbeat.json', timing);
+        function validateFreshness(live, timing) {
             // httpd Date and generated use the same router clock. Client drift
             // or NTP correction must not make a healthy RAM cache unusable.
             const routerTime = Number.isFinite(timing.routerTime) ? timing.routerTime : now()/1000 + routerOffset;
             const age = routerTime - live.generated;
             if (live.v !== 1 || typeof live.generated !== 'number' || !Number.isFinite(age) || age < -5 || age > 15) throw Error('Router cache is stale');
+        }
+        async function readCache(action, params) {
+            const name = params.name;
+            if (action === 'log_read' && !['app','core','update','web','debug'].includes(name)) throw Error('Unknown log');
+            const key = action === 'log_read' ? 'log-' + name : action;
+            const timing = {};
+            let live;
+            if (action === 'log_read') {
+                live = await get('/ext/exodus/cache/heartbeat.json', timing);
+                validateFreshness(live, timing);
+                const revision = live.logs?.[key], held = logs.get(key);
+                if (typeof revision === 'string' && revision && held?.revision === revision) return {...held.body};
+                // Missing metadata must use the legacy full-body path, not an
+                // entry retained from an earlier revision-aware heartbeat.
+                logs.delete(key);
+            }
+            const envelope = await get('/ext/exodus/cache/' + key + '.json', timing);
+            if (envelope.v !== 1 || envelope.key !== key) throw Error('Invalid cache response');
+            if (!live) live = action === 'status' ? envelope : await get('/ext/exodus/cache/heartbeat.json', timing);
+            validateFreshness(live, timing);
             const body = unpack(envelope);
+            if (action === 'log_read' && typeof envelope.revision === 'string' && envelope.revision && live.logs?.[key] === envelope.revision) {
+                logs.set(key, {revision:envelope.revision, body});
+                return {...body};
+            }
             // Version snapshots outlive the checker. Use the newer heartbeat for
             // liveness, but don't overwrite a just-finished result with an older beat.
             if (action === 'check_update' && typeof live.checking === 'boolean' && live.generated >= envelope.generated) body.checking = live.checking;
@@ -235,7 +275,7 @@
                 });
             } catch (error) { return Promise.reject(error); }
         }
-        return {request, resume() { if (closed) throw Error('Transport closed'); login=false; controller=new AbortController(); }, dispose() {closed=true; controller.abort(); for (const item of queue.splice(0)) item.reject(Error('Transport closed')); }};
+        return {request, resume() { if (closed) throw Error('Transport closed'); login=false; logs.clear(); controller=new AbortController(); }, dispose() {closed=true; logs.clear(); controller.abort(); for (const item of queue.splice(0)) item.reject(Error('Transport closed')); }};
     }
     if (typeof module !== 'undefined' && module.exports) module.exports = {createTransport,encode,decode};
     else root.ExodusMerlin = createTransport();

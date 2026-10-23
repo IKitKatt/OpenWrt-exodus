@@ -251,3 +251,111 @@ test('native snapshot form omits amng_custom and packet form restores it', async
         assert.equal(posts[1].current_page,'user3.asp');
     } finally {globalThis.document=previousDocument;globalThis.location=previousLocation;}
 });
+
+const bounded = promise => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(Error('test watchdog: read did not settle')), 250))]);
+for (const stage of ['fetch', 'body']) {
+    test(`HTTP deadline bounds stalled ${stage} and aborts its read`, async () => {
+        let signal;
+        const transport = nativeTransport({httpTimeout:15, fetch:async (_, options)=>{
+            signal=options.signal;
+            if(stage==='fetch') return new Promise(()=>{});
+            return {...json({}),text:()=>new Promise(()=>{})};
+        }});
+        await assert.rejects(bounded(transport.request('status')), /HTTP read timed out/);
+        assert.equal(signal.aborted,true);
+        transport.dispose();
+    });
+}
+test('HTTP timeout releases a queued mutation without resubmitting the ambiguous command', async()=>{
+    let serial=0, pending, packet, stalled=false, posts=0;
+    const transport=nativeTransport({httpTimeout:15,sleep:async()=>{},id:()=>String(++serial).padStart(32,'0'),
+        submit:async(settings,script)=>{
+            packet=settings?JSON.parse(settings.exodus_packet):null;
+            pending=packet?.id || script.split('_settings_')[1];
+            if(settings) posts++;
+        },fetch:async url=>{
+            if(packet && !stalled){stalled=true;return new Promise(()=>{});}
+            if(url.endsWith('/index.json'))return json({[pending]:true});
+            return json({v:1,id:pending,seq:0,phase:'complete',status:200,body:encode(packet?' {"success":true}':'{}')});
+        }});
+    const first=transport.request('service',{op:'start'});
+    const second=transport.request('service',{op:'stop'});
+    await assert.rejects(bounded(first),/HTTP read timed out/);
+    assert.equal((await bounded(second)).success,true);
+    assert.equal(posts,2,'each mutation submitted exactly once');
+    transport.dispose();
+});
+for(const cancellation of ['dispose','session']) {
+    test(`${cancellation} rejects stalled fetch and body even when abort is ignored`,async()=>{
+        const signals=[];
+        const transport=nativeTransport({httpTimeout:1000,onLogin:()=>{},fetch:async(url,{signal})=>{
+            signals.push(signal);
+            if(url.includes('hosts'))return {...json({}),status:401};
+            if(url.includes('status'))return new Promise(()=>{});
+            return {...json({}),text:()=>new Promise(()=>{})};
+        }});
+        const fetchRead=transport.request('status'), bodyRead=transport.request('load');
+        // Attach rejection handlers before initiating cancellation.
+        const settled=Promise.all([fetchRead,bodyRead].map(p=>assert.rejects(bounded(p),cancellation==='dispose'?/Transport closed/:/session expired/)));
+        await new Promise(resolve=>setImmediate(resolve));
+        if(cancellation==='dispose')transport.dispose();
+        else await assert.rejects(transport.request('hosts'),/session expired/);
+        await settled;
+        assert.ok(signals.every(signal=>signal.aborted));
+        transport.dispose();
+    });
+}
+
+test('log revisions avoid unchanged bodies and fall back without matching metadata', async()=>{
+    let revision='one', content='first', downloads=0, metadata=true, envelopeRevision=true;
+    const f=createTransport({now:()=>100000,fetch:async url=>{
+        if(url.includes('heartbeat')) return json({v:1,generated:100,...(metadata?{logs:{'log-app':revision}}:{})});
+        downloads++;
+        return json({v:1,key:'log-app',generated:100,status:200,...(envelopeRevision?{revision}:{}),body:encode(JSON.stringify({content}))});
+    }});
+    assert.equal((await f.request('log_read',{name:'app'})).content,'first');
+    assert.equal((await f.request('log_read',{name:'app'})).content,'first');
+    assert.equal(downloads,1);
+    revision='two'; content='changed';
+    assert.equal((await f.request('log_read',{name:'app'})).content,'changed');
+    assert.equal(downloads,2);
+    metadata=false;
+    await f.request('log_read',{name:'app'}); await f.request('log_read',{name:'app'});
+    assert.equal(downloads,4,'legacy heartbeat always downloads');
+    metadata=true; envelopeRevision=false;
+    await f.request('log_read',{name:'app'}); await f.request('log_read',{name:'app'});
+    assert.equal(downloads,6,'legacy envelope is not reusable');
+    f.dispose();
+});
+test('held logs require fresh heartbeats and are cleared on session expiration', async()=>{
+    let stale=false, expired=false, downloads=0;
+    const f=createTransport({now:()=>100000,submit:async()=>{throw Error('offline');},fetch:async url=>{
+        if(expired) return {status:403};
+        if(url.includes('heartbeat')) return json({v:1,generated:stale?1:100,logs:{'log-app':'one'}});
+        downloads++; return json({v:1,key:'log-app',generated:100,status:200,revision:'one',body:encode('{"content":"held"}')});
+    }});
+    await f.request('log_read',{name:'app'});
+    stale=true;
+    await assert.rejects(f.request('log_read',{name:'app'}),/stale/);
+    assert.equal(downloads,1,'stale heartbeat must not download or return a held body');
+    stale=false; expired=true;
+    await assert.rejects(f.request('log_read',{name:'app'}),/session expired/);
+    expired=false; f.resume();
+    await f.request('log_read',{name:'app'});
+    assert.equal(downloads,2,'session teardown discards held logs');
+    f.dispose();
+});
+test('update log revisions include running and update id transitions', async()=>{
+    let state={content:'same',running:true,id:'a'}, revision='running-a', downloads=0;
+    const f=createTransport({now:()=>100000,fetch:async url=>{
+        if(url.includes('heartbeat')) return json({v:1,generated:100,logs:{'log-update':revision}});
+        downloads++; return json({v:1,key:'log-update',generated:100,status:200,revision,body:encode(JSON.stringify(state))});
+    }});
+    assert.equal((await f.request('log_read',{name:'update'})).running,true);
+    await f.request('log_read',{name:'update'}); assert.equal(downloads,1);
+    state={...state,running:false}; revision='stopped-a';
+    assert.equal((await f.request('log_read',{name:'update'})).running,false);
+    state={...state,running:true,id:'b'}; revision='running-b';
+    assert.equal((await f.request('log_read',{name:'update'})).id,'b');
+    assert.equal(downloads,3); f.dispose();
+});

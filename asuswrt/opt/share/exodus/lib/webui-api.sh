@@ -191,11 +191,7 @@ webui_accept() (
 	else
 		status=$(jq -r .status "$dir/api-result")
 		jq -c .data "$dir/api-result" > "$dir/body"
-		case "$action" in
-			load|status|hosts|interfaces|proxies|files|file_read|log_read|debug|hwid|about) ;;
-			check_update) webui_cache_write check_update "$dir/api-result" || : ;;
-			*) webui_cache_views_refresh || : ;;
-		esac
+		webui_cache_mutation_refresh "$dir/request" "$dir/api-result" || :
 		webui_emit "$id" "$seq" complete "$status" "$dir/body"
 	fi
 	cp "$WEBUI_DIR/responses/$id.json" "$dir/result.json"
@@ -317,15 +313,18 @@ WORKER
 )
 
 webui_cache_write() (
-	local key result target body now
+	local key result target body now revision
 	key="$1"; result="$2"; target="$WEBUI_DIR/cache/$key.json"
 	body="$target.body.$$"; now=$(date +%s)
 	trap 'rm -f "$body" "$body.base64" "$target.tmp.$$"' EXIT
 	mkdir -p "$WEBUI_DIR/cache" || exit 1
 	jq -c .data "$result" > "$body" || exit 1
 	webui_encode "$body" > "$body.base64" || exit 1
-	jq -cn --arg key "$key" --argjson now "$now" --argjson status "$(jq -r .status "$result")" --rawfile body "$body.base64" \
-		'{v:1,key:$key,generated:$now,status:$status,body:$body}' > "$target.tmp.$$" && mv -f "$target.tmp.$$" "$target"
+	revision=$(sha256sum < "$body") || exit 1
+	revision=${revision%% *}
+	[ -n "$revision" ] || exit 1
+	jq -cn --arg revision "$revision" --arg key "$key" --argjson now "$now" --argjson status "$(jq -r .status "$result")" --rawfile body "$body.base64" \
+		'{v:1,key:$key,generated:$now,status:$status,revision:$revision,body:$body}' > "$target.tmp.$$" && mv -f "$target.tmp.$$" "$target"
 )
 
 # Local navigation reads do not need an apply event or a JFFS write.
@@ -335,10 +334,63 @@ webui_cache_views_refresh() (
 	lock_acquire webui-views 30 || exit 1
 	req="$WEBUI_DIR/views-request.$$"; result="$WEBUI_DIR/views-result.$$"
 	trap 'rm -f "$req" "$result"; lock_release webui-views' EXIT
-	for key in load files hosts interfaces proxies hwid about check_update; do
-		jq -cn --arg action "$key" '{action:$action,cached:true}' > "$req" || exit 1
+	[ "$#" -gt 0 ] || set -- load files hosts interfaces proxies hwid about check_update
+	for key do
+		case "$key" in
+			log-app|log-core|log-update|log-debug|log-web)
+				jq -cn --arg name "${key#log-}" '{action:"log_read",name:$name}' > "$req" || exit 1 ;;
+			load|files|hosts|interfaces|proxies|hwid|about|check_update|status)
+				jq -cn --arg action "$key" '{action:$action,cached:true}' > "$req" || exit 1 ;;
+			*) exit 1 ;;
+		esac
 		api_run "$req" "$result" && webui_cache_write "$key" "$result" || exit 1
 	done
+)
+
+# Service completion must not queue behind expensive navigation discovery.
+webui_cache_status_refresh() (
+	local req result
+	umask 077
+	mkdir -p "$WEBUI_DIR/cache" || exit 1
+	req="$WEBUI_DIR/status-request.$$"; result="$WEBUI_DIR/status-result.$$"
+	trap 'rm -f "$req" "$result" "$result.tmp"' EXIT
+	echo '{"action":"status"}' > "$req"
+	api_run "$req" "$result" && webui_cache_write status "$result"
+)
+
+# Publish only snapshots affected by a successful operation. Service status is
+# published by the background wrapper after the actual operation completes.
+webui_cache_mutation_refresh() {
+	local action name
+	[ "$(jq -r .status "$2")" = 200 ] || return 0
+	action=$(jq -r .action "$1")
+	case "$action" in
+		config_set) webui_cache_views_refresh load ;;
+		profile_upload|profile_delete|file_write|subscription_update) webui_cache_views_refresh load files ;;
+		service) return 0 ;;
+		log_clear)
+			name=$(jq -r .name "$1")
+			webui_cache_views_refresh "log-$name" ;;
+		debug) webui_cache_views_refresh log-debug ;;
+		update) webui_cache_views_refresh log-update ;;
+		check_update) webui_cache_write check_update "$2" ;;
+		*) return 0 ;;
+	esac || return 1
+	[ ! -f "$WEBUI_DIR/cache/heartbeat.json" ] || webui_cache_heartbeat_write preserve
+}
+
+webui_cache_heartbeat_write() (
+	local checking=false target previous=/dev/null
+	target="$WEBUI_DIR/cache/heartbeat.json"
+	# A mutation updates the index but must not disguise a stalled worker.
+	[ "${1:-}" != preserve ] || previous="$target"
+	trap 'rm -f "$target.tmp.$$"' EXIT
+	if update_checker_running || [ -f "$WEBUI_DIR/update-force" ]; then checking=true; fi
+	# Revisions are read from atomically published envelopes, never sidecars.
+	cat "$WEBUI_DIR/cache"/log-*.json 2>/dev/null |
+	jq -s --slurpfile previous "$previous" --argjson checking "$checking" --argjson now "$(date +%s)" --argjson uptime "$(awk '{print int($1)}' "$EXODUS_PROC/uptime")" \
+		'($previous[0] // {v:1,generated:$now,uptime:$uptime,checking:$checking}) + {logs:(map(select(.revision | type == "string")) | map({key:.key,value:.revision}) | from_entries)}' \
+		> "$target.tmp.$$" && mv -f "$target.tmp.$$" "$target"
 )
 
 # Cancel only the API worker we spawned and its descendants. Freeze each parent
@@ -390,20 +442,19 @@ webui_updates_start() {
 }
 
 webui_cache_refresh() (
-	local name key req result target fingerprint previous now body path checking=false
+	local name key req result target fingerprint previous path
 	umask 077
 	mkdir -p "$WEBUI_DIR/cache" || exit 1
-	trap 'rm -f "$req" "$result" "$result.body" "$body"' EXIT
+	trap 'rm -f "$req" "$result"' EXIT
 	for name in status app core update debug web; do
 		if [ "$name" = status ]; then key=status; else key="log-$name"; fi
 		target="$WEBUI_DIR/cache/$key.json"
-		now=$(date +%s)
 		if [ "$name" != status ]; then
 			path=$(log_path "$name")
 			if [ -f "$path" ]; then
-				# An unavailable/limited firmware stat must not freeze a live log
-				# behind the same fingerprint used for genuinely missing files.
-				fingerprint=$(stat -c '%i:%s:%Y' "$path" 2> /dev/null) || fingerprint=
+				# Hash the visible tail: same-size rewrites within one clock tick
+				# must not leave the cache frozen behind a stat fingerprint.
+				fingerprint=$(tail -c 1048576 "$path" | sha256sum) || fingerprint=
 			else
 				fingerprint=absent
 			fi
@@ -412,7 +463,7 @@ webui_cache_refresh() (
 			fi
 			previous=$(cat "$target.fingerprint" 2> /dev/null)
 			if [ -n "$fingerprint" ] && [ "$fingerprint" = "$previous" ] && [ -f "$target" ] &&
-				jq -e '.v == 1 and (.body | type == "string" and length > 0)' "$target" > /dev/null 2>&1; then
+				jq -e '.v == 1 and (.body | type == "string" and length > 0) and (.revision | type == "string" and length > 0)' "$target" > /dev/null 2>&1; then
 				# Refresh the liveness timestamp separately; unchanged log payload is not rewritten.
 				continue
 			fi
@@ -421,18 +472,12 @@ webui_cache_refresh() (
 		if [ "$name" = status ]; then echo '{"action":"status"}' > "$req";
 		else jq -cn --arg name "$name" '{action:"log_read",name:$name}' > "$req"; fi
 		api_run "$req" "$result" || exit 1
-		body="$result.data"
-		jq -c .data "$result" > "$body" || exit 1
-		webui_encode "$body" > "$result.body" || exit 1
-		jq -cn --arg key "$key" --argjson now "$now" --argjson status "$(jq -r .status "$result")" --rawfile body "$result.body" \
-			'{v:1,key:$key,generated:$now,status:$status,body:$body}' > "$target.tmp" && mv -f "$target.tmp" "$target" || exit 1
+		webui_cache_write "$key" "$result" || exit 1
 		[ "$name" = status ] || printf '%s\n' "$fingerprint" > "$target.fingerprint"
-		rm -f "$req" "$result" "$result.body" "$body"
+		rm -f "$req" "$result"
 	done
 	[ -f "$WEBUI_DIR/cache/load.json" ] || webui_cache_views_refresh || exit 1
-	if update_checker_running || [ -f "$WEBUI_DIR/update-force" ]; then checking=true; fi
-	jq -cn --argjson checking "$checking" --argjson now "$(date +%s)" --argjson uptime "$(awk '{print int($1)}' "$EXODUS_PROC/uptime")" \
-		'{v:1,generated:$now,uptime:$uptime,checking:$checking}' > "$WEBUI_DIR/cache/heartbeat.json.tmp" && mv -f "$WEBUI_DIR/cache/heartbeat.json.tmp" "$WEBUI_DIR/cache/heartbeat.json"
+	webui_cache_heartbeat_write
 )
 
 # The cache worker remains active with the proxy stopped, so it owns the bound
