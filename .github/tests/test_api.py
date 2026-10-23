@@ -4,6 +4,17 @@ from shell_support import ShellCase
 
 
 class ApiTests(ShellCase):
+    def test_service_and_config_apply_dispatch_completion_wrapper(self):
+        request = self.root/'request.json'; response = self.root/'response.json'
+        for op in ('start', 'stop', 'restart', 'hard_update', 'sync'):
+            request.write_text(json.dumps(dict(action='service', op=op)))
+            result = self.sh(f'daemonize() {{ printf "%s" "$*"; }}; api_run "{request}" "{response}"', ('api',))
+            self.assertEqual(result.stdout, f'{self.share}/exodus web service {op}')
+        config = json.loads((self.home/'config.json').read_text())
+        request.write_text(json.dumps(dict(action='config_set', config=config, apply='restart')))
+        result = self.sh(f'daemonize() {{ printf "%s" "$*"; }}; api_run "{request}" "{response}"', ('api',))
+        self.assertEqual(result.stdout, f'{self.share}/exodus web service restart')
+
     def test_all_existing_logs_read_and_clear_only_the_selected_file(self):
         names = ('app', 'core', 'update', 'debug', 'web')
         contents = {name: f'{name}: event\nПривет 😀 <% event %>\n' for name in names}

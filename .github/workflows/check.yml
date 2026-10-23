@@ -14,8 +14,13 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
 
       - name: Shellcheck
         run: |
@@ -43,6 +48,12 @@ jobs:
         run: |
           python3 -m unittest discover -s .github/tests -v
           node --test .github/tests/*.test.mjs
+
+      - name: Browser suites
+        run: |
+          npm ci --prefix .github/tests --ignore-scripts --no-audit --no-fund
+          .github/tests/node_modules/.bin/playwright install --with-deps chromium
+          npm test --prefix .github/tests
 
       - name: No regex in jq
         # jq of entware is built without oniguruma: test, match, capture, sub, gsub, splits and split/2 fail there

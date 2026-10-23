@@ -1,11 +1,11 @@
-// Optional: PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs node .github/tests/native.browser.mjs
+// Run all browser suites: npm test --prefix .github/tests
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const www=new URL('../../asuswrt/opt/share/exodus/www/',import.meta.url);
 const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
 try {
-    const page=await browser.newPage(), errors=[], responses=new Map(), available={};
+    const page=await browser.newPage(), errors=[], responses=new Map(), pending=new Map(), available={};
     let premature=0, submitted=0, waited=0;
     page.on('pageerror',e=>errors.push(e.message));
     page.on('console',m=>{if(/error|warning/.test(m.type())) errors.push(m.text());});
@@ -26,16 +26,20 @@ try {
             const id=packet?.id || script.split('_settings_')[1];
             const body=packet?{content:'dns:\n  enable: true\n'}:{foreign:'keep me'};
             submitted++;
-            // Native execution is deliberately slower than the first browser poll.
-            setTimeout(()=>{
-                responses.set(id,{v:1,id,seq:0,phase:'complete',status:200,body:Buffer.from(JSON.stringify(body)).toString('base64')});
-                available[id]=true;
-            },700);
+            // Publish only after an index poll has observed the missing response.
+            // A wall-clock delay can expire before the first poll on a busy host.
+            pending.set(id,{v:1,id,seq:0,phase:'complete',status:200,body:Buffer.from(JSON.stringify(body)).toString('base64')});
             return route.fulfill({contentType:'text/html',body:'<!doctype html><title>Applied</title>'});
         }
         if(path==='/ext/exodus/responses/index.json') {
             if(Object.keys(available).length<submitted) waited++;
-            return route.fulfill({contentType:'application/json',body:JSON.stringify(available)});
+            await route.fulfill({contentType:'application/json',body:JSON.stringify(available)});
+            for(const [id,response] of pending) {
+                responses.set(id,response);
+                available[id]=true;
+            }
+            pending.clear();
+            return;
         }
         if(path.startsWith('/ext/exodus/responses/')) {
             const response=responses.get(path.split('/').at(-1).replace('.json',''));

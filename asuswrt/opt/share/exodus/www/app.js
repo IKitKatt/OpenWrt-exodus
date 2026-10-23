@@ -257,6 +257,9 @@ const state = {
     timers: [],
     pagePollers: [],
     statusTimer: null,
+    statusFastTimer: null,
+    statusRequest: false,
+    statusGeneration: 0,
     sessionExpired: false,
     editorFile: null
 };
@@ -354,13 +357,44 @@ function statusBadge() {
 }
 
 async function refreshStatus() {
+    if (state.sessionExpired || state.statusRequest) return;
+    const generation = state.statusGeneration;
+    state.statusRequest = true;
+    let status = null;
     try {
-        state.status = await api('status');
+        status = await api('status');
     } catch (e) {
-        state.status = null;
+        // Keep the existing unknown-status behavior on a failed read.
+    } finally {
+        state.statusRequest = false;
     }
+    if (state.sessionExpired || generation !== state.statusGeneration) return;
+    state.status = status;
     renderAboutButton();
     liveViews.forEach((update) => update());
+}
+
+function startStatusPolling() {
+    clearInterval(state.statusTimer);
+    clearTimeout(state.statusFastTimer);
+    state.statusFastTimer = null;
+    state.statusTimer = setInterval(refreshStatus, 5000);
+}
+
+function stopStatusPolling() {
+    clearInterval(state.statusTimer);
+    clearTimeout(state.statusFastTimer);
+    state.statusTimer = null;
+    state.statusFastTimer = null;
+    state.statusGeneration++;
+}
+
+function fastStatusPolling() {
+    if (state.sessionExpired) return;
+    clearInterval(state.statusTimer);
+    clearTimeout(state.statusFastTimer);
+    state.statusTimer = setInterval(refreshStatus, 1000);
+    state.statusFastTimer = setTimeout(startStatusPolling, 30000);
 }
 
 // ---------- components ----------
@@ -979,11 +1013,12 @@ async function save(apply) {
         }
         return;
     }
-    await run(api('config_set', { config: state.draft, apply: apply }), apply === 'restart' ? _('Settings are saved, the service is restarting.') : _('Settings are saved.'));
-    state.config = clone(state.draft);
+    const submitted = clone(state.draft);
+    await run(api('config_set', { config: submitted, apply: apply }), apply === 'restart' ? _('Settings are saved, the service is restarting.') : _('Settings are saved.'));
+    state.config = submitted;
     updateDirty();
     if (apply === 'restart') {
-        setTimeout(refreshStatus, 3000);
+        fastStatusPolling();
     }
 
 }
@@ -993,7 +1028,7 @@ async function save(apply) {
 async function serviceOp(op) {
     const messages = { start: _('The service is starting.'), stop: _('The service is stopping.'), restart: _('The service is restarting.') };
     await run(api('service', { op: op }), messages[op]);
-    [1500, 4000, 8000].forEach((delay) => setTimeout(refreshStatus, delay));
+    fastStatusPolling();
 }
 
 function openDashboard() {
@@ -1873,7 +1908,7 @@ function pageSettings() {
 }
 
 function hasEditorChanges() {
-    return Object.values(state.editorBuffers || {}).some(buffer => buffer.content !== buffer.saved);
+    return Object.values(state.editorBuffers || {}).some(buffer => buffer.pending || buffer.content !== buffer.saved);
 }
 
 // Native textarea drag scrolling varies by browser and direction. Keep click/keyboard
@@ -1991,7 +2026,7 @@ function pageEditor() {
     text.setAttribute('aria-describedby', status.id);
     editorSelectionScroll(text);
     let editor = null;
-    const setText = value => { text.value = value; editor?.setValue(value); };
+    const setText = value => { if (editor) editor.setValue(value); else text.value = value; };
     let loadedPath = '', requestToken = 0, loading = false, saving = false, fileError = '';
     const isCurrent = () => pageToken === renderToken;
     const sync = () => {
@@ -2003,9 +2038,10 @@ function pageEditor() {
         reloadButton.disabled = !choose.value || loading || saving;
         downloadButton.disabled = !buffer || loading;
         if (fileError) status.textContent = fileError;
-        else if (!loading && !saving && buffer) status.textContent = buffer.content !== buffer.saved ? _('Unsaved changes. This draft stays here while you navigate.') : _('Saved to the router.');
+        else if (!loading && !saving && buffer) status.textContent = buffer.pending || buffer.content !== buffer.saved ? _('Unsaved changes. This draft stays here while you navigate.') : _('Saved to the router.');
     };
     const load = async (reload = false) => {
+        editor?.flush();
         const path = choose.value;
         const token = ++requestToken;
         fileError = '';
@@ -2050,13 +2086,17 @@ function pageEditor() {
     };
     choose.addEventListener('change', () => load());
     const editFile = value => {
-        if (buffers[loadedPath]) buffers[loadedPath].content = value;
+        if (buffers[loadedPath]) {
+            buffers[loadedPath].content = value;
+            buffers[loadedPath].pending = false;
+        }
         fileError = '';
         sync();
     };
     text.addEventListener('input', () => editFile(text.value));
     const saveFile = async (restart) => {
         if (!loadedPath || !buffers[loadedPath] || loading || saving) return;
+        editor?.flush();
         const path = loadedPath, content = buffers[path].content;
         saving = true;
         fileError = '';
@@ -2083,12 +2123,13 @@ function pageEditor() {
     state.saveEditor = () => saveFile(false);
     const restartButton = btn(_('Save & Restart'), { disabled: true, onClick: () => saveFile(true) });
     const reloadButton = btn(_('Reload'), { variant: 'outline', icon: 'refresh-cw', disabled: true, onClick: async () => {
+        editor?.flush();
         const buffer = buffers[choose.value];
         if (buffer && buffer.content !== buffer.saved && !await confirmDialog(_('Discard this file draft?'), _('Reloading replaces your unsaved edits with the file on the router.'), { confirm: _('Reload'), destructive: true })) return;
         await load(true);
         setTimeout(sync, 0);
     } });
-    const downloadButton = btn(_('Download'), { variant: 'ghost', icon: 'download', disabled: true, onClick: () => download(loadedPath.split('/').pop(), buffers[loadedPath].content) });
+    const downloadButton = btn(_('Download'), { variant: 'ghost', icon: 'download', disabled: true, onClick: () => { editor?.flush(); download(loadedPath.split('/').pop(), buffers[loadedPath].content); } });
     const wrap = E('input', { type: 'checkbox', class: 'checkbox', checked: !!state.editorWrap });
     text.wrap = wrap.checked ? 'soft' : 'off';
     wrap.addEventListener('change', () => {
@@ -2102,6 +2143,11 @@ function pageEditor() {
         if (!isCurrent() || !text.isConnected) return;
         // Read the current textarea, not the file content from before the download.
         editor = bundle.mount(text, {value: buffers[loadedPath]?.content ?? text.value, onChange: editFile,
+            onEdit: () => {
+                if (buffers[loadedPath]) buffers[loadedPath].pending = true;
+                fileError = '';
+                sync();
+            },
             label: _('File contents'), description: status.id, phrases: lang === 'ru' ? {
             'Find': 'Найти', 'Replace': 'Заменить', 'next': 'далее', 'previous': 'назад',
             'all': 'все', 'replace': 'заменить', 'replace all': 'заменить всё',
@@ -2710,7 +2756,7 @@ async function start() {
     state.hosts = null;
     await render();
     if (state.config && !state.statusTimer) {
-        state.statusTimer = setInterval(refreshStatus, 5000);
+        startStatusPolling();
         refreshStatus();
         checkUpdates();
     }
@@ -2766,8 +2812,7 @@ window.addEventListener('exodus-session-expired', () => {
     state.sessionExpired = true;
     state.timers.forEach(clearInterval);
     state.timers = [];
-    clearInterval(state.statusTimer);
-    state.statusTimer = null;
+    stopStatusPolling();
     const banner = document.getElementById('session-warning');
     banner.hidden = false;
     append(clear(banner), [
@@ -2775,7 +2820,7 @@ window.addEventListener('exodus-session-expired', () => {
         E('a', {href:'/Main_Login.asp', target:'_blank', rel:'noopener', class:'btn btn-outline'}, _('Sign in to Web Admin')),
         btn(_('Continue after signing in'), {onClick: () => {
             window.ExodusMerlin.resume(); state.sessionExpired = false; banner.hidden = true;
-            state.statusTimer = setInterval(refreshStatus, 5000); refreshStatus();
+            startStatusPolling(); refreshStatus();
             for (const poll of state.pagePollers) {
                 state.timers.push(setInterval(poll, 5000));
                 poll();
@@ -2783,7 +2828,10 @@ window.addEventListener('exodus-session-expired', () => {
         }})
     ]);
 });
-window.addEventListener('pagehide', () => window.ExodusMerlin.dispose());
+window.addEventListener('pagehide', () => {
+    stopStatusPolling();
+    window.ExodusMerlin.dispose();
+});
 
 start();
 
