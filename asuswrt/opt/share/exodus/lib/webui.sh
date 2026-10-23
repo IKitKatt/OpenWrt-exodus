@@ -186,26 +186,33 @@ webui_cache_cancel_tree() {
 }
 
 webui_cache_start() (
-	lock_acquire webui-cache 10 || exit 1
+	# A concurrent health recovery may still be preparing local views. Give it
+	# the normal lock wait, not the one second used for a quick PID handshake.
+	lock_acquire webui-cache || { echo 'Exodus WebUI: cache lifecycle is busy (start)' >&2; exit 1; }
 	trap 'lock_release webui-cache' EXIT
 	webui_cache_alive && exit 0
 	. "$LIB_DIR/api.sh"
 	. "$LIB_DIR/webui-api.sh"
 	# Refresh local state after installation/update even if old RAM caches remain.
-	webui_cache_views_refresh || exit 1
-	webui_cache_refresh || exit 1
+	webui_cache_views_refresh || { echo 'Exodus WebUI: initial views refresh failed' >&2; exit 1; }
+	webui_cache_refresh || { echo 'Exodus WebUI: initial status/log refresh failed' >&2; exit 1; }
 	# A separate CLI process owns this loop, independently of proxy stop.
-	daemonize /bin/sh -c 'exec "$1" web cache >> "$2" 2>&1' sh "$EXODUS" "$WEB_LOG_PATH"
+	daemonize /bin/sh -c 'exec "$1" web cache >> "$2" 2>&1' sh "$EXODUS" "$WEB_LOG_PATH" ||
+		{ echo 'Exodus WebUI: could not launch cache worker' >&2; exit 1; }
 	# Keep the start lock until the child advertises its PID.
 	local i=0
 	while [ "$i" -lt 5 ]; do
 		webui_cache_alive && exit 0
 		i=$((i + 1)); sleep 1
 	done
+	echo 'Exodus WebUI: cache worker did not advertise its PID in time' >&2
 	exit 1
 )
 
-webui_cache_stop() {
+webui_cache_stop() (
+	# Do not return while an earlier start can still create a new worker.
+	lock_acquire webui-cache || { echo 'Exodus WebUI: cache lifecycle is busy (stop)' >&2; exit 1; }
+	trap 'lock_release webui-cache' EXIT
 	local pid file role i dir
 	for role in cache updates; do
 		if [ "$role" = cache ]; then file="$WEBUI_DIR/cache.pid"; else file="$WEBUI_DIR/update.pid"; fi
@@ -232,4 +239,4 @@ webui_cache_stop() {
 		fi
 		rm -f "$file"
 	done
-}
+)
