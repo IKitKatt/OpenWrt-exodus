@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import json
 import os
 import time
@@ -6,6 +7,85 @@ from shell_support import ShellCase
 
 
 class BridgeTests(ShellCase):
+    def test_service_wrapper_publishes_actual_completion_even_on_failure(self):
+        cli = self.share/'exodus'
+        source = cli.read_text()
+        cache = self.ram/'run/webui/cache'
+        for code in (0, 7):
+            with self.subTest(exit_status=code):
+                (cache/'status.json').unlink(missing_ok=True)
+                cli.write_text(source.replace('start) start ;;',
+                    'start) [ ! -f "$WEBUI_DIR/cache/status.json" ] || exit 99; '
+                    f'sleep 0.1; touch "$STARTED_FLAG_PATH"; exit {code} ;;'))
+                result = self.sh('"$EXODUS" web service start', check=False)
+                self.assertEqual(result.returncode, code)
+                status = json.loads(base64.b64decode(json.loads((cache/'status.json').read_text())['body']))
+                self.assertTrue(status['started'])
+                self.assertFalse(status['running'])
+                self.assertEqual(sorted(p.name for p in cache.iterdir()), ['status.json'])
+        before = (cache/'status.json').read_bytes()
+        for operation in ('debug', 'start extra', ''):
+            result = self.sh(f'"$EXODUS" web service {operation}', check=False)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual((cache/'status.json').read_bytes(), before)
+
+    def test_status_only_publication_does_not_acquire_full_view_lock(self):
+        self.sh('lock_acquire() { return 1; }; webui_cache_status_refresh', ('api', 'webui-api'))
+        cache = self.ram/'run/webui/cache'
+        self.assertEqual(sorted(p.name for p in cache.iterdir()), ['status.json'])
+
+    def test_mutations_refresh_only_affected_cache_actions(self):
+        api = self.share/'lib/api.sh'
+        api.write_text(api.read_text().replace('action=$(arg action)',
+            '''action=$(arg action)
+	jq -c '[.action,.name // ""]' "$req" >> "$EXODUS_TMP/api-trace"'''))
+        trace = self.ram/'api-trace'
+        config = json.loads((self.home/'config.json').read_text())
+        cases = [
+            (dict(action='log_clear', name='app'), [['log_read', 'app']]),
+            (dict(action='config_set', config=config), [['load', '']]),
+            (dict(action='profile_upload', name='local.yaml', content='mode: rule\n'), [['load', ''], ['files', '']]),
+            (dict(action='profile_delete', name='local.yaml'), [['load', ''], ['files', '']]),
+            (dict(action='config_set', config={}), []),
+            (dict(action='log_clear', name='../bad'), []),
+        ]
+        for index, (request, expected) in enumerate(cases):
+            with self.subTest(action=request):
+                trace.write_text('')
+                for packet in self.packets(request, f'{index+1:032x}'):
+                    response = self.accept(packet)
+                self.assertEqual(response['phase'], 'complete')
+                calls = [json.loads(line) for line in trace.read_text().splitlines()]
+                self.assertEqual(calls[1:], expected)
+
+    def test_log_revisions_match_published_bodies_and_detect_rewrites(self):
+        path = self.ram/'log/app.log'
+        path.write_text('first\n')
+        self.sh('webui_cache_refresh', ('api', 'webui-api'))
+        cache = self.ram/'run/webui/cache'
+        def revision():
+            envelope = json.loads((cache/'log-app.json').read_text())
+            beat = json.loads((cache/'heartbeat.json').read_text())
+            self.assertEqual(beat['logs']['log-app'], envelope['revision'])
+            body = base64.b64decode(envelope['body'])
+            self.assertEqual(envelope['revision'], hashlib.sha256(body).hexdigest())
+            return envelope['revision']
+        first = revision()
+        stamp = path.stat()
+        path.write_text('other\n')
+        os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+        self.sh('webui_cache_refresh', ('api', 'webui-api'))
+        self.assertNotEqual(revision(), first)
+        self.assertEqual(self.read_log_cache('app'), 'other\n')
+        heartbeat = cache/'heartbeat.json'
+        beat = json.loads(heartbeat.read_text()); beat['generated'] = 1
+        heartbeat.write_text(json.dumps(beat))
+        self.accept(self.packets(dict(action='log_clear', name='app'))[0])
+        self.assertEqual(json.loads(heartbeat.read_text())['generated'], 1,
+                         'targeted publication must not hide a stalled periodic worker')
+        self.assertNotEqual(revision(), first)
+        self.assertEqual(self.read_log_cache('app'), '')
+
     def test_web_log_is_bounded_with_proxy_stopped_and_respects_zero_limit(self):
         path=self.ram/'log/web.log';path.write_text('error\n'*200000)
         self.sh('webui_log_limit',('webui-api',))
@@ -51,6 +131,14 @@ class BridgeTests(ShellCase):
         body=json.loads(path.read_text())['body']
         self.assertTrue(body)
         self.assertIsInstance(json.loads(base64.b64decode(body)),dict)
+
+    def test_legacy_log_cache_gains_revision_without_content_changes(self):
+        self.sh('webui_cache_refresh', ('api', 'webui-api'))
+        path = self.ram/'run/webui/cache/log-app.json'
+        envelope = json.loads(path.read_text()); del envelope['revision']
+        path.write_text(json.dumps(envelope))
+        self.sh('webui_cache_refresh', ('api', 'webui-api'))
+        self.assertTrue(json.loads(path.read_text())['revision'])
 
     def read_log_cache(self, name):
         path = self.ram / f'run/webui/cache/log-{name}.json'
@@ -140,9 +228,17 @@ class BridgeTests(ShellCase):
         self.sh('webui_cache_refresh',('api','webui-api'))
         path=self.ram/'run/webui/cache/log-update.json'
         self.assertTrue(json.loads(base64.b64decode(json.loads(path.read_text())['body']))['running'])
+        first_revision = json.loads(path.read_text())['revision']
         pid.unlink()
         self.sh('webui_cache_refresh',('api','webui-api'))
         self.assertFalse(json.loads(base64.b64decode(json.loads(path.read_text())['body']))['running'])
+        stopped_revision = json.loads(path.read_text())['revision']
+        self.assertNotEqual(first_revision, stopped_revision)
+        (self.ram/'run/update.id').write_text('next-update')
+        self.sh('webui_cache_refresh', ('api', 'webui-api'))
+        self.assertNotEqual(json.loads(path.read_text())['revision'], stopped_revision)
+        beat = json.loads((path.parent/'heartbeat.json').read_text())
+        self.assertEqual(beat['logs']['log-update'], json.loads(path.read_text())['revision'])
 
     def test_response_index_announces_published_files_and_preserves_other_tabs(self):
         body=self.root/'body.json'; body.write_text('{}')
@@ -343,10 +439,12 @@ webui_event restart exodus_ui_settings_{ident}''',('webui-api',))
     def test_cache_refresh_has_no_jffs_writes(self):
         settings = self.jffs / 'addons/custom_settings.txt'
         settings.write_text('other untouched\n')
+        before_jffs = {str(path): path.read_bytes() for path in self.jffs.rglob('*') if path.is_file()}
         self.sh('webui_cache_refresh', ('api', 'webui-api'))
         log = self.ram / 'run/webui/cache/log-app.json'
         before = log.stat().st_mtime_ns
         self.sh('webui_cache_refresh', ('api', 'webui-api'))
         self.assertEqual(log.stat().st_mtime_ns, before)
         self.assertEqual(settings.read_text(), 'other untouched\n')
+        self.assertEqual({str(path): path.read_bytes() for path in self.jffs.rglob('*') if path.is_file()}, before_jffs)
         self.assertEqual(json.loads((log.parent / 'status.json').read_text())['key'], 'status')

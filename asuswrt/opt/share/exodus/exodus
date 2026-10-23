@@ -388,6 +388,16 @@ web() {
         status) if webui_status; then echo "registered: $(webui_url)"; else echo 'not registered'; return 1; fi ;;
         url) webui_url ;;
         event) . "$LIB_DIR/webui-api.sh"; webui_event "$2" "$3" ;;
+        service)
+            [ "$#" -eq 2 ] || return 1
+            case "$2" in start|stop|restart|hard_update|sync) ;; *) return 1 ;; esac
+            local result
+            "$EXODUS" "$2"
+            result=$?
+            . "$LIB_DIR/api.sh"
+            . "$LIB_DIR/webui-api.sh"
+            webui_cache_status_refresh
+            return "$result" ;;
         updates) . "$LIB_DIR/api.sh"; . "$LIB_DIR/webui-api.sh"; webui_updates_refresh ;;
         cache)
             lock_acquire webui-cache-loop 10 || return 1

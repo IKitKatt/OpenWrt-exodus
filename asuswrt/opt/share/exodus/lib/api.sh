@@ -135,18 +135,18 @@ action_config_set() {
 	lock_release config
 	apply=$(arg apply)
 	case "$apply" in
-		restart) daemonize "$EXODUS" restart ;;
+		restart) daemonize "$EXODUS" web service restart ;;
 	esac
 	echo '{"success": true}' | ok
 }
 
 action_service() {
 	case "$(arg op)" in
-		start) daemonize "$EXODUS" start ;;
-		stop) daemonize "$EXODUS" stop ;;
-		restart) daemonize "$EXODUS" restart ;;
-		hard_update) daemonize "$EXODUS" hard_update ;;
-		sync) daemonize "$EXODUS" sync ;;
+		start) daemonize "$EXODUS" web service start ;;
+		stop) daemonize "$EXODUS" web service stop ;;
+		restart) daemonize "$EXODUS" web service restart ;;
+		hard_update) daemonize "$EXODUS" web service hard_update ;;
+		sync) daemonize "$EXODUS" web service sync ;;
 		*) fail "400 Bad Request" "unknown operation" ;;
 	esac
 	echo '{"success": true}' | ok
