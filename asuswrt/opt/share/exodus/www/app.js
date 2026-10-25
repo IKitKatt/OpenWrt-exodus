@@ -1062,7 +1062,7 @@ function expireText(st) {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
-const CORE_TITLES = { meta: 'Mihomo Meta', alpha: 'Mihomo Alpha', prizrak: 'Prizrak-Core' };
+const CORE_TITLES = { prizrak: 'Prizrak-Core', meta: 'Mihomo Meta', alpha: 'Mihomo Alpha' };
 
 function profileTitle(profile) {
     if (!profile) {
@@ -1348,9 +1348,8 @@ function subscriptionDialog(subscription, onSave) {
         field(_('Name'), input(objRef(draft, 'name'), { empty: '' }), _('Replaced with the title of the provider when it sends one.')),
         field(_('URL'), input(objRef(draft, 'url'), { empty: '', placeholder: 'https://' })),
         field(_('Info URL'), input(objRef(draft, 'info_url'), { empty: '', placeholder: _('Optional') }), _('Only when traffic and expiry come from another address.')),
-        field(_('User agent'), input(objRef(draft, 'user_agent'), { empty: '', values: ['Mihomo/Exodus v{version}', 'clash.meta', 'mihomo', 'clash'] }), _('<code>{version}</code> is replaced with the version of Exodus.')),
-        // from 1.29.0 the user agent of exodus, {platform} is the os of the router:
-        // field(_('User agent'), input(objRef(draft, 'user_agent'), { empty: '', values: ['Exodus/{version} {platform}', 'clash.meta', 'mihomo', 'clash'] }), _('<code>{version}</code> is replaced with the version of Exodus, <code>{platform}</code> with the OS of the router.')),
+        // the user agent of exodus, the previous one stays for providers whose response rules do not know exodus yet
+        field(_('User agent'), input(objRef(draft, 'user_agent'), { empty: '', values: ['Exodus/{version} {platform}', 'Mihomo/Exodus v{version}', 'clash.meta', 'mihomo', 'clash'] }), _('<code>{version}</code> is replaced with the version of Exodus, <code>{platform}</code> with the OS of the router. When the provider does not give the subscription to <code>Exodus/{version} {platform}</code>, <code>Mihomo/Exodus v{version}</code> is tried.')),
         field(_('Update interval, hours'), input(objRef(draft, 'update_interval'), { number: true, type: 'uinteger',
             placeholder: st.interval ? _('Automatically: every %s h, as the provider says', st.interval) : _('Automatically: as the provider says, otherwise every hour') }),
             _('Empty: the interval of the provider (profile-update-interval), otherwise every hour. 0: only by the Update button. The running core gets a changed subscription without a restart.')),
@@ -1466,8 +1465,7 @@ function pageProfiles() {
     const subscriptionsCard = card({
         title: _('Subscriptions'),
         action: btn(_('Add'), { variant: 'outline', size: 'sm', icon: 'plus', onClick: () => subscriptionDialog(
-            // from 1.29.0: user_agent: 'Exodus/{version} {platform}'
-            { id: newId(), name: '', url: '', info_url: '', user_agent: 'Mihomo/Exodus v{version}', send_hwid: true, update_interval: null },
+            { id: newId(), name: '', url: '', info_url: '', user_agent: 'Exodus/{version} {platform}', send_hwid: true, update_interval: null },
             (created) => {
                 state.draft.subscriptions = (state.draft.subscriptions || []).concat([created]);
                 renderSubscriptions();
@@ -2305,14 +2303,18 @@ function pageUpdates() {
     const pageToken = renderToken;
     const container = E('div', { class: 'contents' });
     const lowSpace = { value: null };
+    // another core is installed by the update: the latest build of it, the next updates follow it
+    const core = { value: null };
+    const currentCore = () => (state.update && CORE_TITLES[state.update.core_type] ? state.update.core_type : 'meta');
+    const coreChanged = () => core.value != null && core.value !== currentCore();
     const logStatus = E('p', { class: 'log-status', role: 'status', id: nextId() }, _('Loading log…'));
     const logView = E('textarea', { class: 'textarea', 'aria-label': _('Update log'), 'aria-describedby': logStatus.id, placeholder: _('Loading log…'), rows: 10, wrap: 'off', readonly: true, spellcheck: 'false' });
     let logLoaded = false, logPending = false, launching = false, running = !!state.updateRunning, expectedRunId = null, updateButton, notified = false;
     const activity = E('p', { class: 'log-status', role: 'status' });
     const syncActivity = () => {
         if (updateButton) {
-            updateButton.disabled = running || !updateAvailable(state.update);
-            updateButton.querySelector('span').textContent = running ? _('Updating…') : _('Update');
+            updateButton.disabled = running || (!updateAvailable(state.update) && !coreChanged());
+            updateButton.querySelector('span').textContent = running ? _('Updating…') : (coreChanged() ? _('Change core') : _('Update'));
             updateButton.setAttribute('aria-busy', String(running));
             updateButton.classList.toggle('loading', running);
             updateButton.querySelector('.refresh-icon')?.classList.toggle('spin', running);
@@ -2404,11 +2406,18 @@ function pageUpdates() {
         if (lowSpace.value === null) {
             lowSpace.value = info.free_space != null && info.core_size != null && info.free_space < info.core_size * 1.2;
         }
+        if (core.value === null) {
+            core.value = currentCore();
+        }
         updateButton = btn(running ? _('Updating…') : _('Update'), { icon: 'download', disabled: !available, onClick: async () => {
-            const message = lowSpace.value
+            const changing = coreChanged();
+            let message = lowSpace.value
                 ? _('The current core is removed before the new one is installed. If the update fails, the proxy does not work until the update is done again.')
                 : _('The proxy restarts during the update.');
-            if (!await confirmDialog(_('Update now?'), message, { confirm: _('Update') })) {
+            if (changing) {
+                message = `${_('%s is installed instead of %s.', CORE_TITLES[core.value], CORE_TITLES[currentCore()])} ${message}`;
+            }
+            if (!await confirmDialog(changing ? _('Change the core?') : _('Update now?'), message, { confirm: changing ? _('Change core') : _('Update') })) {
                 return;
             }
             launching = true;
@@ -2416,7 +2425,7 @@ function pageUpdates() {
             activity.textContent = _('Starting update…');
             syncActivity();
             try {
-                const result = await run(api('update', { low_space: lowSpace.value }));
+                const result = await run(api('update', { low_space: lowSpace.value, core: changing ? core.value : '' }));
                 expectedRunId = result.id;
                 launching = false;
                 notified = false;
@@ -2438,7 +2447,7 @@ function pageUpdates() {
             info: [
                 _('Exodus and the core are downloaded from GitHub into Entware. Settings, profiles and subscriptions are kept.'),
                 _('Exodus has the version of the releases of the project, the same on every router. An update is offered when the code of its branch changes, a change of the readme does not count. The core is compared by its version.'),
-                _('The core and the gh-proxy chosen in the installer are kept, run the installer again to change them.'),
+                _('The gh-proxy chosen in the installer is kept, run the installer again to change it.'),
                 _('GitHub is asked at most every 6 hours, Check again asks now.')
             ],
             action: btn(info.checking ? _('Checking…') : _('Check again'), { busy: !!info.checking, disabled: !!info.checking, variant: 'outline', size: 'sm', icon: 'refresh-cw', onClick: async () => {
@@ -2447,6 +2456,8 @@ function pageUpdates() {
             content: [
                 components,
                 environment,
+                field(_('Core'), select({ get: () => core.value, set: (value) => { core.value = value; syncActivity(); } }, Object.keys(CORE_TITLES).map((type) => [type, CORE_TITLES[type]])),
+                    _('Choose another core and press Change core to install its latest build, settings and profiles are kept. The updates follow the chosen core.')),
                 switchField(_('Low flash space mode'), _('Remove the current core before installing the new one, when the update fails for lack of space. The proxy does not work until the new core is installed.'), objRef(lowSpace, 'value'), null, true)
             ],
             footer: E('div', { class: 'row end', style: { width: '100%' } }, updateButton)
