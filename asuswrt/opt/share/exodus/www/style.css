@@ -391,11 +391,10 @@
 #exodus-root .build-tile-value { margin-top: 6px; overflow-wrap: anywhere; }
 #exodus-root .logo-tile svg, #exodus-root .badge-logo { width: 24px; height: 24px; }
 #exodus-root .toaster { position: fixed; inset-inline-end: 24px; bottom: 24px; z-index: 10001; width: min(420px, calc(100vw - 48px)); display: flex; flex-direction: column; gap: 12px; }
-#exodus-root .toast { display: flex; align-items: flex-start; gap: 12px; padding: 16px; border-radius: 12px; background: var(--surface-subtle); color: var(--text); box-shadow: 0 6px 24px rgb(0 0 0 / 34%); overflow-wrap: anywhere; }
-#exodus-root .toast > svg { margin-top: 3px; }
+#exodus-root .toast { display: flex; align-items: center; gap: 12px; padding: 16px; border-radius: 12px; background: var(--surface-subtle); color: var(--text); box-shadow: 0 6px 24px rgb(0 0 0 / 34%); overflow-wrap: anywhere; }
 #exodus-root .toast > div { min-width: 0; }
 #exodus-root .toast-error { background: var(--danger-soft); color: var(--danger); }
-#exodus-root .toast .btn { margin-inline-start: auto; margin-top: -4px; color: inherit; flex-shrink: 0; }
+#exodus-root .toast .btn { margin-inline-start: auto; color: inherit; flex-shrink: 0; }
 #exodus-root .savebar { position: sticky; top: 8px; z-index: 30; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 20px; padding: 12px 16px; color: var(--accent-hover); background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: var(--radius); box-shadow: 0 4px 12px rgb(0 0 0 / 20%); }
 #exodus-root .savebar-text { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; font-weight: 600; }
 
