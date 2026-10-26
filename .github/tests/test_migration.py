@@ -83,9 +83,10 @@ esac''')
         result=self.install()
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         self.assertLess(result.stdout.index('yq is already installed and working.'),
-                        result.stdout.index('3/6'))
-        self.assertEqual(result.stdout.strip().splitlines()[-1].strip(),'[ OK ] Installation complete.')
-        self.assertNotIn('\nsuccess\n',result.stdout)
+                        result.stdout.index('Download source and select core'))
+        lines=[line.strip() for line in result.stdout.strip().splitlines()]
+        self.assertEqual(lines[-1],'success')
+        self.assertEqual(lines.count('success'),1)
 
     def test_yq_download_failure_keeps_old_code_and_binary(self):
         self.bundle()
@@ -165,7 +166,7 @@ esac''')
         self.assertIn('native WebUI registration failed',result.stdout)
         self.assertEqual(yq.read_bytes(),previous)
         self.assertLess(result.stdout.index('Downloading and validating yq...'),
-                        result.stdout.index('3/6'))
+                        result.stdout.index('Download source and select core'))
 
     def test_foreign_mihomo_requires_confirmation_before_dependencies(self):
         self.foreign_mihomo()
@@ -180,7 +181,7 @@ esac''')
         self.foreign_mihomo();self.bundle();self.env['ALLOW_RUNNING_MIHOMO']='1'
         result=self.install()
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-        self.assertEqual(result.stdout.strip().splitlines()[-1].strip(),'[ OK ] Installation complete.')
+        self.assertEqual(result.stdout.strip().splitlines()[-1].strip(),'success')
         self.assertNotIn('\x1b',result.stdout)
 
     def test_owned_mihomo_resolves_entware_symlinks_before_warning(self):
@@ -228,7 +229,7 @@ esac''')
                 status,output=self.install_at_terminal([answer])
                 self.assertNotEqual(status,0,output)
                 self.assertIn('cancelled',output)
-                self.assertIn('\x1b[93m',output)
+                self.assertIn('\x1b[1;33m',output)
                 self.assertFalse((self.jffs/'opkg.calls').exists())
                 self.assertFalse((self.jffs/'curl.calls').exists())
 
@@ -237,9 +238,9 @@ esac''')
         status,output=self.install_at_terminal(['maybe','Да'])
         self.assertEqual(status,0,output)
         self.assertIn('Enter Yes / Да',output)
-        self.assertLess(output.index('[WARN]'),output.index('Dependencies and architecture'))
+        self.assertLess(output.index('warning:'),output.index('Dependencies and architecture'))
         last=re.sub(r'\x1b\[[0-9;]*m','',output.strip().splitlines()[-1]).strip()
-        self.assertEqual(last,'[ OK ] Installation complete.')
+        self.assertEqual(last,'success')
         self.assertTrue((self.jffs/'opkg.calls').exists())
 
     def test_native_health_event_restarts_dead_cache_without_proxy_or_jffs_changes(self):
@@ -887,7 +888,7 @@ touch "$EXODUS_JFFS/curl-finished"''')
         self.assertNotEqual(result.returncode,0)
         self.assertNotIn('\nsuccess\n',result.stdout)
         self.assertEqual((self.home/'config.json').read_bytes(),before)
-        self.assertNotIn('[ OK ] Installation complete.',result.stdout)
+        self.assertNotEqual(result.stdout.strip().splitlines()[-1].strip(),'success')
         self.assertTrue((self.share/'BUILD').read_text().startswith('{"code":"fixture"}'))
 
     def test_staging_failure_keeps_previous_webui_running(self):

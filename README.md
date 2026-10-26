@@ -41,14 +41,14 @@ curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/i
 
 | Variable | Meaning |
 | --- | --- |
-| `CORE` | `meta` (stable Mihomo), `alpha` (Mihomo Alpha) or `prizrak` ([Prizrak-Core](https://github.com/legiz-ru/Prizrak-Core)), asked otherwise |
+| `CORE` | `prizrak` ([Prizrak-Core](https://github.com/legiz-ru/Prizrak-Core)), `meta` (stable Mihomo) or `alpha` (Mihomo Alpha), asked otherwise |
 | `GH_PROXY` | download from GitHub through [gh-proxy](https://github.com/prettyleaf/gh-proxy): `https://example.com/ghproxy/TOKEN` |
 | `LOW_SPACE=1` | remove the current core before writing the new one |
 | `REF` | another branch or tag |
 
 ### Versions
 
-Exodus has one version for all routers, the version of the [releases](https://github.com/prettyleaf/openwrt-exodus/releases) of the project: it is in `/opt/share/exodus/VERSION`, on the **Updates** page and in the build info. The **Updates** page offers an update when the code of the `asuswrt` branch changes, a change of the readme does not count.
+Exodus has one version for all routers, the version of the [releases](https://github.com/prettyleaf/openwrt-exodus/releases) of the project: it is in `/opt/share/exodus/VERSION`, on the **Updates** page and in the build info. The **Updates** page offers an update when the code of the `asuswrt` branch changes, a change of the readme does not count. The core is changed there too: choose Prizrak-Core, Mihomo Meta or Mihomo Alpha and press **Change core**, its latest build is installed and the next updates follow it.
 
 ## Migrating from Another Proxy
 

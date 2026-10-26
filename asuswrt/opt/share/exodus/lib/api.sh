@@ -507,11 +507,17 @@ action_about() {
 }
 
 action_update() {
-	local low_space build repository ref id
+	local low_space core build repository ref id
 	# Reject before copying the running script or truncating its progress log.
 	update_running && fail "409 Conflict" "an installation is already running; wait for it to finish"
 	low_space=0
 	[ "$(arg low_space)" = "true" ] && low_space=1
+	# another core than the saved one is installed instead of it, empty keeps the saved one
+	core=$(arg core)
+	case "$core" in
+		""|prizrak|meta|alpha) ;;
+		*) fail "400 Bad Request" "unknown core" ;;
+	esac
 	build=$(cat "$BUILD_PATH" 2> /dev/null)
 	repository=$(printf '%s' "$build" | jq -r '.repository // empty' 2> /dev/null)
 	[ -n "$repository" ] || repository="$REPOSITORY"
@@ -521,7 +527,7 @@ action_update() {
 	id="$(date +%s)-$$"
 	printf '%s\n' "$id" > "$RUN_TMP/update.id"
 	printf '%s\n' 'Starting update…' > "$UPDATE_LOG_PATH"
-	export LOW_SPACE="$low_space" REPOSITORY="$repository" REF="$ref"
+	export LOW_SPACE="$low_space" CORE="$core" REPOSITORY="$repository" REF="$ref"
 	# Keep a separate supervisor alive across replacement/restart of the installed WebUI.
 	if ! daemonize sh -c '
 		echo "$$" > "$1"

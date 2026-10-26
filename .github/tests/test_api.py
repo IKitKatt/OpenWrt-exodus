@@ -57,6 +57,27 @@ class ApiTests(ShellCase):
         self.assertEqual(info['repository'],'router-owner/Exodus-fork')
         self.assertEqual(info['ref'],'asuswrt-native')
 
+    def test_update_defaults_to_original_repository_and_asuswrt(self):
+        (self.share/'BUILD').unlink(missing_ok=True)
+        (self.share/'install.sh').write_text('#!/bin/sh\nprintf "%s|%s" "$REPOSITORY" "$REF" > "$EXODUS_JFFS/update-source"\n')
+        request=self.root/'request.json'; response=self.root/'response.json'
+        request.write_text('{"action":"update"}')
+        self.sh(f'daemonize() {{ "$@"; }}; api_run "{request}" "{response}"',('api',))
+        self.assertEqual(json.loads(response.read_text())['status'],200)
+        self.assertEqual((self.jffs/'update-source').read_text(),'prettyleaf/openwrt-exodus|asuswrt')
+
+    def test_update_check_defaults_to_original_repository_and_asuswrt(self):
+        (self.share/'BUILD').unlink(missing_ok=True)
+        self.mock('curl','''for arg do
+ case "$arg" in https://*) echo "$arg" >> "$EXODUS_JFFS/curl.calls" ;; esac
+done
+exit 1''')
+        self.assertEqual(self.api('check_update',force=True)['status'],200)
+        urls=(self.jffs/'curl.calls').read_text().splitlines()
+        self.assertEqual(urls,[
+            'https://github.com/prettyleaf/openwrt-exodus/archive/asuswrt.tar.gz',
+            'https://github.com/MetaCubeX/mihomo/releases/latest/download/version.txt'])
+
     def test_update_passes_installed_fork_and_ref_to_installer(self):
         (self.share/'BUILD').write_text(json.dumps({'repository':'router-owner/Exodus-fork','ref':'native-test-tag'}))
         installer=self.share/'install.sh'

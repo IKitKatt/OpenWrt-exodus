@@ -41,14 +41,14 @@ curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/i
 
 | Переменная | Значение |
 | --- | --- |
-| `CORE` | `meta` (стабильный Mihomo), `alpha` (Mihomo Alpha) или `prizrak` ([Prizrak-Core](https://github.com/legiz-ru/Prizrak-Core)), иначе спрашивается |
+| `CORE` | `prizrak` ([Prizrak-Core](https://github.com/legiz-ru/Prizrak-Core)), `meta` (стабильный Mihomo) или `alpha` (Mihomo Alpha), иначе спрашивается |
 | `GH_PROXY` | скачивать с GitHub через [gh-proxy](https://github.com/prettyleaf/gh-proxy): `https://example.com/ghproxy/TOKEN` |
 | `LOW_SPACE=1` | удалить текущее ядро перед записью нового |
 | `REF` | другая ветка или тег |
 
 ### Версии
 
-У Exodus одна версия для всех роутеров — версия [релизов](https://github.com/prettyleaf/openwrt-exodus/releases) проекта: она в `/opt/share/exodus/VERSION`, на странице **«Обновления»** и в информации о сборке. Страница **«Обновления»** предлагает обновление, когда меняется код ветки `asuswrt`, изменения README не считаются.
+У Exodus одна версия для всех роутеров — версия [релизов](https://github.com/prettyleaf/openwrt-exodus/releases) проекта: она в `/opt/share/exodus/VERSION`, на странице **«Обновления»** и в информации о сборке. Страница **«Обновления»** предлагает обновление, когда меняется код ветки `asuswrt`, изменения README не считаются. Там же меняется ядро: выберите Prizrak-Core, Mihomo Meta или Mihomo Alpha и нажмите **«Сменить ядро»** — поставится его последняя сборка, дальше обновляется оно.
 
 ## Переход с другого прокси
 

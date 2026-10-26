@@ -6,7 +6,7 @@
 # REF=<branch|tag>  install another version, the asuswrt branch by default
 # REPOSITORY=<owner/repo> download application files from this fork
 # LOW_SPACE=1       remove the current core before installing the new one, for routers with little free space
-# CORE=<core>       install this core without asking: meta (stable), alpha (Mihomo Alpha) or prizrak (Prizrak-Core)
+# CORE=<core>       install this core without asking: prizrak (Prizrak-Core), meta (stable) or alpha (Mihomo Alpha)
 # ALLOW_RUNNING_MIHOMO=1 confirm a conflicting Mihomo without a terminal (automation only)
 # GH_PROXY=<url>    download from GitHub through gh-proxy (https://github.com/prettyleaf/gh-proxy), e.g. https://example.com/ghproxy/TOKEN, empty to download directly
 # SOURCE_DIR=<dir>  install application files from a local source tree; dependencies still need internet
@@ -35,20 +35,19 @@ have() {
 }
 
 # Keep this entrypoint self-contained: it is also downloaded directly into sh.
-# Logs and the updater stay plain; terminal output follows the Exodus palette.
-ui_reset='' ui_bold='' ui_accent='' ui_info='' ui_ok='' ui_warn='' ui_error='' ui_muted=''
+# Colors only on a terminal, the update page reads the log as plain text; NO_COLOR turns them off.
+c_reset='' c_bold='' c_dim='' c_step='' c_info='' c_ask='' c_warn='' c_error=''
 if [ -t 1 ] && [ "${TERM:-dumb}" != dumb ] && [ "${NO_COLOR+set}" != set ]; then
-	ui_reset='\033[0m'; ui_bold='\033[1m'; ui_accent='\033[96m'
-	ui_info='\033[96m'; ui_ok='\033[92m'; ui_warn='\033[93m'; ui_error='\033[91m'; ui_muted='\033[90m'
+	esc=$(printf '\033')
+	c_reset="${esc}[0m" c_bold="${esc}[1m" c_dim="${esc}[90m" c_step="${esc}[1;34m" c_info="${esc}[1;32m" c_ask="${esc}[1;33m" c_warn="${esc}[1;33m" c_error="${esc}[1;31m"
 fi
-info() { printf '  %b[INFO]%b %s\n' "$ui_info" "$ui_reset" "$1"; }
-warn() { printf '  %b[WARN]%b %s\n' "$ui_warn" "$ui_reset" "$1"; }
-done_message() { printf '  %b[ OK ]%b %s\n' "$ui_ok" "$ui_reset" "$1"; }
-step() { printf '\n%b%s  %s%b\n' "$ui_bold$ui_accent" "$1" "$2" "$ui_reset"; }
-banner() {
-	printf '\n%bExodus%b  /  %s\n' "$ui_bold$ui_accent" "$ui_reset" "$1"
-	printf '%bAsuswrt-Merlin + Entware%b\n\n' "$ui_muted" "$ui_reset"
-}
+# ==> a stage of the install, -> what it does or finds
+step() { printf '%s==>%s %s%s%s\n' "$c_step" "$c_reset" "$c_bold" "$1" "$c_reset"; }
+info() { printf '  %s->%s %s\n' "$c_info" "$c_reset" "$1"; }
+done_message() { info "$1"; }
+note() { printf '    %s%s%s\n' "$c_dim" "$1" "$c_reset"; }
+warn() { printf '%swarning:%s %s\n' "$c_warn" "$c_reset" "$1"; }
+success() { printf '%ssuccess%s\n' "$c_info" "$c_reset"; }
 
 share_dir="$EXODUS_OPT/share/exodus"
 libexec_dir="$EXODUS_OPT/libexec/exodus"
@@ -57,11 +56,10 @@ config="$home_dir/config.json"
 core_path="$libexec_dir/mihomo"
 yq_path="$libexec_dir/yq"
 
-# The update page recognizes the final completion message or an "error:" line.
+# The update page recognizes the final "success" or an "error:" line.
 fail() {
 	rollback
-	[ -z "$ui_error" ] || printf '  %b[FAIL]%b %s\n' "$ui_error" "$ui_reset" "$1"
-	echo "error: $1${rollback_failed:+; recovery files kept in $temp_dir}${core_lost:+; previous core unavailable in LOW_SPACE mode}"
+	printf '%serror:%s %s\n' "$c_error" "$c_reset" "$1${rollback_failed:+; recovery files kept in $temp_dir}${core_lost:+; previous core unavailable in LOW_SPACE mode}"
 	exit 1
 }
 
@@ -123,8 +121,9 @@ interactive() {
 	( exec < /dev/tty ) 2> /dev/null
 }
 
+# :: a question, $1 is the question and $2 the hint of the answer
 ask() {
-	printf '\n%b%s%b' "$ui_bold" "$1" "$ui_reset" > /dev/tty
+	printf '%s::%s %s%s%s %s> ' "$c_ask" "$c_reset" "$c_bold" "$1" "$c_reset" "${2:+[$2] }" > /dev/tty
 	answer=
 	read -r answer < /dev/tty
 }
@@ -138,7 +137,7 @@ confirm_mihomo() {
 	fi
 	interactive || fail 'another Mihomo is running; stop it or set ALLOW_RUNNING_MIHOMO=1 to confirm installation without a terminal'
 	while :; do
-		ask 'Continue installation? / Продолжить установку? [y/N, Да/Нет]: ' || fail 'installation cancelled before dependency checks'
+		ask 'Continue installation? / Продолжить установку?' 'y/N, Да/Нет' || fail 'installation cancelled before dependency checks'
 		case "$answer" in
 			y|Y|yes|Yes|YES|д|Д|да|Да|ДА) done_message 'Installation confirmed.'; return ;;
 			''|n|N|no|No|NO|н|Н|нет|Нет|НЕТ) info 'Installation cancelled. No dependencies were checked or downloaded.'; fail 'installation cancelled before dependency checks' ;;
@@ -199,10 +198,29 @@ core_binary_version() {
 
 core_title() {
 	case "$1" in
+		prizrak) echo "Prizrak-Core" ;;
 		meta) echo "Mihomo Meta" ;;
 		alpha) echo "Mihomo Alpha" ;;
-		prizrak) echo "Prizrak-Core" ;;
 	esac
+}
+
+core_description() {
+	case "$1" in
+		prizrak) echo "mihomo fork by legiz-ru" ;;
+		meta) echo "latest stable release of MetaCubeX/mihomo" ;;
+		alpha) echo "development build of MetaCubeX/mihomo" ;;
+	esac
+}
+
+# the choices of the core, numbered in the order of the list
+core_menu() {
+	local number=0 type
+	for type in prizrak meta alpha; do
+		number=$((number + 1))
+		printf '    %s%s)%s %-14s %s' "$c_bold" "$number" "$c_reset" "$(core_title "$type")" "$(core_description "$type")"
+		[ "$type" = "$current_core" ] && printf '  %s[%s]%s' "$c_info" "$current_core_tag" "$c_reset"
+		printf '\n'
+	done
 }
 
 config_get() {
@@ -322,8 +340,9 @@ merlin_preflight() {
 }
 
 # check env
-banner 'Install & update'
-step '1/6' 'Firmware and running services'
+step 'Exodus for Asuswrt-Merlin installer'
+note 'Asuswrt-Merlin + Entware'
+step 'Firmware and running services'
 merlin_preflight || fail "native WebUI preflight: $MERLIN_PREFLIGHT_ERROR"
 # other transparent proxies intercept the same traffic
 for name in xray sing-box v2ray clash; do
@@ -341,7 +360,7 @@ done
 done_message 'Firmware preflight complete.'
 
 # No dependency probing or downloading happens before Mihomo confirmation.
-step '2/6' 'Dependencies and architecture'
+step 'Dependencies and architecture'
 [ -x "$EXODUS_OPT/bin/opkg" ] || fail 'Entware is not installed: install it with amtm on a USB drive first'
 for tool in iptables iptables-save iptables-restore ipset; do
 	[ -x "/usr/sbin/$tool" ] || have "$tool" || fail "$tool of the firmware is not found"
@@ -496,11 +515,11 @@ if [ "$github_status" != 0 ]; then
 	else
 		warn 'github.com and cdn.jsdelivr.net are unreachable: check router connectivity and DNS.'
 	fi
-	info 'The core and yq are published only in GitHub releases; jsDelivr does not serve them.'
-	info 'Use a gh-proxy server with access to GitHub: https://github.com/prettyleaf/gh-proxy'
+	note 'The core and yq are published only in GitHub releases; jsDelivr does not serve them.'
+	note 'Use a gh-proxy server with access to GitHub: https://github.com/prettyleaf/gh-proxy'
 	interactive || fail "github is unreachable, run the installer with GH_PROXY=https://<gh-proxy address>/<token>, see README"
 	for _ in 1 2 3; do
-		ask "gh-proxy address with the token, e.g. https://example.com/ghproxy/TOKEN (empty to exit): "
+		ask "gh-proxy address with the token" "https://example.com/ghproxy/TOKEN, empty to exit"
 		[ -z "$answer" ] && break
 		case "$answer" in
 			http://*|https://*) ;;
@@ -533,38 +552,38 @@ else
 	done_message 'yq is already installed and working.'
 fi
 done_message 'Dependencies verified.'
-step '3/6' 'Download source and select core'
+step 'Download source and select core'
 
 # choose the core, the current one is saved in the config
 current_core=$(config_get .update.core)
+current_core_tag="current"
 if [ -z "$current_core" ]; then
 	case "$(core_binary_version "$core_path")" in
 		alpha-*) current_core="alpha" ;;
+		"") current_core="meta"; current_core_tag="default" ;;
 		*) current_core="meta" ;;
 	esac
 fi
 core="$CORE"
 if [ -z "$core" ] && interactive; then
-	{
-	printf '\n%bChoose the core%b\n' "$ui_bold$ui_accent" "$ui_reset"
-	printf '  %b1%b  Mihomo Meta    Latest stable release\n' "$ui_accent" "$ui_reset"
-	printf '  %b2%b  Mihomo Alpha   Development build\n' "$ui_accent" "$ui_reset"
-	printf '  %b3%b  Prizrak-Core   Mihomo fork by legiz-ru\n' "$ui_accent" "$ui_reset"
-	printf '\n  Current: %b%s%b\n' "$ui_bold" "$(core_title "$current_core")" "$ui_reset"
-	} > /dev/tty
+	core_menu > /dev/tty
 	while [ -z "$core" ]; do
-		ask "Select [1-3], Enter keeps $(core_title "$current_core"): " || fail 'core selection cancelled'
+		ask "Core" "1-3, Enter keeps $(core_title "$current_core")" || fail 'core selection cancelled'
 		case "$answer" in
 			"") core="$current_core" ;;
-			1|meta) core="meta" ;;
-			2|alpha) core="alpha" ;;
-			3|prizrak) core="prizrak" ;;
+			1|prizrak) core="prizrak" ;;
+			2|meta) core="meta" ;;
+			3|alpha) core="alpha" ;;
 			*) warn 'Choose 1, 2 or 3, or press Enter to keep the current core.' ;;
 		esac
 	done
 fi
 core="${core:-$current_core}"
 case "$core" in
+	prizrak)
+		core_release="https://github.com/legiz-ru/Prizrak-Core/releases/latest/download"
+		core_asset="prizrak-core-linux-$core_arch"
+		;;
 	meta)
 		core_release="https://github.com/MetaCubeX/mihomo/releases/latest/download"
 		core_asset="mihomo-linux-$core_arch"
@@ -573,20 +592,15 @@ case "$core" in
 		core_release="https://github.com/MetaCubeX/mihomo/releases/download/Prerelease-Alpha"
 		core_asset="mihomo-linux-$core_arch"
 		;;
-	prizrak)
-		core_release="https://github.com/legiz-ru/Prizrak-Core/releases/latest/download"
-		core_asset="prizrak-core-linux-$core_arch"
-		;;
-	*) fail "unknown core: $core, use meta, alpha or prizrak" ;;
+	*) fail "unknown core: $core, use prizrak, meta or alpha" ;;
 esac
-info "Selected core: $(core_title "$core")"
 
 # the releases publish their version in version.txt, it is a part of the file names
 core_latest=$(curl -s -f -L -m 30 "$(gh_url "$core_release/version.txt")" 2> /dev/null | head -n 1 | tr -d '\r')
 if ! echo "$core_latest" | grep -q -E '^[A-Za-z0-9._-]+$'; then
 	fail "failed to get the latest version of $(core_title "$core") from $core_release"
 fi
-info "Latest $(core_title "$core"): $core_latest"
+info "$(core_title "$core") $core_latest"
 if [ "$core" = "meta" ]; then
 	# stable releases are in their own tag, the latest redirect does not serve the versioned file names through every gh-proxy
 	core_release="https://github.com/MetaCubeX/mihomo/releases/download/$core_latest"
@@ -650,7 +664,7 @@ for name in firewall-start nat-start unmount services-start service-event; do
 done
 [ ! -f "$EXODUS_OPT/etc/init.d/S99exodus" ] || cp -p "$EXODUS_OPT/etc/init.d/S99exodus" "$temp_dir/backup/S99exodus" || fail "init backup failed"
 # code is replaced, settings and profiles are kept
-step '4/6' 'Install Exodus and migrate settings'
+step 'Install Exodus and migrate settings'
 info 'Preserving existing settings and staging application files...'
 rm -rf "$share_dir.new"
 mkdir -p "$share_dir.new" || fail "can not create $share_dir"
@@ -752,7 +766,7 @@ if [ -n "$staged_yq_path" ]; then
 	done_message 'yq activated.'
 fi
 done_message 'Exodus files, hooks and settings installed.'
-step '5/6' 'Verify Mihomo'
+step 'Verify Mihomo'
 
 # the core
 if [ "$current_core" != "$core" ] || [ "$(core_binary_version "$core_path")" != "$core_latest" ]; then
@@ -770,7 +784,7 @@ fi
 mv -f "$config.new" "$config" || fail "update settings activation failed"
 
 # secrets of the core api and the proxy ports, the hwid
-step '6/6' 'Activate and check services'
+step 'Activate and check services'
 "$share_dir/exodus" init || fail "Exodus initialization failed"
 
 # the web ui and the service run the new code
@@ -788,4 +802,4 @@ web_url=$("$share_dir/exodus" web url) || fail "native WebUI URL unavailable"
 done_message "WebUI: $web_url"
 migration_pending=0
 rm -rf "$share_dir.old"
-done_message 'Installation complete.'
+success

@@ -38,6 +38,11 @@ ensure_config() {
 		cfg_update '.mixin.api_secret = $secret | .mixin.password = $password | .config.hwid = $hwid' \
 			--arg secret "$secret" --arg password "$password" --arg hwid "$hwid"
 	fi
+	# since 1.29.0: subscriptions with the old default user agent get the user agent of exodus
+	# once, the old one stays a choice for providers whose response rules do not know exodus yet
+	if [ "$(cfg_get .config.user_agent_migrated)" != "true" ]; then
+		cfg_update '.subscriptions |= map(if .user_agent == "Mihomo/Exodus v{version}" then .user_agent = "Exodus/{version} {platform}" else . end) | .config.user_agent_migrated = true'
+	fi
 }
 
 core_env() {
