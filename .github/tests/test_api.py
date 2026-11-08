@@ -75,8 +75,65 @@ exit 1''')
         self.assertEqual(self.api('check_update',force=True)['status'],200)
         urls=(self.jffs/'curl.calls').read_text().splitlines()
         self.assertEqual(urls,[
+            'https://github.com/prettyleaf/openwrt-exodus/releases/latest/download/version.txt',
+            'https://github.com/prettyleaf/openwrt-exodus/releases/latest',
+            'https://github.com/MetaCubeX/mihomo/releases/latest/download/version.txt'])
+
+    def set_channel(self, channel):
+        path=self.home/'config.json'
+        config=json.loads(path.read_text())
+        config['update']['channel']=channel
+        path.write_text(json.dumps(config))
+
+    def test_dev_update_check_downloads_the_branch(self):
+        (self.share/'BUILD').unlink(missing_ok=True)
+        self.set_channel('dev')
+        self.mock('curl','''for arg do
+ case "$arg" in https://*) echo "$arg" >> "$EXODUS_JFFS/curl.calls" ;; esac
+done
+exit 1''')
+        info=self.api('check_update',force=True)['data']
+        self.assertEqual(info['channel'],'dev')
+        urls=(self.jffs/'curl.calls').read_text().splitlines()
+        self.assertEqual(urls,[
             'https://github.com/prettyleaf/openwrt-exodus/archive/asuswrt.tar.gz',
             'https://github.com/MetaCubeX/mihomo/releases/latest/download/version.txt'])
+
+    def test_release_update_check_compares_versions(self):
+        (self.share/'BUILD').unlink(missing_ok=True)
+        self.mock('curl','''url=
+for arg do case "$arg" in http*) url="$arg" ;; esac; done
+case "$url" in
+ */openwrt-exodus/releases/latest/download/version.txt) echo "$EXODUS_RELEASE" ;;
+ */version.txt) echo v1.19.15 ;;
+ *) exit 1 ;;
+esac''')
+        (self.share/'VERSION').write_text('1.30.0\n')
+        for release, update in (('v1.31.0', True), ('v1.30.0', False), ('1.29.9', False), ('v1.30.10', True)):
+            with self.subTest(release=release):
+                self.env['EXODUS_RELEASE']=release
+                info=self.api('check_update',force=True)['data']
+                self.assertEqual(info['channel'],'release')
+                self.assertEqual(info['app_latest'],release.lstrip('v'))
+                self.assertIsNone(info['app_latest_commit'])
+                self.assertIs(info['app_update'],update)
+
+    def test_update_channel_is_saved_and_validated(self):
+        self.assertEqual(self.api('update_channel',channel='dev')['status'],200)
+        self.assertEqual(json.loads((self.home/'config.json').read_text())['update']['channel'],'dev')
+        self.assertEqual(self.api('update_channel',channel='nightly')['status'],400)
+        self.assertEqual(json.loads((self.home/'config.json').read_text())['update']['channel'],'dev')
+
+    def test_config_set_keeps_the_update_section(self):
+        self.api('update_channel',channel='dev')
+        config=json.loads((self.home/'config.json').read_text())
+        config['update']={'core':'alpha','gh_proxy':'','channel':'release'}
+        config['config']['start_delay']=5
+        self.assertEqual(self.api('config_set',config=config)['status'],200)
+        saved=json.loads((self.home/'config.json').read_text())
+        self.assertEqual(saved['update']['channel'],'dev')
+        self.assertEqual(saved['update']['core'],'meta')
+        self.assertEqual(saved['config']['start_delay'],5)
 
     def test_update_passes_installed_fork_and_ref_to_installer(self):
         (self.share/'BUILD').write_text(json.dumps({'repository':'router-owner/Exodus-fork','ref':'native-test-tag'}))
@@ -133,8 +190,18 @@ exit 1''')
         self.assertEqual(running.read_text(),'running installer\n')
         self.assertFalse((self.jffs/'launched').exists())
 
+    def test_release_update_check_asks_the_releases_of_the_installed_fork(self):
+        (self.share/'BUILD').write_text(json.dumps({'repository':'router-owner/Exodus-fork','ref':'asuswrt-native'}))
+        self.mock('curl','''for arg do
+ case "$arg" in https://*) echo "$arg" >> "$EXODUS_JFFS/curl.calls" ;; esac
+done
+exit 1''')
+        self.api('check_update',force=True)
+        self.assertIn('https://github.com/router-owner/Exodus-fork/releases/latest/download/version.txt',(self.jffs/'curl.calls').read_text())
+
     def test_update_check_uses_installed_fork_and_separates_cache(self):
         (self.share/'BUILD').write_text(json.dumps({'repository':'router-owner/Exodus-fork','ref':'asuswrt-native'}))
+        self.set_channel('dev')
         archive=self.root/'fork.tar.gz'
         import tarfile
         with tarfile.open(archive,'w:gz') as bundle:
@@ -145,7 +212,7 @@ while [ "$#" -gt 0 ]; do case "$1" in -o) out="$2"; shift ;; http*) url="$1" ;; 
 echo "$url" >> "$EXODUS_JFFS/curl.calls"
 case "$url" in */archive/*.tar.gz) cp "$FIXTURE_ARCHIVE" "$out" ;; */version.txt) echo v1.19.15 ;; *) exit 1 ;; esac''')
         # A cached result for another fork must not conceal this fork's update.
-        self.sh('jq -n --argjson now "$(date +%s)" \'{time:$now,core_type:"meta",ref:"asuswrt-native",repository:"another/fork",app_latest:"old-cache"}\' > "$RUN_TMP/update_check.json"')
+        self.sh('jq -n --argjson now "$(date +%s)" \'{time:$now,channel:"dev",core_type:"meta",ref:"asuswrt-native",repository:"another/fork",app_latest:"old-cache"}\' > "$RUN_TMP/update_check.json"')
         self.api('check_update')
         self.assertTrue((self.jffs/'curl.calls').exists(),'update cache from a different fork was reused')
         self.assertIn('https://github.com/router-owner/Exodus-fork/archive/asuswrt-native.tar.gz',(self.jffs/'curl.calls').read_text())
