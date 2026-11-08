@@ -420,3 +420,11 @@
     #exodus-root :is(.grid-2, .grid-3, .grid-4, .service-grid, .service-workbench, .picker-columns, .build-tiles) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     #exodus-root .align-end { align-items: end; }
 }
+
+/* the updates page: the channel, the core and the low space mode in a row on a wide page, a column on a narrow one */
+#exodus-root .update-controls { grid-template-columns: minmax(0, 1fr); align-items: end; }
+@container (min-width: 640px) {
+    #exodus-root .update-controls { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+/* a switch as the control of a field, as high as a select */
+#exodus-root .control-line { display: flex; align-items: center; min-height: 36px; }

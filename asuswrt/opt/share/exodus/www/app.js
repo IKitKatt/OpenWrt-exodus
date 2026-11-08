@@ -2446,7 +2446,7 @@ function pageUpdates() {
             title: _('Versions'),
             info: [
                 _('Exodus and the core are downloaded from GitHub into Entware. Settings, profiles and subscriptions are kept.'),
-                _('Exodus has the version of the releases of the project, the same on every router. An update is offered when the code of its branch changes, a change of the readme does not count. The core is compared by its version.'),
+                _('Exodus has the version of the releases of the project, the same on every router. On the Release channel an update is offered when a release with a higher version is published, on Dev when the code of its branch changes (a change of the readme does not count). The core is compared by its version.'),
                 _('The gh-proxy chosen in the installer is kept, run the installer again to change it.'),
                 _('GitHub is asked at most every 6 hours, Check again asks now.')
             ],
@@ -2456,9 +2456,12 @@ function pageUpdates() {
             content: [
                 components,
                 environment,
-                field(_('Core'), select({ get: () => core.value, set: (value) => { core.value = value; syncActivity(); } }, Object.keys(CORE_TITLES).map((type) => [type, CORE_TITLES[type]])),
-                    _('Choose another core and press Change core to install its latest build, settings and profiles are kept. The updates follow the chosen core.')),
-                switchField(_('Low flash space mode'), _('Remove the current core before installing the new one, when the update fails for lack of space. The proxy does not work until the new core is installed.'), objRef(lowSpace, 'value'), null, true)
+                // the channel, the core and the low space mode in a row, their explanations in the (i)
+                E('div', { class: 'grid-3 update-controls' }, [
+                    channelField(info, renderVersions),
+                    field(_('Core'), select({ get: () => core.value, set: (value) => { core.value = value; syncActivity(); } }, Object.keys(CORE_TITLES).map((type) => [type, CORE_TITLES[type]])), null, null, [_('Choose another core and press Change core to install its latest build, settings and profiles are kept. The updates follow the chosen core.')]),
+                    field(_('Low flash space mode'), E('div', { class: 'control-line' }, switchControl(objRef(lowSpace, 'value'))), null, null, [_('Remove the current core before installing the new one, when the update fails for lack of space. The proxy does not work until the new core is installed.')])
+                ])
             ],
             footer: E('div', { class: 'row end', style: { width: '100%' } }, updateButton)
         }));
@@ -2495,6 +2498,32 @@ function pageUpdates() {
 }
 
 // ---------- build info ----------
+
+// the channel of the updates of exodus, saved at once: release offers a new release, dev every change of the code of the branch
+function channelField(info, rerender) {
+    const channel = { value: info.channel === 'dev' ? 'dev' : 'release' };
+    const control = segmented({ get: () => channel.value, set: async (value) => {
+        if (value === channel.value) {
+            return;
+        }
+        const previous = channel.value;
+        channel.value = value;
+        try {
+            await run(api('update_channel', { channel: value }));
+        } catch (e) {
+            channel.value = previous;
+            rerender(state.update || info);
+            return;
+        }
+        try {
+            rerender(await run(fetchUpdate(true)));
+        } catch (e) {
+            /* run shows the error, the channel is saved */
+        }
+    } }, [['release', _('Release')], ['dev', 'Dev']]);
+    return field(_('Exodus updates'), control, null, null, [_('Release offers an update when a new release of Exodus is published. Dev offers every change of the code of the branch, it may be unfinished.')]);
+}
+
 
 function newer(current, next) {
     return next != null && (!current || (current !== next && current.replace(/^v/, '') !== next.replace(/^v/, '')));
