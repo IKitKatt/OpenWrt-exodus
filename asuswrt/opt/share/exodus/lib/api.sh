@@ -119,13 +119,15 @@ action_load() {
 
 # the whole config is replaced by the one of the web ui, it keeps the keys it does not know
 action_config_set() {
-	local tmp apply
+	local tmp apply hwid
 	tmp="$CONFIG_PATH.web"
 	if ! jq -e '(.config | type == "object") and (.config.config | type == "object") and (.config.proxy | type == "object") and (.config.mixin | type == "object")' "$req" > /dev/null 2>&1; then
 		fail "400 Bad Request" "invalid config"
 	fi
 	lock_acquire config || fail "503 Service Unavailable" "config is locked"
-	if jq '.config' "$req" > "$tmp" && [ -s "$tmp" ]; then
+	# the hwid is not changed from the web ui, the saved one stays
+	hwid=$(cfg_get .config.hwid)
+	if jq --arg hwid "$hwid" '.config | .config.hwid = $hwid' "$req" > "$tmp" && [ -s "$tmp" ]; then
 		mv -f "$tmp" "$CONFIG_PATH"
 	else
 		rm -f "$tmp"

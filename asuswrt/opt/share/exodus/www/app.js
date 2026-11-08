@@ -1685,11 +1685,11 @@ function hwidCard() {
     const detected = (value) => (value ? E('span', { class: 'mono' }, value) : E('span', { class: 'muted' }, _('not detected')));
     return card({
         title: 'HWID',
-        info: [_('Panels with a device limit tell the router from other devices by these headers.')],
+        info: [_('Panels with a device limit tell the router from other devices by these headers.'), _('Made from the hardware of the router, it stays the same after a reinstall.')],
         content: [
-            field(_('Device ID'), input(ref('config.hwid'), { empty: '', placeholder: hwid.generated || _('Automatic') }),
-                _('Made from the hardware of the router, it stays the same after a reinstall.')),
+            // the hwid is shown, not edited: a changed one would count as another device in the panel
             infoList([
+                [E('span', { class: 'mono' }, 'x-hwid'), detected(headers['x-hwid'] || state.config.config.hwid || hwid.generated)],
                 [E('span', { class: 'mono' }, 'x-device-os'), detected(headers['x-device-os'])],
                 [E('span', { class: 'mono' }, 'x-ver-os'), detected(headers['x-ver-os'])],
                 [E('span', { class: 'mono' }, 'x-device-model'), detected(headers['x-device-model'])]

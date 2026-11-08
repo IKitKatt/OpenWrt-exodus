@@ -139,7 +139,6 @@ window.I18N_RU = {
     "Destination network": "Сеть назначения",
     "Destination port": "Порт назначения",
     "Destinations that never go through the proxy. Local and special networks are here by default.": "Адреса, которые никогда не идут через прокси. По умолчанию здесь локальные и служебные сети.",
-    "Device ID": "Идентификатор устройства",
     "Devices": "Устройства",
     "Direct": "Напрямую",
     "DIRECT goes directly, REJECT blocks (REJECT-DROP silently), or a group of the profile. Hidden groups are not offered.": "DIRECT — напрямую, REJECT — блокировать (REJECT-DROP — молча) или группа из профиля. Скрытые группы не предлагаются.",
