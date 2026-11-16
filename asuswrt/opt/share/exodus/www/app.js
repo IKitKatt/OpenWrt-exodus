@@ -1590,6 +1590,7 @@ function pageProfiles() {
 
 const DASHBOARDS = [
     ['https://github.com/Zephyruso/zashboard/releases/latest/download/dist-cdn-fonts.zip', 'Zashboard'],
+    ['https://github.com/blagodaren/miboard/releases/latest/download/dist.zip', 'MIBoard'],
     ['https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-pages.zip', 'MetaCubeXD'],
     ['https://github.com/MetaCubeX/Yacd-meta/archive/refs/heads/gh-pages.zip', 'YACD']
 ];
