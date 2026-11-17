@@ -613,7 +613,7 @@ current_core_tag="current"
 if [ -z "$current_core" ]; then
 	case "$(core_binary_version "$core_path")" in
 		alpha-*) current_core="alpha" ;;
-		"") current_core="meta"; current_core_tag="default" ;;
+		"") current_core="prizrak"; current_core_tag="default" ;;
 		*) current_core="meta" ;;
 	esac
 fi

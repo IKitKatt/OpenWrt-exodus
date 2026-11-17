@@ -54,7 +54,7 @@
     "gomemlimit": ""
   },
   "update": {
-    "core": "meta",
+    "core": "prizrak",
     "gh_proxy": "",
     "channel": "release"
   },

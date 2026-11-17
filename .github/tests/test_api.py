@@ -77,7 +77,7 @@ exit 1''')
         self.assertEqual(urls,[
             'https://github.com/prettyleaf/openwrt-exodus/releases/latest/download/version.txt',
             'https://github.com/prettyleaf/openwrt-exodus/releases/latest',
-            'https://github.com/MetaCubeX/mihomo/releases/latest/download/version.txt'])
+            'https://github.com/legiz-ru/Prizrak-Core/releases/latest/download/version.txt'])
 
     def set_channel(self, channel):
         path=self.home/'config.json'
@@ -97,7 +97,7 @@ exit 1''')
         urls=(self.jffs/'curl.calls').read_text().splitlines()
         self.assertEqual(urls,[
             'https://github.com/prettyleaf/openwrt-exodus/archive/asuswrt.tar.gz',
-            'https://github.com/MetaCubeX/mihomo/releases/latest/download/version.txt'])
+            'https://github.com/legiz-ru/Prizrak-Core/releases/latest/download/version.txt'])
 
     def test_release_update_check_compares_versions(self):
         (self.share/'BUILD').unlink(missing_ok=True)
@@ -132,7 +132,7 @@ esac''')
         self.assertEqual(self.api('config_set',config=config)['status'],200)
         saved=json.loads((self.home/'config.json').read_text())
         self.assertEqual(saved['update']['channel'],'dev')
-        self.assertEqual(saved['update']['core'],'meta')
+        self.assertEqual(saved['update']['core'],'prizrak')
         self.assertEqual(saved['config']['start_delay'],5)
 
     def test_update_passes_installed_fork_and_ref_to_installer(self):
