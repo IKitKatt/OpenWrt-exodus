@@ -1032,6 +1032,8 @@ async function serviceOp(op) {
 }
 
 function openDashboard() {
+    // exodus updates the core and there is no tun in the transparent proxy, so miboard and zashboard hide those switches
+    // theme: the colors of exodus, api.sh copies miboard-theme.css next to the panel, miboard takes plain http only from its own origin
     const info = (state.status && state.status.api) || {};
     const listen = info.tls_listen || info.listen;
     if (!listen) {
@@ -1041,12 +1043,15 @@ function openDashboard() {
     const protocol = info.tls_listen ? 'https' : 'http';
     const port = listen.substring(listen.lastIndexOf(':') + 1);
     const host = window.location.hostname;
-    const query = new URLSearchParams({ host: host, hostname: host, port: port, secret: info.secret || '' }).toString();
     const path = info.ui_name ? `/ui/${info.ui_name}/` : '/ui/';
+    const origin = `${protocol}://${host.includes(':') && !host.startsWith('[') ? `[${host}]` : host}:${port}`;
+    const query = new URLSearchParams({
+        host: host, hostname: host, port: port, secret: info.secret || '', label: 'Exodus',
+        disableUpgradeCore: '1', disableTunMode: '1', theme: `${origin}${path}exodus-theme.css`
+    }).toString();
     // zashboard and metacubexd keep the backends they know and take a new secret of the link only on their setup page, yacd reads the query
     const setup = /yacd/i.test(info.ui_url || '') ? '' : `#/setup?${query}`;
-    const url = `${protocol}://${host.includes(':') && !host.startsWith('[') ? `[${host}]` : host}:${port}${path}?${query}${setup}`;
-    window.open(url, '_blank', 'noopener');
+    window.open(`${origin}${path}?${query}${setup}`, '_blank', 'noopener');
 }
 
 // the expire date of the provider: 0 and dates from 2099 on mean no expiry, a state of an older version has the date as text

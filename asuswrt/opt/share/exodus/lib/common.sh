@@ -409,3 +409,18 @@ port_listening() {
 		udp) cat /proc/net/udp /proc/net/udp6 2> /dev/null | awk -v port=":$hex" '$2 ~ port"$" && $4 == "07" { found = 1 } END { exit !found }' ;;
 	esac
 }
+
+# the process that holds a port, as "name (pid N)": the inode of the socket is looked up in the open files of the processes
+port_owner() {
+	local hex state inode pid
+	hex=$(printf '%04X' "$2")
+	state=07
+	[ "$1" = tcp ] && state=0A
+	inode=$(cat "/proc/net/$1" "/proc/net/${1}6" 2> /dev/null | awk -v port=":$hex" -v state="$state" '$2 ~ port"$" && $4 == state && $10 != "0" { print $10; exit }')
+	[ -n "$inode" ] || return 1
+	# one ls reads the targets of all the open files, a readlink for each would fork thousands of times
+	# shellcheck disable=SC2012
+	pid=$(ls -l /proc/[0-9]*/fd 2> /dev/null | awk -v sock="socket:[$inode]" '/^\/proc\// { pid = $0; sub(/^\/proc\//, "", pid); sub(/\/fd:$/, "", pid); next } $NF == sock { print pid; exit }')
+	[ -n "$pid" ] || return 1
+	echo "$(cat "/proc/$pid/comm" 2> /dev/null) (pid $pid)"
+}

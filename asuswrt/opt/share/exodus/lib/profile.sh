@@ -429,6 +429,32 @@ check_profile() {
 	log "Profile" "Check passed."
 }
 
+# the ports the core is about to listen must be free: a core of another panel or package left running holds them
+# mihomo does not exit on a busy port, it runs without that listener, and the rules would send the traffic to the other process
+check_ports() {
+	local entry proto port owner busy
+	busy=0
+	for entry in $(jq -r '
+		def digits: length > 0 and (explode | all(. >= 48 and . <= 57));
+		def port_of(listen): (listen // "" | tostring | split(":") | last // "");
+		def ok: tostring | select(digits and . != "0");
+		([.["mixed-port"], .port, .["socks-port"], .["redir-port"], .["tproxy-port"], ((.listeners // [])[] | .port)] | map(select(. != null) | ok | "tcp/\(.)"))
+		+ ([.["external-controller"], .["external-controller-tls"]] | map(port_of(.) | ok | "tcp/\(.)"))
+		+ (if .dns.enable == true then [port_of(.dns.listen) | ok | "udp/\(.)", "tcp/\(.)"] else [] end)
+		| unique[]
+	' "$PROFILE_JSON_PATH" 2> /dev/null); do
+		proto="${entry%/*}"
+		port="${entry#*/}"
+		port_listening "$proto" "$port" || continue
+		owner=$(port_owner "$proto" "$port") || owner="another process"
+		log "Profile" "Port $port/$proto is already used by $owner."
+		busy=1
+	done
+	[ "$busy" = 0 ] && return 0
+	log "Profile" "Another panel or package may still be running: stop it or change the ports."
+	return 1
+}
+
 # remove files of http providers of the current profile, they are downloaded again on start
 remove_provider_files() {
 	local profile_type profile_id profile_file run_dir file path real_path

@@ -85,6 +85,20 @@ file_list() {
 	done | jq -R -s 'split("\n") | map(select(length > 0) | split("\t") | {name: .[0], size: (.[1] | tonumber)}) | sort_by(.name)'
 }
 
+# the colors of exodus for miboard (the theme= of the dashboard link) lie next to the panel, on the origin of the core
+# the core removes the folder when it downloads the panel again, the status every few seconds brings the file back
+dashboard_theme() {
+	local name dir
+	name=$(jq -r '.ui_name // empty' "$API_JSON_PATH" 2> /dev/null)
+	case "$name" in
+		*/*|*..*) return 0 ;;
+	esac
+	dir="$RUN_DIR/ui${name:+/$name}"
+	[ -f "$dir/index.html" ] || return 0
+	[ "$(cat "$SHARE_DIR/miboard-theme.css" 2> /dev/null)" = "$(cat "$dir/exodus-theme.css" 2> /dev/null)" ] && return 0
+	cp -f "$SHARE_DIR/miboard-theme.css" "$dir/exodus-theme.css" 2> /dev/null
+}
+
 action_status() {
 	local running started api
 	running=false
@@ -93,6 +107,7 @@ action_status() {
 	[ -f "$STARTED_FLAG_PATH" ] && started=true
 	api=$(cat "$API_JSON_PATH" 2> /dev/null)
 	[ -n "$api" ] || api='{}'
+	dashboard_theme
 	jq -n \
 		--argjson running "$running" \
 		--argjson started "$started" \
@@ -598,5 +613,6 @@ action_update_dashboard() {
 		fail "400 Bad Request" "API has not been configured"
 	fi
 	printf 'header = "Authorization: Bearer %s"\n' "$secret" | curl -s -k -m 120 -X POST -K - "$url" > /dev/null 2>&1
+	dashboard_theme
 	echo '{"success": true}' | ok
 }

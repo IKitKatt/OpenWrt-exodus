@@ -152,6 +152,10 @@ start_locked() {
 	fi
 	profile_json
 	profile_params
+	if ! check_ports; then
+		log "App" "Exit."
+		return 1
+	fi
 	local proxy; proxy=0
 	[ "$c_proxy_enabled" = 1 ] && proxy=1
 	if [ "$proxy" = 1 ] && ! check_profile; then

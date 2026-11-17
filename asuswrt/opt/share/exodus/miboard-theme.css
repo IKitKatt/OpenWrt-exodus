@@ -1,0 +1,35 @@
+/* colors of the exodus web ui (www/style.css, the native asuswrt look) for miboard, given to it by the theme= link parameter */
+/* the dark theme is the palette of the web ui, the light one keeps miboard's neutrals with the blue accent; the custom css of miboard still wins */
+:root {
+    --deep: light-dark(#e2e6eb, #1f2d35);
+    --page: light-dark(#edf0f3, #4d595d);
+    --card: light-dark(#ffffff, #2f3a3e);
+    --raised: light-dark(#e9edf2, #475a5f);
+    --text: light-dark(#20252e, #ffffff);
+    --text-2: light-dark(#414c5d, #c5d2d6);
+    --text-3: light-dark(#566171, #c5d2d6);
+    --line: light-dark(#c5ccd6, #66757c);
+    --line-strong: light-dark(#9aa5b5, #92a0a5);
+    --field: light-dark(#ffffff, #1f2d35);
+    --field-border: light-dark(#7c8797, #92a0a5);
+    --selected: light-dark(#e3eef5, #2c4b60);
+    --selected-border: light-dark(#3c78a0, #77a5c6);
+    --selected-text: light-dark(#1f4560, #b9d8e6);
+    --hover: light-dark(#e8edf3, #365c74);
+    --nav-active: light-dark(#ffffff, #2c4b60);
+    --table-head: light-dark(#e7ebf0, #475a5f);
+    --accent: light-dark(#3c78a0, #77a5c6);
+    --accent-ink: light-dark(#2c5a7a, #b9d8e6);
+    --on-accent: light-dark(#ffffff, #1f2d35);
+    --good: light-dark(#176d40, #8bda75);
+    --bad: light-dark(#b4232f, #ff8080);
+    --bad-fill: light-dark(#b4232f, #b83333);
+    --warning: light-dark(#8a6400, #ffcc00);
+    --warning-surface: light-dark(#fff4d1, #514b29);
+    --warning-border: light-dark(#b99c47, #b99c47);
+    --btn: light-dark(#2c5a7a, #77a5c6);
+    --on-btn: light-dark(#ffffff, #1f2d35);
+    --map-ocean: light-dark(#eef1f4, #2f3a3e);
+    --map-land: light-dark(#cbd0d7, #475a5f);
+    --map-border: light-dark(#a2aab5, #66757c);
+}
