@@ -46,6 +46,16 @@ curl -fsSL https://raw.githubusercontent.com/prettyleaf/openwrt-exodus/asuswrt/i
 | `LOW_SPACE=1` | remove the current core before writing the new one |
 | `REF` | another branch or tag |
 
+### Without access to GitHub
+
+When GitHub does not answer the router directly, the installer prints the reason (DNS, connection, certificate) and downloads through the public mirrors `gh-proxy.com` and `ghfast.top`; the mirror that worked is saved for the **Updates** page. When the mirrors do not answer either, it asks for your own [gh-proxy](https://github.com/prettyleaf/gh-proxy), or pass it in advance: `GH_PROXY=https://example.com/ghproxy/TOKEN`. `GH_PROXY=` downloads only directly again. If `raw.githubusercontent.com` does not open, take the installer from jsDelivr:
+
+```shell
+curl -fsSL https://cdn.jsdelivr.net/gh/prettyleaf/openwrt-exodus@asuswrt/install.sh | sh
+```
+
+More in the [documentation](https://prettyleaf.github.io/OpenWrt-exodus/en/install/options/#if-github-is-blocked).
+
 ### Versions
 
 Exodus has one version for all routers, the version of the [releases](https://github.com/prettyleaf/openwrt-exodus/releases) of the project: it is in `/opt/share/exodus/VERSION`, on the **Updates** page and in the build info. The **Updates** page offers an update when the code of the `asuswrt` branch changes, a change of the readme does not count. The core is changed there too: choose Prizrak-Core, Mihomo Meta or Mihomo Alpha and press **Change core**, its latest build is installed and the next updates follow it.
