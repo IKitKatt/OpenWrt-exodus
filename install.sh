@@ -837,6 +837,7 @@ chmod 600 "$config" || fail "config permissions failed"
 rm -rf "$temp_dir/app"
 # The previous yq stays in place until all source and migration checks pass.
 if [ -n "$staged_yq_path" ]; then
+	mkdir -p "$libexec_dir" || fail "can not create libexec directory"
 	backup_binary yq
 	mv -f "$staged_yq_path" "$yq_path" || fail "yq activation failed"
 	done_message 'yq activated.'

@@ -143,10 +143,11 @@ lock_release() {
 }
 
 # run a command detached from the caller, the web ui must not wait for it
+# BusyBox start-stop-daemon -x matches any running shell, not the specific worker.
 daemonize() {
 	if have setsid; then
 		setsid "$@" < /dev/null > /dev/null 2>&1 &
-	elif have start-stop-daemon; then
+	elif [ "$1" != /bin/sh ] && [ "$1" != sh ] && have start-stop-daemon; then
 		local exe; exe="$1"
 		shift
 		start-stop-daemon -S -b -x "$exe" -- "$@"

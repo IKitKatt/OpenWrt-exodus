@@ -1,3 +1,4 @@
+import gzip
 import json
 import subprocess
 import shutil
@@ -148,11 +149,7 @@ esac''')
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         self.assertIn('fixture: Entware download failed',result.stdout+result.stderr)
 
-    def test_staged_yq_restores_old_binary_if_registration_fails(self):
-        self.bundle()
-        yq=self.opt/'libexec/exodus/yq'
-        previous=b'#!/bin/sh\nexit 1\n'
-        yq.write_bytes(previous)
+    def bundle_yq(self):
         candidate=self.root/'candidate-yq'
         candidate.write_bytes(b'#!/bin/sh\necho "yq mikefarah v4.99"\n')
         archive=self.root/'yq.tar.gz'
@@ -160,6 +157,26 @@ esac''')
             for arch in ('amd64','arm64','arm','mips','mipsle'):
                 tar.add(candidate,arcname='yq_linux_'+arch)
         self.env['FIXTURE_YQ_TAR']=str(archive)
+
+    def test_fresh_install_activates_yq_before_installing_core(self):
+        for path in (self.home, self.share, self.opt/'libexec'):
+            shutil.rmtree(path)
+        self.bundle()
+        self.bundle_yq()
+        fixture=self.root/'core.gz'
+        fixture.write_bytes(gzip.compress(b'#!/bin/sh\necho "Mihomo Meta v1.19.15"\n'))
+        self.env['FIXTURE_CORE_GZ']=str(fixture)
+        result=self.install()
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        yq=self.opt/'libexec/exodus/yq'
+        self.assertEqual(subprocess.check_output([yq,'--version'],text=True).strip(),'yq mikefarah v4.99')
+
+    def test_staged_yq_restores_old_binary_if_registration_fails(self):
+        self.bundle()
+        self.bundle_yq()
+        yq=self.opt/'libexec/exodus/yq'
+        previous=b'#!/bin/sh\nexit 1\n'
+        yq.write_bytes(previous)
         for i in range(1,21): (self.www/f'user/user{i}.asp').write_text('foreign')
         result=self.install()
         self.assertNotEqual(result.returncode,0)
@@ -552,7 +569,6 @@ esac''')
         self.assertIsNotNone(child.poll(),'owned core on symlinked Entware mount remained alive')
 
     def test_registration_failure_restores_replaced_core(self):
-        import gzip
         self.bundle()
         core=self.opt/'libexec/exodus/mihomo'; before=core.read_bytes()
         fixture=self.root/'core.gz'

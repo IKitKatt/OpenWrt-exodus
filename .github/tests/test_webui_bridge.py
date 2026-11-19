@@ -399,15 +399,14 @@ class BridgeTests(ShellCase):
         # Snapshot records are complete and do not block a subsequent operation.
         self.assertEqual(self.accept(self.packets(dict(action='load'),'b'*32)[0])['phase'],'complete')
 
-    def test_settings_worker_without_setsid_uses_absolute_shell(self):
-        # Firmware may only provide start-stop-daemon, whose -x requires a path.
+    def test_settings_worker_without_setsid_starts_when_another_shell_is_running(self):
         ident='d'*32
-        self.mock('start-stop-daemon', '''[ "$1" = -S ] && [ "$2" = -b ] && [ "$3" = -x ] || exit 1
-case "$4" in /*) ;; *) echo 'absolute executable required' >&2; exit 1 ;; esac
-exe="$4"; shift 5
-"$exe" "$@" </dev/null >/dev/null 2>&1 &''')
-        self.sh(f'''have() {{ [ "$1" != setsid ]; }}
-webui_event restart exodus_ui_settings_{ident}''',('webui-api',))
+        # BusyBox matches -x by executable and sees the existing /bin/sh.
+        self.mock('start-stop-daemon', '''echo '/bin/sh is already running' >&2
+exit 1''')
+        result=self.sh(f'''have() {{ [ "$1" = start-stop-daemon ]; }}
+webui_event restart exodus_ui_settings_{ident}''',('webui-api',),check=False)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         response=self.ram/f'run/webui/responses/{ident}.json'
         deadline=time.time()+5
         while not response.exists() and time.time()<deadline: time.sleep(.1)
